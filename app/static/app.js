@@ -1,6 +1,9 @@
 let currentTab = "all";
 let currentAckThreadId = null;
 
+// Date filter applied to ticket list (set when you click Fetch Now).
+let currentDateFilter = { start: "", end: "" };
+
 let googleConnected = false;
 
 async function refreshGoogleStatus() {
@@ -60,7 +63,52 @@ async function googleConnectOrManage() {
     }
 }
 
-function openSettings() { alert("Settings (MVP): not implemented yet."); }
+// -------------------------
+// Settings (persisted in localStorage)
+// -------------------------
+const SETTINGS_KEY = "agent_settings_v1";
+let settings = {
+    defaultHtmlView: false,
+    blockRemoteImages: true,
+    compactTickets: false,
+};
+
+function loadSettings() {
+    try {
+        const raw = localStorage.getItem(SETTINGS_KEY);
+        if (raw) settings = { ...settings, ...JSON.parse(raw) };
+    } catch {
+        // ignore
+    }
+}
+
+function saveSettings() {
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch { }
+}
+
+function openSettings() {
+    const m = document.getElementById("settingsModal");
+    if (!m) return;
+    document.getElementById("setDefaultHtml").checked = !!settings.defaultHtmlView;
+    document.getElementById("setBlockRemote").checked = !!settings.blockRemoteImages;
+    document.getElementById("setCompact").checked = !!settings.compactTickets;
+    m.classList.remove("hidden");
+}
+
+function closeSettings() {
+    const m = document.getElementById("settingsModal");
+    if (!m) return;
+    m.classList.add("hidden");
+}
+
+function applySettingsFromModal() {
+    settings.defaultHtmlView = document.getElementById("setDefaultHtml").checked;
+    settings.blockRemoteImages = document.getElementById("setBlockRemote").checked;
+    settings.compactTickets = document.getElementById("setCompact").checked;
+    saveSettings();
+    closeSettings();
+    loadTickets();
+}
 function addQuery() { alert("Add Query (MVP): not implemented yet."); }
 
 function formatDate(dt) {
@@ -88,6 +136,12 @@ async function fetchNow() {
         const start = document.getElementById("startDate").value;
         const end = document.getElementById("endDate").value;
 
+        // Persist the selected date filter for the ticket list.
+        currentDateFilter = { start: start || "", end: end || "" };
+
+        // Persist filter for the ticket list.
+        currentDateFilter = { start: start || "", end: end || "" };
+
         const url = new URL("/autopilot/fetch-now", window.location.origin);
         if (start) url.searchParams.set("start", start);
         if (end) url.searchParams.set("end", end);
@@ -109,6 +163,22 @@ async function fetchNow() {
         btn.disabled = false;
         btn.textContent = "Fetch Now";
     }
+}
+
+function clearDateFilter() {
+    const s = document.getElementById("startDate");
+    const e = document.getElementById("endDate");
+    if (s) s.value = "";
+    if (e) e.value = "";
+    currentDateFilter = { start: "", end: "" };
+    loadTickets();
+}
+
+function clearDateFilter() {
+    document.getElementById("startDate").value = "";
+    document.getElementById("endDate").value = "";
+    currentDateFilter = { start: "", end: "" };
+    loadTickets();
 }
 
 async function startAutopilot() {
@@ -160,7 +230,9 @@ function statusOptions(selected) {
 
 function renderTicket(t) {
     const card = document.createElement("div");
-    card.className = "bg-white rounded-xl shadow border p-5 flex items-start justify-between gap-4";
+    card.className = settings.compactTickets
+        ? "bg-white rounded-xl shadow border p-4 flex items-start justify-between gap-4"
+        : "bg-white rounded-xl shadow border p-5 flex items-start justify-between gap-4";
 
     const due = t.due_at ? `Due: ${formatDate(t.due_at)}` : "Due: —";
     const last = t.last_message_at ? `Last: ${formatDate(t.last_message_at)}` : "Last: —";
@@ -185,7 +257,7 @@ function renderTicket(t) {
 
       <div class="mt-4 flex flex-wrap gap-2">
         <button class="px-3 py-2 rounded-lg border text-slate-700 hover:bg-slate-50" onclick="openThread('${t.thread_id}')">Open</button>
-        <button class="px-3 py-2 rounded-lg border text-slate-700 hover:bg-slate-50" onclick="openAckModal('${t.thread_id}')">Draft Ack</button>
+        <button class="px-3 py-2 rounded-lg border text-slate-700 hover:bg-slate-50" onclick="openAckModal('${t.thread_id}')">Quick Reply</button>
         ${t.from_email ? `<button class="px-3 py-2 rounded-lg border text-red-700 hover:bg-red-50" onclick="blacklistSender('${t.from_email}')">Blacklist Sender</button>` : ``}
       </div>
     </div>
@@ -202,7 +274,14 @@ function renderTicket(t) {
 }
 
 async function loadTickets() {
-    const url = `/tickets?tab=${encodeURIComponent(currentTab)}&limit=50`;
+    const url = new URL(`/tickets`, window.location.origin);
+    url.searchParams.set("tab", currentTab);
+    url.searchParams.set("limit", "50");
+
+    // Apply current filter (set by Fetch Now). If empty, do not filter.
+    if (currentDateFilter.start) url.searchParams.set("start", currentDateFilter.start);
+    if (currentDateFilter.end) url.searchParams.set("end", currentDateFilter.end);
+
     const r = await fetch(url);
     const data = await r.json();
 
@@ -266,13 +345,22 @@ async function openThread(threadId) {
         });
     };
 
+    const stripRemoteImages = (html) => {
+        if (!html) return "";
+        // Remove <img> tags that reference remote resources (http/https). CID and data URIs remain.
+        return html.replace(/<img\b[^>]*\bsrc\s*=\s*(["'])https?:\/\/[^"'>\s]+\1[^>]*>/gi, "");
+    };
+
     const renderMessage = (m, idx) => {
         const hasHtml = !!m.body_html;
         const msgId = m.id;
         const safeText = escapeHtml(m.body_text || m.snippet || "");
         const iframeId = `msg_iframe_${idx}`;
         const btnId = `msg_toggle_${idx}`;
-        const html = hasHtml ? rewriteCid(m.body_html, msgId) : "";
+        let html = hasHtml ? rewriteCid(m.body_html, msgId) : "";
+        if (hasHtml && settings.blockRemoteImages) {
+            html = stripRemoteImages(html);
+        }
 
         return `
         <div class="border rounded-xl p-4 bg-slate-50">
@@ -312,8 +400,21 @@ async function openThread(threadId) {
         const iframe = document.getElementById(`msg_iframe_${idx}`);
         if (!btn || !iframe) return;
 
-        const html = rewriteCid(m.body_html, m.id);
+        let html = rewriteCid(m.body_html, m.id);
+        if (settings.blockRemoteImages) {
+            html = stripRemoteImages(html);
+        }
         iframe.srcdoc = html;
+
+        // Default view preference
+        if (settings.defaultHtmlView) {
+            const card = btn.closest(".border");
+            const textEl = card ? card.querySelector('[data-mode="text"]') : null;
+            const htmlWrap = card ? card.querySelector('[data-mode="html"]') : null;
+            if (textEl) textEl.classList.add("hidden");
+            if (htmlWrap) htmlWrap.classList.remove("hidden");
+            btn.textContent = "View Text";
+        }
 
         btn.addEventListener("click", () => {
             const card = btn.closest(".border");
@@ -332,6 +433,13 @@ async function openThread(threadId) {
             }
         });
     });
+}
+
+function clearDateFilter() {
+    document.getElementById("startDate").value = "";
+    document.getElementById("endDate").value = "";
+    currentDateFilter = { start: "", end: "" };
+    loadTickets();
 }
 
 function closeThreadModal() {
@@ -407,6 +515,7 @@ async function blacklistSender(email) {
 }
 
 window.addEventListener("load", async () => {
+    loadSettings();
     document.getElementById("lastSync").textContent = new Date().toLocaleString();
     await refreshGoogleStatus();
 

@@ -37,22 +37,34 @@ def extract_message_body(payload: dict) -> dict:
         "used_mime": "text/plain" or "text/html" or "none"
       }
     """
-    # Prefer text/plain
-    plain_part = _find_part(payload, "text/plain")
-    if plain_part:
-        text = _b64url_decode(plain_part["body"]["data"])
-        return {"body_text": text.strip(), "body_html": None, "used_mime": "text/plain"}
+    # Gmail often provides BOTH text/plain and text/html (multipart/alternative).
+    # We return both when available so the UI can render proper HTML email templates.
 
-    # Fallback to text/html
+    plain_part = _find_part(payload, "text/plain")
     html_part = _find_part(payload, "text/html")
-    if html_part:
-        html = _b64url_decode(html_part["body"]["data"])
-        text = _strip_html(html)
-        return {"body_text": text, "body_html": html, "used_mime": "text/html"}
+
+    body_text = ""
+    body_html = None
+    used_mime = "none"
+
+    if plain_part and plain_part.get("body", {}).get("data"):
+        body_text = _b64url_decode(plain_part["body"]["data"]).strip()
+        used_mime = "text/plain"
+
+    if html_part and html_part.get("body", {}).get("data"):
+        body_html = _b64url_decode(html_part["body"]["data"])
+        # If we don't have a plain part, produce a readable text fallback.
+        if not body_text:
+            body_text = _strip_html(body_html)
+        used_mime = "text/html" if used_mime == "none" else used_mime
+
+    if body_text or body_html:
+        return {"body_text": body_text, "body_html": body_html, "used_mime": used_mime}
 
     # If payload has body.data at top-level
     if payload.get("body", {}).get("data"):
         text = _b64url_decode(payload["body"]["data"])
+        # Top-level bodies are usually plain; keep HTML empty.
         return {"body_text": text.strip(), "body_html": None, "used_mime": payload.get("mimeType", "unknown")}
 
     return {"body_text": "", "body_html": None, "used_mime": "none"}

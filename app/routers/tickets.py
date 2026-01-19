@@ -48,9 +48,32 @@ def _tab_filter(q, tab: str):
 
 
 @router.get("", response_model=TicketListOut)
-def list_tickets(tab: str = "all", limit: int = 50, db: Session = Depends(get_db)):
+def list_tickets(
+    tab: str = "all",
+    limit: int = 50,
+    start: str | None = None,
+    end: str | None = None,
+    db: Session = Depends(get_db),
+):
+    """List tickets with optional date filtering.
+
+    - start/end are expected as YYYY-MM-DD (from <input type="date">)
+    - filtering is applied against ThreadTicket.last_message_at
+    """
     q = db.query(ThreadTicket)
     q = _tab_filter(q, tab)
+
+    # Optional date filtering (inclusive)
+    try:
+        if start:
+            start_dt = datetime.fromisoformat(start).replace(hour=0, minute=0, second=0, microsecond=0)
+            q = q.filter(ThreadTicket.last_message_at >= start_dt)
+        if end:
+            end_dt = datetime.fromisoformat(end).replace(hour=23, minute=59, second=59, microsecond=999999)
+            q = q.filter(ThreadTicket.last_message_at <= end_dt)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD.")
+
     q = q.order_by(ThreadTicket.last_message_at.desc().nullslast()).limit(limit)
     items = q.all()
 

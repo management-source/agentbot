@@ -1,2 +1,0 @@
-# agentbot
-email management

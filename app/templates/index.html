@@ -67,6 +67,12 @@
                         </button>
 
                         <button
+                            class="px-4 py-2 rounded-lg border bg-white text-slate-700 hover:bg-slate-50"
+                            onclick="clearDateFilter()">
+                            Clear Filter
+                        </button>
+
+                        <button
                             class="px-4 py-2 rounded-lg bg-slate-800 text-white hover:bg-slate-900"
                             onclick="startAutopilot()">
                             Start
@@ -164,10 +170,8 @@
                 <div class="flex items-start justify-between gap-2">
                     <div>
                         <div
-                            class="text-lg font-semibold text-slate-900">Acknowledgment
-                            Reply</div>
-                        <div class="text-sm text-slate-500">Edit subject/body,
-                            then send.</div>
+                            class="text-lg font-semibold text-slate-900">Quick Reply</div>
+                        <div class="text-sm text-slate-500">Edit subject/body, then send.</div>
                     </div>
                     <button
                         class="px-3 py-2 rounded-lg border hover:bg-slate-50"
@@ -199,6 +203,57 @@
             </div>
         </div>
 
-        <script src="/static/app.js?v=5"></script>
+        <!-- Settings Modal -->
+        <div id="settingsModal" class="hidden fixed inset-0 bg-black/40">
+            <div
+                class="max-w-2xl mx-auto mt-16 bg-white rounded-xl shadow border p-6">
+                <div class="flex items-start justify-between gap-2">
+                    <div>
+                        <div class="text-lg font-semibold text-slate-900">Settings</div>
+                        <div class="text-sm text-slate-500">Preferences are saved in your browser.</div>
+                    </div>
+                    <button
+                        class="px-3 py-2 rounded-lg border hover:bg-slate-50"
+                        onclick="closeSettings()">Close</button>
+                </div>
+
+                <div class="mt-5 space-y-4">
+                    <label class="flex items-start gap-3">
+                        <input id="setDefaultHtml" type="checkbox" class="mt-1" />
+                        <div>
+                            <div class="font-medium text-slate-800">Default to HTML view when available</div>
+                            <div class="text-sm text-slate-500">If an email has HTML, open it as HTML by default.</div>
+                        </div>
+                    </label>
+
+                    <label class="flex items-start gap-3">
+                        <input id="setBlockRemote" type="checkbox" class="mt-1" />
+                        <div>
+                            <div class="font-medium text-slate-800">Block remote images</div>
+                            <div class="text-sm text-slate-500">Helps privacy and reduces tracking. Inline CID images still show.</div>
+                        </div>
+                    </label>
+
+                    <label class="flex items-start gap-3">
+                        <input id="setCompact" type="checkbox" class="mt-1" />
+                        <div>
+                            <div class="font-medium text-slate-800">Compact ticket cards</div>
+                            <div class="text-sm text-slate-500">Slightly smaller cards to fit more items on screen.</div>
+                        </div>
+                    </label>
+                </div>
+
+                <div class="mt-6 flex justify-end gap-2">
+                    <button
+                        class="px-4 py-2 rounded-lg border hover:bg-slate-50"
+                        onclick="closeSettings()">Cancel</button>
+                    <button
+                        class="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700"
+                        onclick="applySettingsFromModal()">Save</button>
+                </div>
+            </div>
+        </div>
+
+        <script src="/static/app.js?v=6"></script>
     </body>
 </html>
