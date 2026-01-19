@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Email Autopilot Manager</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+    </head>
+    <body class="bg-slate-50">
+        <div class="max-w-6xl mx-auto p-6">
+            <div class="bg-white rounded-xl shadow p-6">
+                <div class="flex items-start justify-between gap-4">
+                    <div>
+                        <div class="text-xl font-bold text-slate-900">Email
+                            Autopilot Manager</div>
+                        <div class="text-sm text-slate-500">Automatic customer
+                            query detection & management</div>
+                    </div>
+
+                    <div class="flex gap-2">
+                        <button id="googleBtn"
+                            class="px-4 py-2 rounded-lg border text-slate-700 hover:bg-slate-50"
+                            onclick="googleConnectOrManage()">
+                            Connect to Google
+                        </button>
+                        <button
+                            class="px-4 py-2 rounded-lg border text-slate-700 hover:bg-slate-50"
+                            onclick="openSettings()">Settings</button>
+                        <button
+                            class="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700"
+                            onclick="addQuery()">+ Add Query</button>
+                    </div>
+                </div>
+
+                <div
+                    class="mt-6 rounded-xl bg-gradient-to-r from-slate-50 to-indigo-50 border p-4 flex items-start justify-between gap-4">
+                    <div>
+                        <div class="font-semibold text-slate-800">Email
+                            Autopilot</div>
+                        <div class="text-sm text-slate-600">
+                            <span class="inline-flex items-center gap-2">
+                                <span id="statusDot"
+                                    class="h-2 w-2 rounded-full bg-green-500"></span>
+                                <span id="autopilotStatus">Active</span>
+                                <span class="text-slate-500">•</span>
+                                Checking every <span id="pollEvery">5</span>
+                                minutes
+                            </span>
+                        </div>
+                        <div class="text-xs text-slate-500">
+                            Last sync: <span id="lastSync">—</span>
+                            <span class="text-slate-300">|</span>
+                            Next run: <span id="nextRun">—</span>
+                        </div>
+                    </div>
+
+                    <div class="flex flex-wrap items-center justify-end gap-2">
+                        <input id="startDate" type="date"
+                            class="px-3 py-2 rounded-lg border bg-white" />
+                        <input id="endDate" type="date"
+                            class="px-3 py-2 rounded-lg border bg-white" />
+
+                        <button id="fetchBtn"
+                            class="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700"
+                            onclick="fetchNow()">
+                            Fetch Now
+                        </button>
+
+                        <button
+                            class="px-4 py-2 rounded-lg bg-slate-800 text-white hover:bg-slate-900"
+                            onclick="startAutopilot()">
+                            Start
+                        </button>
+                        <button
+                            class="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700"
+                            onclick="stopAutopilot()">
+                            Stop
+                        </button>
+                    </div>
+                </div>
+
+                <div class="mt-6 grid grid-cols-1 md:grid-cols-5 gap-4">
+                    <div class="rounded-xl bg-amber-50 border p-4">
+                        <div class="text-sm text-slate-600">Not Replied
+                            (Priority)</div>
+                        <div id="countNotReplied"
+                            class="text-2xl font-bold text-amber-700">0</div>
+                    </div>
+                    <div class="rounded-xl bg-orange-50 border p-4">
+                        <div class="text-sm text-slate-600">Pending</div>
+                        <div id="countPending"
+                            class="text-2xl font-bold text-orange-700">0</div>
+                    </div>
+                    <div class="rounded-xl bg-sky-50 border p-4">
+                        <div class="text-sm text-slate-600">In Progress</div>
+                        <div id="countInProgress"
+                            class="text-2xl font-bold text-sky-700">0</div>
+                    </div>
+                    <div class="rounded-xl bg-emerald-50 border p-4">
+                        <div class="text-sm text-slate-600">Responded</div>
+                        <div id="countResponded"
+                            class="text-2xl font-bold text-emerald-700">0</div>
+                    </div>
+                    <div class="rounded-xl bg-slate-50 border p-4">
+                        <div class="text-sm text-slate-600">Reply Not
+                            Needed</div>
+                        <div id="countNoReplyNeeded"
+                            class="text-2xl font-bold text-slate-700">0</div>
+                    </div>
+                </div>
+
+                <div class="mt-5 flex flex-wrap gap-2">
+                    <button
+                        class="tabbtn px-4 py-2 rounded-lg border bg-indigo-600 text-white"
+                        data-tab="all" onclick="setTab('all')">All</button>
+                    <button class="tabbtn px-4 py-2 rounded-lg border bg-white"
+                        data-tab="not_replied"
+                        onclick="setTab('not_replied')">Not Replied</button>
+                    <button class="tabbtn px-4 py-2 rounded-lg border bg-white"
+                        data-tab="pending"
+                        onclick="setTab('pending')">Pending</button>
+                    <button class="tabbtn px-4 py-2 rounded-lg border bg-white"
+                        data-tab="in_progress"
+                        onclick="setTab('in_progress')">In Progress</button>
+                    <button class="tabbtn px-4 py-2 rounded-lg border bg-white"
+                        data-tab="responded"
+                        onclick="setTab('responded')">Responded</button>
+                    <button class="tabbtn px-4 py-2 rounded-lg border bg-white"
+                        data-tab="no_reply_needed"
+                        onclick="setTab('no_reply_needed')">Reply Not
+                        Needed</button>
+                </div>
+            </div>
+
+            <div class="mt-6 space-y-4" id="ticketList"></div>
+        </div>
+
+        <!-- Thread Modal -->
+        <div id="threadModal" class="hidden fixed inset-0 bg-black/40">
+            <div
+                class="max-w-4xl mx-auto mt-10 bg-white rounded-xl shadow border p-6">
+                <div class="flex items-start justify-between gap-2">
+                    <div>
+                        <div
+                            class="text-lg font-semibold text-slate-900">Thread</div>
+                        <a id="gmailLink"
+                            class="text-sm text-blue-700 hover:underline"
+                            href="#" target="_blank" rel="noreferrer">Open in
+                            Gmail</a>
+                    </div>
+                    <button
+                        class="px-3 py-2 rounded-lg border hover:bg-slate-50"
+                        onclick="closeThreadModal()">Close</button>
+                </div>
+                <div id="threadContent"
+                    class="mt-4 space-y-4 max-h-[70vh] overflow-auto"></div>
+            </div>
+        </div>
+
+        <!-- Ack Modal -->
+        <div id="ackModal" class="hidden fixed inset-0 bg-black/40">
+            <div
+                class="max-w-2xl mx-auto mt-16 bg-white rounded-xl shadow border p-6">
+                <div class="flex items-start justify-between gap-2">
+                    <div>
+                        <div
+                            class="text-lg font-semibold text-slate-900">Acknowledgment
+                            Reply</div>
+                        <div class="text-sm text-slate-500">Edit subject/body,
+                            then send.</div>
+                    </div>
+                    <button
+                        class="px-3 py-2 rounded-lg border hover:bg-slate-50"
+                        onclick="closeAckModal()">Close</button>
+                </div>
+
+                <div class="mt-4 space-y-3">
+                    <div>
+                        <div
+                            class="text-sm font-medium text-slate-700">Subject</div>
+                        <input id="ackSubject"
+                            class="w-full px-3 py-2 rounded-lg border" />
+                    </div>
+                    <div>
+                        <div
+                            class="text-sm font-medium text-slate-700">Body</div>
+                        <textarea id="ackBody"
+                            class="w-full px-3 py-2 rounded-lg border h-40"></textarea>
+                    </div>
+                    <div class="flex justify-end gap-2">
+                        <button
+                            class="px-4 py-2 rounded-lg border hover:bg-slate-50"
+                            onclick="closeAckModal()">Cancel</button>
+                        <button id="sendAckBtn"
+                            class="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700"
+                            onclick="sendAckFromModal()">Send</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <script src="/static/app.js?v=5"></script>
+    </body>
+</html>
