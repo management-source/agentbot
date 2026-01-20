@@ -8,8 +8,19 @@ from app.config import settings
 router = APIRouter()
 
 @router.post("/fetch-now")
-def fetch_now(start: Optional[str] = None, end: Optional[str] = None, max_threads: int = 100):
-    return sync_inbox_threads(max_threads=max_threads, start=start, end=end)
+def fetch_now(
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    max_threads: int = 500,
+    incremental: bool = True,
+):
+    """Manual sync endpoint.
+
+    - If start/end provided: performs a date-range sync (paged) up to max_threads.
+    - Otherwise: performs an incremental sync using Gmail historyId (accurate),
+      falling back to a small recent window on first run.
+    """
+    return sync_inbox_threads(max_threads=max_threads, start=start, end=end, incremental=incremental)
 
 @router.post("/start")
 def start_autopilot():

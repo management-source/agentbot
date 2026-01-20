@@ -44,6 +44,19 @@ class OAuthToken(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class AppState(Base):
+    """Small key/value store for application state.
+
+    Used for incremental sync watermarks (e.g., Gmail historyId).
+    """
+
+    __tablename__ = "app_state"
+
+    key: Mapped[str] = mapped_column(String, primary_key=True)
+    value: Mapped[str] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
 class ThreadTicket(Base):
     __tablename__ = "thread_tickets"
 

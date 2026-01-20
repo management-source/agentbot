@@ -135,16 +135,18 @@ async function fetchNow() {
     try {
         const start = document.getElementById("startDate").value;
         const end = document.getElementById("endDate").value;
+        const maxThreads = parseInt(document.getElementById("maxThreads").value || "500", 10);
+        const incremental = !!document.getElementById("incrementalSync").checked;
 
         // Persist the selected date filter for the ticket list.
-        currentDateFilter = { start: start || "", end: end || "" };
-
-        // Persist filter for the ticket list.
         currentDateFilter = { start: start || "", end: end || "" };
 
         const url = new URL("/autopilot/fetch-now", window.location.origin);
         if (start) url.searchParams.set("start", start);
         if (end) url.searchParams.set("end", end);
+        if (!Number.isNaN(maxThreads) && maxThreads > 0) url.searchParams.set("max_threads", String(maxThreads));
+        // incremental applies only when no date range
+        if (!start && !end) url.searchParams.set("incremental", incremental ? "true" : "false");
 
         const r = await fetch(url.toString(), { method: "POST" });
         const text = await r.text();
@@ -170,13 +172,6 @@ function clearDateFilter() {
     const e = document.getElementById("endDate");
     if (s) s.value = "";
     if (e) e.value = "";
-    currentDateFilter = { start: "", end: "" };
-    loadTickets();
-}
-
-function clearDateFilter() {
-    document.getElementById("startDate").value = "";
-    document.getElementById("endDate").value = "";
     currentDateFilter = { start: "", end: "" };
     loadTickets();
 }
