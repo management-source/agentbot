@@ -197,6 +197,7 @@ def sync_inbox_threads(
     start: str | None = None,
     end: str | None = None,
     incremental: bool = True,
+    include_anywhere=False
 ) -> dict:
     """Synchronize Gmail INBOX threads into the local DB.
 
