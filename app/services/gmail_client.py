@@ -7,6 +7,16 @@ from app.config import settings
 from app.models import OAuthToken
 from sqlalchemy.orm import Session
 
+def gmail_user_id() -> str:
+    """Return the Gmail userId to operate on.
+
+    - "me" operates on the authenticated user.
+    - If DELEGATED_MAILBOX is set, we operate on that mailbox instead (Gmail delegation).
+    """
+    mb = (settings.DELEGATED_MAILBOX or "").strip()
+    return mb if mb else "me"
+
+
 def get_gmail_service(db: Session):
     token = db.query(OAuthToken).filter(OAuthToken.provider == "google").first()
     if not token:

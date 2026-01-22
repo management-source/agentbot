@@ -13,6 +13,7 @@ def fetch_now(
     end: Optional[str] = None,
     max_threads: int = 500,
     incremental: bool = True,
+    include_anywhere: bool = False,
 ):
     """Manual sync endpoint.
 
@@ -20,7 +21,7 @@ def fetch_now(
     - Otherwise: performs an incremental sync using Gmail historyId (accurate),
       falling back to a small recent window on first run.
     """
-    return sync_inbox_threads(max_threads=max_threads, start=start, end=end, incremental=incremental)
+    return sync_inbox_threads(max_threads=max_threads, start=start, end=end, incremental=incremental, include_anywhere=include_anywhere)
 
 @router.post("/start")
 def start_autopilot():

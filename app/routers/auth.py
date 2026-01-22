@@ -30,6 +30,8 @@ def auth_status(db: Session = Depends(get_db)):
         "has_refresh_token": bool(token and token.refresh_token),
         "expiry": (token.expiry.isoformat() if token and token.expiry else None),
         "scopes": (token.scopes.split(",") if token and token.scopes else []),
+        "delegated_mailbox": (settings.DELEGATED_MAILBOX if hasattr(settings, "DELEGATED_MAILBOX") else None),
+        "target_mailbox": ((settings.DELEGATED_MAILBOX or "").strip() or None),
     }
 
 

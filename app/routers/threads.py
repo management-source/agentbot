@@ -10,7 +10,7 @@ from googleapiclient.errors import HttpError
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.services.gmail_client import get_gmail_service
+from app.services.gmail_client import get_gmail_service, gmail_user_id
 from app.services.gmail_parse import extract_message_body
 
 
@@ -92,7 +92,7 @@ def get_thread(thread_id: str, db: Session = Depends(get_db)):
         thread = (
             service.users()
             .threads()
-            .get(userId="me", id=thread_id, format="full")
+            .get(userId=gmail_user_id(), id=thread_id, format="full")
             .execute()
         )
     except HttpError as e:
@@ -151,7 +151,7 @@ def get_inline_attachment(
         msg = (
             service.users()
             .messages()
-            .get(userId="me", id=message_id, format="full")
+            .get(userId=gmail_user_id(), id=message_id, format="full")
             .execute()
         )
     except HttpError as e:
@@ -169,7 +169,7 @@ def get_inline_attachment(
             service.users()
             .messages()
             .attachments()
-            .get(userId="me", messageId=message_id, id=attachment_id)
+            .get(userId=gmail_user_id(), messageId=message_id, id=attachment_id)
             .execute()
         )
     except HttpError as e:

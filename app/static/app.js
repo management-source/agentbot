@@ -25,6 +25,12 @@ async function refreshGoogleStatus() {
         const j = await r.json();
         googleConnected = !!j.connected;
 
+        const mb = document.getElementById("mailboxBadge");
+        if (mb) {
+            const target = (j.target_mailbox || j.delegated_mailbox || "me");
+            mb.textContent = googleConnected ? (`Mailbox: ${target}`) : "";
+        }
+
         if (googleConnected) {
             btn.textContent = "Google Connected";
             btn.className = "px-4 py-2 rounded-lg border bg-emerald-50 text-emerald-800 hover:bg-emerald-100";
@@ -109,6 +115,28 @@ function applySettingsFromModal() {
     closeSettings();
     loadTickets();
 }
+
+async function flushDatabase() {
+  const text = prompt("Type FLUSH to permanently delete all tickets and sync state:");
+  if (!text) return;
+  if (text.trim().toUpperCase() !== "FLUSH") {
+    alert("Cancelled. Confirmation text did not match.");
+    return;
+  }
+  try {
+    const resp = await fetch("/tickets/admin/flush", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confirm: "FLUSH" }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.detail || "Flush failed");
+    alert("Database flushed. Reloading tickets...");
+    await loadTickets();
+  } catch (e) {
+    alert("Flush failed: " + (e.message || e));
+  }
+}
 function addQuery() { alert("Add Query (MVP): not implemented yet."); }
 
 function formatDate(dt) {
@@ -137,6 +165,7 @@ async function fetchNow() {
         const end = document.getElementById("endDate").value;
         const maxThreads = parseInt(document.getElementById("maxThreads").value || "500", 10);
         const incremental = !!document.getElementById("incrementalSync").checked;
+        const includeAnywhere = !!document.getElementById("includeAnywhere").checked;
 
         // Persist the selected date filter for the ticket list.
         currentDateFilter = { start: start || "", end: end || "" };
@@ -147,6 +176,7 @@ async function fetchNow() {
         if (!Number.isNaN(maxThreads) && maxThreads > 0) url.searchParams.set("max_threads", String(maxThreads));
         // incremental applies only when no date range
         if (!start && !end) url.searchParams.set("incremental", incremental ? "true" : "false");
+        if (start || end) url.searchParams.set("include_anywhere", includeAnywhere ? "true" : "false");
 
         const r = await fetch(url.toString(), { method: "POST" });
         const text = await r.text();
@@ -155,6 +185,14 @@ async function fetchNow() {
             return;
         }
         const j = JSON.parse(text);
+
+        if (j && j.hit_limit) {
+            alert("Fetch completed, but hit the configured limit. Increase Max and fetch again to capture more emails for the selected range.");
+        }
+        if (j && j.target_mailbox) {
+            const mb = document.getElementById("mailboxBadge");
+            if (mb) mb.textContent = `Mailbox: ${j.target_mailbox}`;
+        }
 
         document.getElementById("lastSync").textContent = new Date().toLocaleString();
         await loadTickets();

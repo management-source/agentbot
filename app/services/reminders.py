@@ -70,7 +70,7 @@ def run_reminders():
 def _send_new_email(db: Session, to_email: str, subject: str, body: str):
     import base64
     from email.message import EmailMessage
-    from app.services.gmail_client import get_gmail_service
+    from app.services.gmail_client import get_gmail_service, gmail_user_id
 
     service = get_gmail_service(db)
     msg = EmailMessage()
@@ -79,4 +79,4 @@ def _send_new_email(db: Session, to_email: str, subject: str, body: str):
     msg.set_content(body)
 
     raw = base64.urlsafe_b64encode(msg.as_bytes()).decode("utf-8")
-    service.users().messages().send(userId="me", body={"raw": raw}).execute()
+    service.users().messages().send(userId=gmail_user_id(), body={"raw": raw}).execute()

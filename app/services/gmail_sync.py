@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.db import SessionLocal
 from app.models import ThreadTicket, TicketStatus, BlacklistedSender
-from app.services.gmail_client import get_gmail_service, is_from_me, parse_email_address
+from app.services.gmail_client import get_gmail_service, gmail_user_id, is_from_me, parse_email_address
 from app.services.state import get_state, set_state
 
 logger = logging.getLogger(__name__)
@@ -42,7 +42,7 @@ def _thread_ids_from_history(service, start_history_id: str) -> Set[str]:
     page_token = None
     while True:
         req = service.users().history().list(
-            userId="me",
+            userId=gmail_user_id(),
             startHistoryId=start_history_id,
             historyTypes=["messageAdded", "labelAdded", "labelRemoved"],
             labelId="INBOX",
@@ -69,40 +69,61 @@ def _thread_ids_from_history(service, start_history_id: str) -> Set[str]:
     return thread_ids
 
 
-def _list_thread_ids_in_range(service, start: str | None, end: str | None, max_threads: int) -> List[str]:
-    """List thread ids for the given date range, paging until max_threads."""
+
+def _list_thread_ids_in_range(service, start: str | None, end: str | None, max_threads: int, include_anywhere: bool) -> tuple[List[str], bool]:
+    """List thread ids for the given date range, paging until max_threads.
+
+    Returns (thread_ids, hit_limit).
+    - include_anywhere=True adds Gmail search 'in:anywhere' and does not restrict labelIds to INBOX.
+    """
     q_parts: List[str] = []
+    if include_anywhere:
+        q_parts.append("in:anywhere")
     if start:
         q_parts.append(f"after:{_yyyymmdd_to_gmail(start)}")
     if end:
+        # Gmail before: is exclusive; use end+1 day for inclusive UX
         q_parts.append(f"before:{_yyyymmdd_to_gmail(_increment_day(end))}")
     q = " ".join(q_parts) if q_parts else None
 
     thread_ids: List[str] = []
     page_token = None
+    hit_limit = False
+
     while True:
-        resp = service.users().threads().list(
-            userId="me",
-            labelIds=["INBOX"],
-            q=q,
-            maxResults=min(500, max_threads - len(thread_ids)),
-            pageToken=page_token,
-        ).execute()
+        kwargs = {
+            "userId": gmail_user_id(),
+            "maxResults": min(500, max_threads - len(thread_ids)),
+            "pageToken": page_token,
+        }
+        if q:
+            kwargs["q"] = q
+        if not include_anywhere:
+            kwargs["labelIds"] = ["INBOX"]
+
+        # If we've already hit the limit, stop.
+        if kwargs["maxResults"] <= 0:
+            hit_limit = True
+            break
+
+        resp = service.users().threads().list(**kwargs).execute()
 
         for t in resp.get("threads", []) or []:
             tid = t.get("id")
             if tid:
                 thread_ids.append(tid)
             if len(thread_ids) >= max_threads:
-                return thread_ids
+                hit_limit = True
+                break
+
+        if hit_limit:
+            break
 
         page_token = resp.get("nextPageToken")
         if not page_token:
             break
-        if len(thread_ids) >= max_threads:
-            break
 
-    return thread_ids
+    return thread_ids, hit_limit
 
 
 def _upsert_ticket_from_thread(db: Session, service, thread_id: str) -> bool:
@@ -111,7 +132,7 @@ def _upsert_ticket_from_thread(db: Session, service, thread_id: str) -> bool:
     Returns True if ticket was updated/created, False if skipped (e.g., blacklisted).
     """
     th = service.users().threads().get(
-        userId="me",
+        userId=gmail_user_id(),
         id=thread_id,
         format="metadata",
         metadataHeaders=["From", "Subject", "Date", "Message-ID", "In-Reply-To", "References"],
@@ -194,15 +215,16 @@ def sync_inbox_threads(
             return {"ok": False, "error": str(e)}
 
         # Always read current historyId so we can advance the watermark at the end.
-        profile = service.users().getProfile(userId="me").execute()
+        profile = service.users().getProfile(userId=gmail_user_id()).execute()
         current_history_id = str(profile.get("historyId") or "").strip() or None
 
         thread_ids: List[str]
         used_history = False
+        hit_limit = False
 
         if start or end:
             # Range sync via Gmail search.
-            thread_ids = _list_thread_ids_in_range(service, start=start, end=end, max_threads=max_threads)
+            thread_ids, hit_limit = _list_thread_ids_in_range(service, start=start, end=end, max_threads=max_threads, include_anywhere=include_anywhere)
         else:
             # Daily/ongoing sync: prefer historyId (accurate, doesn't miss messages).
             last_history_id = get_state(db, "gmail_history_id")
@@ -210,6 +232,9 @@ def sync_inbox_threads(
                 try:
                     tids = _thread_ids_from_history(service, start_history_id=last_history_id)
                     thread_ids = list(tids)
+                    if len(thread_ids) > max_threads:
+                        thread_ids = thread_ids[:max_threads]
+                        hit_limit = True
                     used_history = True
                 except HttpError as he:
                     # If startHistoryId is too old, Gmail returns 404. Fall back to a small recent pull.
@@ -217,13 +242,13 @@ def sync_inbox_threads(
                         logger.warning("HistoryId too old; falling back to recent sync and resetting watermark.")
                         # Pull last 7 days to rebuild state. (This is a compromise, but avoids missing current work.)
                         recent_start = (date.today() - timedelta(days=7)).isoformat()
-                        thread_ids = _list_thread_ids_in_range(service, start=recent_start, end=None, max_threads=max_threads)
+                        thread_ids, hit_limit = _list_thread_ids_in_range(service, start=recent_start, end=None, max_threads=max_threads, include_anywhere=False)
                     else:
                         raise
             else:
                 # First sync: pull a recent window (7 days) and set watermark.
                 recent_start = (date.today() - timedelta(days=7)).isoformat()
-                thread_ids = _list_thread_ids_in_range(service, start=recent_start, end=None, max_threads=max_threads)
+                thread_ids, hit_limit = _list_thread_ids_in_range(service, start=recent_start, end=None, max_threads=max_threads, include_anywhere=False)
 
         upserted = 0
         skipped = 0
@@ -250,6 +275,9 @@ def sync_inbox_threads(
             "skipped": skipped,
             "mode": "history" if used_history else ("range" if (start or end) else "recent"),
             "watermark": current_history_id,
+            "hit_limit": hit_limit,
+            "target_mailbox": gmail_user_id(),
+            "include_anywhere": bool(include_anywhere),
         }
     finally:
         db.close()

@@ -1,6 +1,6 @@
 import base64
 from sqlalchemy.orm import Session
-from app.services.gmail_client import get_gmail_service
+from app.services.gmail_client import get_gmail_service, gmail_user_id
 
 def _headers_map(headers: list[dict]) -> dict:
     m = {}
@@ -34,7 +34,7 @@ def gmail_thread_link(thread_id: str) -> str:
 
 def get_thread_details(db: Session, thread_id: str) -> dict:
     service = get_gmail_service(db)
-    th = service.users().threads().get(userId="me", id=thread_id, format="full").execute()
+    th = service.users().threads().get(userId=gmail_user_id(), id=thread_id, format="full").execute()
 
     messages_out = []
     for m in th.get("messages", []):

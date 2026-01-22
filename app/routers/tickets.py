@@ -7,7 +7,7 @@ from datetime import datetime
 from pydantic import BaseModel
 
 from app.db import get_db
-from app.models import ThreadTicket, TicketStatus
+from app.models import ThreadTicket, TicketStatus, AppState
 from app.schemas import TicketListOut, TicketOut, StatusUpdateIn, DraftAckOut, SendAckIn
 from app.services.ai_reply import draft_acknowledgement
 from app.services.gmail_send import send_reply_in_thread
@@ -147,3 +147,24 @@ def send_ack(thread_id: str, payload: SendAckIn, db: Session = Depends(get_db)):
 
     db.commit()
     return {"ok": True}
+
+class FlushIn(BaseModel):
+    confirm: str
+
+@router.post("/admin/flush")
+def flush_database(payload: FlushIn, db: Session = Depends(get_db)):
+    """Delete all tickets and sync watermarks (does not remove Google connection).
+
+    Safety: requires confirm == 'FLUSH'.
+    """
+    if (payload.confirm or "").strip().upper() != "FLUSH":
+        raise HTTPException(status_code=400, detail="Confirmation required. Send confirm='FLUSH'.")
+
+    # Delete tickets
+    db.query(ThreadTicket).delete(synchronize_session=False)
+
+    # Clear sync-related state (keep other state keys if you add them later)
+    db.query(AppState).delete(synchronize_session=False)
+
+    db.commit()
+    return {"ok": True, "message": "Database flushed (tickets and state cleared)."}

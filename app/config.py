@@ -15,6 +15,13 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_SECRET: str
     GOOGLE_REDIRECT_URI: str
 
+    # Optional: Gmail mailbox delegation. If set, API calls will target this mailbox.
+    # Example: sign in as management@... but read/send for admin@...
+    DELEGATED_MAILBOX: str | None = None
+
+    # If True, date-range sync will search in:anywhere (includes archived).
+    SYNC_INCLUDE_ANYWHERE: bool = False
+
     MY_EMAILS: str = ""
     POLL_INTERVAL_SECONDS: int = 300
     REMINDER_INTERVAL_SECONDS: int = 900

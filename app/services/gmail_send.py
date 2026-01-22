@@ -4,7 +4,7 @@ import base64
 from email.message import EmailMessage
 from sqlalchemy.orm import Session
 
-from app.services.gmail_client import get_gmail_service
+from app.services.gmail_client import get_gmail_service, gmail_user_id
 
 def send_reply_in_thread(
     db: Session,
@@ -25,6 +25,6 @@ def send_reply_in_thread(
 
     raw = base64.urlsafe_b64encode(msg.as_bytes()).decode("utf-8")
     service.users().messages().send(
-        userId="me",
+        userId=gmail_user_id(),
         body={"raw": raw, "threadId": thread_id},
     ).execute()
