@@ -14,6 +14,16 @@ async function apiFetch(url, options = {}) {
     return fetch(url, opts);
 }
 
+function escapeHtml(text) {
+    if (typeof text !== "string") return "";
+    return text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
 // Date filter applied to ticket list (set when you click Fetch Now).
 let currentDateFilter = { start: "", end: "" };
 
@@ -615,6 +625,18 @@ async function loadTickets() {
     const r = await apiFetch(url);
     const data = await r.json();
 
+    const items = Array.isArray(data.items) ? data.items : [];
+    // If there are no items returned, force KPIs to zero to avoid displaying stale counts.
+    if (items.length === 0) {
+        data.counts = {
+            not_replied: 0,
+            pending: 0,
+            in_progress: 0,
+            responded: 0,
+            no_reply_needed: 0,
+        };
+    }
+
     const c = data.counts || {};
 
     // Legacy KPI tiles (tailwind)
@@ -647,9 +669,9 @@ async function loadTickets() {
     if (!list) return;
     list.innerHTML = "";
 
-    (data.items || []).forEach(t => list.appendChild(renderTicket(t)));
+    items.forEach(t => list.appendChild(renderTicket(t)));
 
-    if ((data.items || []).length === 0) {
+    if (items.length === 0) {
         list.innerHTML = `<div class="muted small" style="padding:10px">No tickets in this tab.</div>`;
     }
 }
