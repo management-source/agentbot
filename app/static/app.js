@@ -1,971 +1,1102 @@
-/* app/static/app.js
- * Compatible with the user-provided Tailwind index.html (onclick functions + IDs).
- * Includes:
- * - Auth (login modal + token storage)
- * - Google connect/manage (redirect fallback)
- * - Autopilot start/stop/fetch with date range and incremental
- * - Tickets list rendering + tab filters + actions (status/category/assignee)
- * - Thread modal open
- * - Quick Reply modal + send
- * - Settings modal (localStorage prefs)
- * - Flush DB (danger)
- * - Users modal (Admin)
- */
+let currentTab = "all";
+let currentAckThreadId = null;
 
-/* ----------------------------- API ROUTES ----------------------------- */
-/** If any of your backend paths differ, adjust ONLY here. */
-const API = {
-    auth: {
-        login: ["/user-auth/login", "/auth/login"],
-        me: ["/user-auth/me", "/auth/me"],
-        users: ["/user-auth/users", "/auth/users"],
-    },
-    google: {
-        status: ["/google/status", "/auth/google/status", "/oauth/status"],
-        start: ["/google/connect", "/auth/google/connect", "/oauth/google/start", "/auth/google"],
-        disconnect: ["/google/disconnect", "/auth/google/disconnect"],
-    },
-    autopilot: {
-        status: ["/autopilot/status", "/api/autopilot/status"],
-        fetch: ["/autopilot/fetch", "/autopilot/fetch-now", "/autopilot/fetch_now", "/api/autopilot/fetch"],
-        start: ["/autopilot/start", "/autopilot/run", "/autopilot/enable", "/api/autopilot/start"],
-        stop: ["/autopilot/stop", "/autopilot/pause", "/autopilot/disable", "/api/autopilot/stop"],
-    },
-    tickets: {
-        list: ["/tickets", "/api/tickets"],
-        patch: (threadId) => [
-            `/tickets/${encodeURIComponent(threadId)}`,
-            `/api/tickets/${encodeURIComponent(threadId)}`,
-        ],
-        status: (threadId) => [
-            `/tickets/${encodeURIComponent(threadId)}/status`,
-            `/api/tickets/${encodeURIComponent(threadId)}/status`,
-        ],
-        category: (threadId) => [
-            `/tickets/${encodeURIComponent(threadId)}/category`,
-            `/api/tickets/${encodeURIComponent(threadId)}/category`,
-        ],
-        assign: (threadId) => [
-            `/tickets/${encodeURIComponent(threadId)}/assign`,
-            `/api/tickets/${encodeURIComponent(threadId)}/assign`,
-        ],
-        blacklist: (threadId) => [
-            `/tickets/${encodeURIComponent(threadId)}/blacklist`,
-            `/api/tickets/${encodeURIComponent(threadId)}/blacklist`,
-        ],
-    },
-    threads: {
-        get: (threadId) => [
-            `/threads/${encodeURIComponent(threadId)}`,
-            `/api/threads/${encodeURIComponent(threadId)}`,
-        ],
-        reply: (threadId) => [
-            `/threads/${encodeURIComponent(threadId)}/reply`,
-            `/api/threads/${encodeURIComponent(threadId)}/reply`,
-            `/tickets/${encodeURIComponent(threadId)}/reply`,
-            `/api/tickets/${encodeURIComponent(threadId)}/reply`,
-        ],
-    },
-    admin: {
-        flush: ["/admin/flush", "/admin/flush-db", "/settings/flush", "/danger/flush", "/api/admin/flush"],
-    },
-};
+// Local user auth (JWT)
+let authToken = localStorage.getItem("agent_auth_token") || "";
+let currentUser = null;
+let usersCache = [];
 
-/* ----------------------------- STATE ----------------------------- */
-const state = {
-    token: localStorage.getItem("agentbot_token") || null,
-    me: null,
-    google: { connected: false, email: null },
-    autopilot: null,
-    users: [],
-    tickets: [],
-    tab: "all", // all | not_replied | pending | in_progress | responded | no_reply_needed
-    settings: {
-        defaultHtml: JSON.parse(localStorage.getItem("setDefaultHtml") || "true"),
-        proxyRemote: JSON.parse(localStorage.getItem("setBlockRemote") || "true"),
-        compact: JSON.parse(localStorage.getItem("setCompact") || "false"),
-    },
-    currentThreadId: null,
-};
-
-/* ----------------------------- HELPERS ----------------------------- */
-function $(id) { return document.getElementById(id); }
-
-function escapeHtml(input) {
-    if (input === null || input === undefined) return "";
-    return String(input)
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#039;");
-}
-
-function showModal(id) { const el = $(id); if (el) el.classList.remove("hidden"); }
-function hideModal(id) { const el = $(id); if (el) el.classList.add("hidden"); }
-
-function setText(id, text) { const el = $(id); if (el) el.textContent = text; }
-
-function setDot(id, colorClass) {
-    const el = $(id);
-    if (!el) return;
-    el.className = `h-2 w-2 rounded-full ${colorClass}`;
-}
-
-function fmtDateTime(iso) {
-    if (!iso) return "—";
-    try { return new Date(iso).toLocaleString(); } catch { return iso; }
-}
-
-function isOverdue(slaDueAt) {
-    if (!slaDueAt) return false;
-    try { return new Date(slaDueAt).getTime() < Date.now(); } catch { return false; }
-}
-
-async function apiFetch(path, opts = {}) {
-    const headers = new Headers(opts.headers || {});
-    if (!headers.has("Content-Type")) headers.set("Content-Type", "application/json");
-    if (state.token) headers.set("Authorization", `Bearer ${state.token}`);
-
-    const resp = await fetch(path, { ...opts, headers });
-    const ct = resp.headers.get("content-type") || "";
-    const isJson = ct.includes("application/json");
-    const data = isJson ? await resp.json().catch(() => null) : await resp.text();
-
-    if (resp.status === 401) {
-        // Kick to login
-        state.token = null;
-        localStorage.removeItem("agentbot_token");
-        state.me = null;
-        updateHeader();
-        showModal("loginModal");
-        throw new Error("Unauthorized");
+async function apiFetch(url, options = {}) {
+    const opts = { ...options, headers: { ...(options.headers || {}) } };
+    if (authToken) {
+        opts.headers["Authorization"] = `Bearer ${authToken}`;
     }
-
-    if (!resp.ok) {
-        const msg = data?.detail || data?.message || (typeof data === "string" ? data : `HTTP ${resp.status}`);
-        // Normalize 404 detection for fallback loop
-        const err = new Error(msg);
-        err.httpStatus = resp.status;
-        throw err;
-    }
-
-    return data;
+    return fetch(url, opts);
 }
 
-async function apiFetchAny(paths, opts = {}) {
-    const list = Array.isArray(paths) ? paths : [paths];
-    let lastErr = null;
+// Date filter applied to ticket list (set when you click Fetch Now).
+let currentDateFilter = { start: "", end: "" };
 
-    for (const p of list) {
-        try {
-            return await apiFetch(p, opts);
-        } catch (e) {
-            lastErr = e;
-            if (e?.httpStatus === 404) continue;
-            // If method mismatch, try next
-            const msg = String(e?.message || "");
-            if (msg.toLowerCase().includes("method not allowed")) continue;
-            break;
-        }
-    }
-    throw lastErr || new Error("Request failed");
-}
+let googleConnected = false;
 
-/* ----------------------------- AUTH ----------------------------- */
-async function doLogin() {
-    const email = ($("loginEmail")?.value || "").trim();
-    const password = $("loginPassword")?.value || "";
-    setText("loginError", "");
+async function refreshGoogleStatus() {
+    const btn = document.getElementById("googleBtn");
+    if (!btn) return;
 
+    btn.disabled = false;
     try {
-        const data = await apiFetchAny(API.auth.login, {
-            method: "POST",
-            body: JSON.stringify({ email, password }),
-        });
+        const r = await fetch("/auth/status");
+        if (!r.ok) {
+            // Most likely: OAuth not configured on server.
+            googleConnected = false;
+            btn.textContent = "Google OAuth not configured";
+            btn.className = "btn";
+            btn.disabled = true;
 
-        const token = data?.access_token;
-        if (!token) throw new Error("Login failed (no token)");
-
-        state.token = token;
-        localStorage.setItem("agentbot_token", token);
-        hideModal("loginModal");
-
-        await bootstrapAfterAuth();
-    } catch (e) {
-        setText("loginError", e?.message || String(e));
-    }
-}
-
-function logout() {
-    state.token = null;
-    localStorage.removeItem("agentbot_token");
-    state.me = null;
-    updateHeader();
-    showModal("loginModal");
-}
-
-/* ----------------------------- GOOGLE ----------------------------- */
-async function googleConnectOrManage() {
-    // If connected, we can (optionally) disconnect. For now, just re-run status or redirect.
-    try {
-        const s = await apiFetchAny(API.google.status, { method: "GET" });
-        const connected = !!(s?.connected || s?.google_connected);
-        if (!connected) {
-            // Start OAuth (some backends expect redirect rather than fetch)
-            await startGoogleOAuth();
-        } else {
-            alert("Google is connected. If you need to re-authorize, disconnect in backend or revoke in Google and click Connect again.");
-        }
-    } catch {
-        // If status endpoint doesn’t exist, just try redirect start.
-        await startGoogleOAuth();
-    }
-}
-
-async function startGoogleOAuth() {
-    // Try calling a start endpoint; if it fails/404, redirect browser to a likely OAuth path.
-    try {
-        const r = await apiFetchAny(API.google.start, { method: "GET" });
-        // If backend returns a URL, redirect there
-        const url = r?.auth_url || r?.url;
-        if (url) window.location.href = url;
-        else window.location.href = API.google.start[API.google.start.length - 1];
-    } catch {
-        // redirect fallback
-        window.location.href = "/auth/google";
-    }
-}
-
-/* ----------------------------- AUTOPILOT ----------------------------- */
-function clearDateFilter() {
-    if ($("startDate")) $("startDate").value = "";
-    if ($("endDate")) $("endDate").value = "";
-    // Keep incremental checked by default
-    if ($("incrementalSync")) $("incrementalSync").checked = true;
-    if ($("includeAnywhere")) $("includeAnywhere").checked = false;
-}
-
-function buildFetchParams() {
-    const params = new URLSearchParams();
-    const from = $("startDate")?.value || "";
-    const to = $("endDate")?.value || "";
-    const maxThreads = $("maxThreads")?.value || "500";
-    const incremental = $("incrementalSync")?.checked ? "1" : "0";
-    const allMail = $("includeAnywhere")?.checked ? "1" : "0";
-
-    // Support multiple common names
-    if (from) { params.set("from", from); params.set("from_date", from); params.set("start_date", from); }
-    if (to) { params.set("to", to); params.set("to_date", to); params.set("end_date", to); }
-
-    params.set("limit", String(maxThreads));
-    params.set("max_threads", String(maxThreads));
-    params.set("maxResults", String(maxThreads));
-
-    params.set("incremental", incremental);
-    params.set("incremental_sync", incremental);
-    params.set("all_mail", allMail);
-    params.set("allMail", allMail);
-
-    return params;
-}
-
-async function fetchNow() {
-    $("fetchBtn")?.setAttribute("disabled", "true");
-    setText("fetchBtn", "Fetching…");
-
-    try {
-        const params = buildFetchParams();
-
-        // Many implementations expect POST with querystring; try that first.
-        const urlVariants = API.autopilot.fetch.map(p => `${p}?${params.toString()}`);
-        await apiFetchAny(urlVariants, { method: "POST" });
-
-        await refreshAutopilotStatus();
-        await loadTickets();
-    } catch (e) {
-        console.error("fetchNow error:", e);
-        alert(`Fetch failed: ${e?.message || e}`);
-    } finally {
-        $("fetchBtn")?.removeAttribute("disabled");
-        setText("fetchBtn", "Fetch Now");
-    }
-}
-
-async function startAutopilot() {
-    try {
-        await apiFetchAny(API.autopilot.start, { method: "POST" });
-        await refreshAutopilotStatus();
-    } catch (e) {
-        alert(`Start failed: ${e?.message || e}`);
-    }
-}
-
-async function stopAutopilot() {
-    try {
-        await apiFetchAny(API.autopilot.stop, { method: "POST" });
-        await refreshAutopilotStatus();
-    } catch (e) {
-        alert(`Stop failed: ${e?.message || e}`);
-    }
-}
-
-async function refreshAutopilotStatus() {
-    try {
-        const s = await apiFetchAny(API.autopilot.status, { method: "GET" });
-        state.autopilot = s;
-
-        const running = !!(s?.running || s?.active);
-        setDot("statusDot", running ? "bg-green-500" : "bg-red-500");
-        setText("autopilotStatus", running ? "Active" : "Stopped");
-
-        setText("pollEvery", String(s?.interval_minutes ?? s?.interval ?? 5));
-        setText("lastSync", fmtDateTime(s?.last_sync_at || s?.last_sync));
-        setText("nextRun", fmtDateTime(s?.next_run_at || s?.next_run));
-
-        // mailbox badge if available
-        const mailbox = s?.mailbox || s?.gmail_account || s?.email;
-        if (mailbox) setText("mailboxBadge", `Mailbox: ${mailbox}`);
-
-        // google connection badge button
-        const connected = !!(s?.google_connected || s?.connected);
-        state.google.connected = connected;
-        if ($("googleBtn")) {
-            $("googleBtn").textContent = connected ? "Google Connected" : "Connect to Google";
-            $("googleBtn").className = connected
-                ? "px-4 py-2 rounded-lg border text-emerald-700 bg-emerald-50 hover:bg-emerald-100"
-                : "px-4 py-2 rounded-lg border text-slate-700 hover:bg-slate-50";
-        }
-    } catch (e) {
-        // Don’t block UI
-        console.warn("autopilot status unavailable:", e?.message || e);
-    }
-}
-
-/* ----------------------------- TICKETS ----------------------------- */
-function normalizeTicket(raw) {
-    // Support different backend shapes
-    return {
-        thread_id: raw.thread_id || raw.threadId || raw.id,
-        subject: raw.subject || "(no subject)",
-        from_name: raw.from_name || raw.fromName || "",
-        from_email: raw.from_email || raw.fromEmail || raw.sender_email || "",
-        snippet: raw.snippet || raw.preview || "",
-        status: raw.status || "pending",
-        priority: raw.priority || raw.priority_label || "",
-        category: raw.category || raw.intent || "GENERAL",
-        is_unread: raw.is_unread ?? raw.unread ?? false,
-        last_message_at: raw.last_message_at || raw.updated_at || raw.lastMessageAt,
-        sla_due_at: raw.sla_due_at || raw.slaDueAt || null,
-        assignee_user_id: raw.assignee_user_id || raw.assigneeUserId || raw.assignee_id || null,
-        gmail_thread_url: raw.gmail_thread_url || raw.gmailUrl || null,
-    };
-}
-
-function computeCounts(tickets) {
-    // counts reflect currently selected tab filter
-    const counts = {
-        notReplied: 0,
-        pending: 0,
-        inProgress: 0,
-        responded: 0,
-        noReply: 0,
-    };
-    for (const t of tickets) {
-        const st = String(t.status || "").toLowerCase();
-        if (st === "pending") counts.pending++;
-        if (st === "in_progress") counts.inProgress++;
-        if (st === "responded") counts.responded++;
-        if (st === "no_reply_needed" || st === "reply_not_needed") counts.noReply++;
-
-        const pri = String(t.priority || "").toLowerCase();
-        if (pri === "priority" && st !== "responded" && st !== "no_reply_needed" && st !== "reply_not_needed") {
-            counts.notReplied++;
-        }
-    }
-    return counts;
-}
-
-function applyTab(tickets) {
-    const tab = state.tab;
-    if (tab === "all") return tickets;
-
-    const map = {
-        not_replied: (t) => {
-            const pri = String(t.priority || "").toLowerCase() === "priority";
-            const st = String(t.status || "").toLowerCase();
-            return pri && st !== "responded" && st !== "no_reply_needed" && st !== "reply_not_needed";
-        },
-        pending: (t) => String(t.status || "").toLowerCase() === "pending",
-        in_progress: (t) => String(t.status || "").toLowerCase() === "in_progress",
-        responded: (t) => String(t.status || "").toLowerCase() === "responded",
-        no_reply_needed: (t) => {
-            const st = String(t.status || "").toLowerCase();
-            return st === "no_reply_needed" || st === "reply_not_needed";
-        },
-    };
-
-    const fn = map[tab];
-    return fn ? tickets.filter(fn) : tickets;
-}
-
-async function loadTickets() {
-    const data = await apiFetchAny(API.tickets.list, { method: "GET" });
-    const items = Array.isArray(data) ? data : (data?.items || data?.tickets || []);
-    state.tickets = items.map(normalizeTicket);
-
-    renderCountsAndList();
-}
-
-function renderCountsAndList() {
-    // IMPORTANT: KPI should reflect actual loaded tickets (not stale)
-    const all = state.tickets || [];
-    const counts = computeCounts(all);
-
-    setText("countNotReplied", String(counts.notReplied));
-    setText("countPending", String(counts.pending));
-    setText("countInProgress", String(counts.inProgress));
-    setText("countResponded", String(counts.responded));
-    setText("countNoReplyNeeded", String(counts.noReply));
-
-    const filtered = applyTab(all);
-    renderTicketList(filtered);
-}
-
-function roleBadge(role) {
-    const r = String(role || "").toUpperCase();
-    const cls = {
-        ADMIN: "bg-indigo-50 text-indigo-700 border-indigo-200",
-        PM: "bg-sky-50 text-sky-700 border-sky-200",
-        LEASING: "bg-emerald-50 text-emerald-700 border-emerald-200",
-        SALES: "bg-amber-50 text-amber-700 border-amber-200",
-        ACCOUNTS: "bg-orange-50 text-orange-700 border-orange-200",
-        READONLY: "bg-slate-50 text-slate-700 border-slate-200",
-    }[r] || "bg-slate-50 text-slate-700 border-slate-200";
-
-    return `<span class="px-2 py-1 rounded-full border text-xs ${cls}">${escapeHtml(r || "USER")}</span>`;
-}
-
-function ticketBadge(label, cls) {
-    return `<span class="px-2 py-1 rounded-full border text-xs ${cls}">${escapeHtml(label)}</span>`;
-}
-
-function userName(id) {
-    const u = state.users.find(x => String(x.id) === String(id));
-    return u ? (u.full_name || u.email) : "Unassigned";
-}
-
-function renderTicketList(tickets) {
-    const list = $("ticketList");
-    if (!list) return;
-
-    if (!tickets.length) {
-        list.innerHTML = `
-      <div class="bg-white rounded-xl shadow border p-5">
-        <div class="font-semibold text-slate-900">No tickets</div>
-        <div class="text-sm text-slate-500 mt-1">Click <b>Fetch Now</b> or change filters.</div>
-      </div>
-    `;
-        return;
-    }
-
-    const compact = !!state.settings.compact;
-
-    list.innerHTML = tickets.map(t => {
-        const unread = t.is_unread;
-        const overdue = isOverdue(t.sla_due_at);
-        const pri = String(t.priority || "").toLowerCase() === "priority";
-
-        const badges = [
-            pri ? ticketBadge("Priority", "bg-amber-50 text-amber-700 border-amber-200") : "",
-            unread ? ticketBadge("Unread", "bg-indigo-50 text-indigo-700 border-indigo-200") : "",
-            overdue ? ticketBadge("Overdue", "bg-red-50 text-red-700 border-red-200") : "",
-            ticketBadge(t.category || "GENERAL", "bg-slate-50 text-slate-700 border-slate-200"),
-        ].filter(Boolean).join(" ");
-
-        const assigneeLabel = t.assignee_user_id ? userName(t.assignee_user_id) : "Unassigned";
-
-        return `
-      <div class="bg-white rounded-xl shadow border p-${compact ? "4" : "6"}">
-        <div class="flex items-start justify-between gap-4">
-          <div class="min-w-0">
-            <div class="flex flex-wrap items-center gap-2">
-              <div class="font-semibold text-slate-900 truncate">${escapeHtml(t.subject)}</div>
-              ${badges}
-            </div>
-            <div class="text-sm text-slate-500 mt-1">
-              ${escapeHtml(t.from_name)} ${t.from_email ? `&lt;${escapeHtml(t.from_email)}&gt;` : ""}
-            </div>
-            <div class="text-sm text-slate-700 mt-2">${escapeHtml(t.snippet || "")}</div>
-            <div class="text-xs text-slate-500 mt-3">
-              Last: ${escapeHtml(fmtDateTime(t.last_message_at))} • SLA: ${escapeHtml(fmtDateTime(t.sla_due_at))}
-            </div>
-          </div>
-
-          <div class="w-full max-w-sm flex flex-col gap-2">
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
-              <select class="px-3 py-2 rounded-lg border bg-white text-sm"
-                      onchange="updateTicketStatus('${escapeHtml(t.thread_id)}', this.value)">
-                ${statusOptions(t.status)}
-              </select>
-
-              <select class="px-3 py-2 rounded-lg border bg-white text-sm"
-                      onchange="updateTicketCategory('${escapeHtml(t.thread_id)}', this.value)">
-                ${categoryOptions(t.category)}
-              </select>
-
-              <select class="px-3 py-2 rounded-lg border bg-white text-sm"
-                      onchange="updateTicketAssignee('${escapeHtml(t.thread_id)}', this.value)">
-                ${assigneeOptions(t.assignee_user_id)}
-              </select>
-            </div>
-
-            <div class="flex gap-2 justify-end">
-              <button class="px-4 py-2 rounded-lg border text-slate-700 hover:bg-slate-50"
-                      onclick="openThreadModal('${escapeHtml(t.thread_id)}')">Open</button>
-
-              <button class="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700"
-                      onclick="openAckModal('${escapeHtml(t.thread_id)}')">Quick Reply</button>
-            </div>
-
-            <div class="text-xs text-slate-500 text-right">
-              Assignee: ${escapeHtml(assigneeLabel)}
-            </div>
-          </div>
-        </div>
-      </div>
-    `;
-    }).join("");
-}
-
-function statusOptions(current) {
-    const cur = String(current || "pending").toLowerCase();
-    const opts = [
-        ["pending", "Pending"],
-        ["in_progress", "In Progress"],
-        ["responded", "Responded"],
-        ["no_reply_needed", "Reply Not Needed"],
-    ];
-    return opts.map(([v, label]) => `<option value="${v}" ${cur === v ? "selected" : ""}>${label}</option>`).join("");
-}
-
-function categoryOptions(current) {
-    const cur = String(current || "GENERAL").toUpperCase();
-    const opts = ["MAINTENANCE", "RENT_ARREARS", "LEASING", "COMPLIANCE", "SALES", "GENERAL"];
-    return opts.map(v => `<option value="${v}" ${cur === v ? "selected" : ""}>${v}</option>`).join("");
-}
-
-function assigneeOptions(currentId) {
-    const cur = currentId ? String(currentId) : "";
-    const base = `<option value="">Unassigned</option>`;
-    const users = state.users.map(u => {
-        const id = String(u.id);
-        const label = u.full_name || u.email;
-        return `<option value="${escapeHtml(id)}" ${cur === id ? "selected" : ""}>${escapeHtml(label)}</option>`;
-    }).join("");
-    return base + users;
-}
-
-/* ----------------------------- TICKET ACTIONS ----------------------------- */
-async function updateTicketStatus(threadId, status) {
-    try {
-        // Try explicit endpoint first, then patch fallback
-        try {
-            await apiFetchAny(API.tickets.status(threadId), { method: "PATCH", body: JSON.stringify({ status }) });
-        } catch {
-            await apiFetchAny(API.tickets.patch(threadId), { method: "PATCH", body: JSON.stringify({ status }) });
-        }
-        // update local state
-        const t = state.tickets.find(x => x.thread_id === threadId);
-        if (t) t.status = status;
-        renderCountsAndList();
-    } catch (e) {
-        alert(`Status update failed: ${e?.message || e}`);
-    }
-}
-
-async function updateTicketCategory(threadId, category) {
-    try {
-        try {
-            await apiFetchAny(API.tickets.category(threadId), { method: "PATCH", body: JSON.stringify({ category }) });
-        } catch {
-            await apiFetchAny(API.tickets.patch(threadId), { method: "PATCH", body: JSON.stringify({ category }) });
-        }
-        const t = state.tickets.find(x => x.thread_id === threadId);
-        if (t) t.category = category;
-        renderCountsAndList();
-    } catch (e) {
-        alert(`Category update failed: ${e?.message || e}`);
-    }
-}
-
-async function updateTicketAssignee(threadId, assigneeUserId) {
-    try {
-        const payload = { assignee_user_id: assigneeUserId ? assigneeUserId : null };
-        try {
-            await apiFetchAny(API.tickets.assign(threadId), { method: "PATCH", body: JSON.stringify(payload) });
-        } catch {
-            await apiFetchAny(API.tickets.patch(threadId), { method: "PATCH", body: JSON.stringify(payload) });
-        }
-        const t = state.tickets.find(x => x.thread_id === threadId);
-        if (t) t.assignee_user_id = assigneeUserId || null;
-        renderCountsAndList();
-    } catch (e) {
-        alert(`Assignee update failed: ${e?.message || e}`);
-    }
-}
-
-/* ----------------------------- THREAD MODAL ----------------------------- */
-async function openThreadModal(threadId) {
-    state.currentThreadId = threadId;
-    showModal("threadModal");
-    setText("threadContent", "Loading…");
-
-    try {
-        const data = await apiFetchAny(API.threads.get(threadId), { method: "GET" });
-
-        // Gmail link
-        const gmailUrl = data?.gmail_thread_url || data?.gmailUrl || data?.thread_url || null;
-        const gmailLink = $("gmailLink");
-        if (gmailLink) {
-            gmailLink.href = gmailUrl || "#";
-            gmailLink.style.display = gmailUrl ? "" : "none";
-        }
-
-        // Render messages
-        const messages = Array.isArray(data?.messages) ? data.messages : (Array.isArray(data) ? data : []);
-        if (!messages.length && (data?.html || data?.thread_html)) {
-            // fallback single blob
-            renderThreadHtmlBlob(data?.thread_html || data?.html);
+            const pill = document.getElementById("googlePill");
+            if (pill) pill.style.display = "none";
             return;
         }
 
-        const html = messages.map((m) => renderMessage(m)).join("");
-        $("threadContent").innerHTML = html || `<div class="text-sm text-slate-500">No messages returned.</div>`;
-    } catch (e) {
-        $("threadContent").innerHTML = `<div class="text-sm text-red-600">Failed to load thread: ${escapeHtml(e?.message || e)}</div>`;
+        const j = await r.json();
+        googleConnected = !!j.connected;
+
+        const target = (j.target_mailbox || j.delegated_mailbox || "me");
+
+        const mb = document.getElementById("mailboxBadge");
+        if (mb) mb.textContent = googleConnected ? (`Mailbox: ${target}`) : "";
+
+        const mb2 = document.getElementById("mailboxLabel");
+        if (mb2) mb2.textContent = googleConnected ? target : "—";
+
+        const pill = document.getElementById("googlePill");
+        if (pill) pill.style.display = googleConnected ? "inline-flex" : "none";
+
+        if (googleConnected) {
+            btn.textContent = "Google Connected";
+            // Tailwind page expects tailwind classes, Good UI expects .btn
+            if (btn.className.includes("px-")) {
+                btn.className = "px-4 py-2 rounded-lg border bg-emerald-50 text-emerald-800 hover:bg-emerald-100";
+            } else {
+                btn.className = "btn";
+            }
+        } else {
+            btn.textContent = "Connect to Google";
+            if (btn.className.includes("px-")) {
+                btn.className = "px-4 py-2 rounded-lg border text-slate-700 hover:bg-slate-50";
+            } else {
+                btn.className = "btn";
+            }
+        }
+    } catch {
+        // If status check fails, keep button usable for login.
+        googleConnected = false;
+        btn.textContent = "Connect to Google";
+        if (btn.className.includes("px-")) {
+            btn.className = "px-4 py-2 rounded-lg border text-slate-700 hover:bg-slate-50";
+        } else {
+            btn.className = "btn";
+        }
     }
 }
 
-function closeThreadModal() {
-    hideModal("threadModal");
-    state.currentThreadId = null;
-}
-
-function renderThreadHtmlBlob(html) {
-    // Use iframe like your previous approach but safe-ish
-    const safe = html || "<div style='font-family:Arial;padding:16px'>No content</div>";
-    $("threadContent").innerHTML = `
-    <div class="border rounded-lg overflow-hidden">
-      <iframe sandbox="allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
-              class="w-full h-[60vh]" srcdoc="${safe.replaceAll('"', '&quot;')}"></iframe>
-    </div>
-  `;
-}
-
-function renderMessage(m) {
-    const from = m?.from_name || m?.from || "";
-    const date = fmtDateTime(m?.date || m?.internal_date || m?.received_at);
-    const subj = m?.subject || "";
-    const bodyText = m?.body_text || m?.text || "";
-    const bodyHtml = m?.body_html_sanitized || m?.body_html || m?.html || "";
-
-    const preferHtml = !!state.settings.defaultHtml && !!bodyHtml;
-
-    if (preferHtml) {
-        // Note: backend should sanitize already
-        return `
-      <div class="rounded-xl border p-4">
-        <div class="text-xs text-slate-500">${escapeHtml(from)} • ${escapeHtml(date)}</div>
-        ${subj ? `<div class="text-sm font-semibold text-slate-900 mt-1">${escapeHtml(subj)}</div>` : ""}
-        <div class="mt-3 border rounded-lg overflow-hidden">
-          <iframe sandbox="allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
-                  class="w-full h-[42vh]" srcdoc="${(bodyHtml || "").replaceAll('"', '&quot;')}"></iframe>
-        </div>
-      </div>
-    `;
+async function googleConnectOrManage() {
+    if (!googleConnected) {
+        window.location.href = "/auth/google/login";
+        return;
     }
 
-    return `
-    <div class="rounded-xl border p-4">
-      <div class="text-xs text-slate-500">${escapeHtml(from)} • ${escapeHtml(date)}</div>
-      ${subj ? `<div class="text-sm font-semibold text-slate-900 mt-1">${escapeHtml(subj)}</div>` : ""}
-      <div class="text-sm text-slate-700 mt-2 whitespace-pre-wrap">${escapeHtml(bodyText || "(no text body)")}</div>
-    </div>
-  `;
-}
-
-/* ----------------------------- QUICK REPLY ----------------------------- */
-function openAckModal(threadId) {
-    state.currentThreadId = threadId;
-    // Pre-fill subject/body if we can
-    const t = state.tickets.find(x => x.thread_id === threadId);
-    if (t) {
-        $("ackSubject").value = `Re: ${t.subject || ""}`.trim();
-        $("ackBody").value = "";
-    } else {
-        $("ackSubject").value = "";
-        $("ackBody").value = "";
-    }
-    showModal("ackModal");
-}
-
-function closeAckModal() {
-    hideModal("ackModal");
-}
-
-async function sendAckFromModal() {
-    const threadId = state.currentThreadId;
-    if (!threadId) return;
-
-    const subject = $("ackSubject")?.value || "";
-    const body = $("ackBody")?.value || "";
-
-    const btn = $("sendAckBtn");
-    if (btn) btn.setAttribute("disabled", "true");
+    const ok = confirm("Google is currently connected. Do you want to disconnect this account?");
+    if (!ok) return;
 
     try {
-        await apiFetchAny(API.threads.reply(threadId), {
-            method: "POST",
-            body: JSON.stringify({ subject, body }),
-        });
-
-        // Mark ticket responded as a convenience
-        await updateTicketStatus(threadId, "responded");
-        closeAckModal();
+        const r = await fetch("/auth/google/disconnect", { method: "POST" });
+        const t = await r.text();
+        if (!r.ok) {
+            alert(`Disconnect failed (${r.status}):\n\n${t}`);
+            return;
+        }
     } catch (e) {
-        alert(`Send failed: ${e?.message || e}`);
+        alert("Disconnect failed: " + e);
     } finally {
-        if (btn) btn.removeAttribute("disabled");
+        await refreshGoogleStatus();
     }
 }
 
-/* ----------------------------- SETTINGS MODAL ----------------------------- */
-function openSettings() {
-    // Load settings into checkboxes
-    if ($("setDefaultHtml")) $("setDefaultHtml").checked = !!state.settings.defaultHtml;
-    if ($("setBlockRemote")) $("setBlockRemote").checked = !!state.settings.proxyRemote;
-    if ($("setCompact")) $("setCompact").checked = !!state.settings.compact;
-    showModal("settingsModal");
-}
+// -------------------------
+// Settings (persisted in localStorage)
+// -------------------------
+const SETTINGS_KEY = "agent_settings_v1";
+let settings = {
+    defaultHtmlView: false,
+    proxyRemoteImages: true,
+    compactTickets: false,
+};
 
-function closeSettings() {
-    hideModal("settingsModal");
-}
-
-function applySettingsFromModal() {
-    state.settings.defaultHtml = !!$("setDefaultHtml")?.checked;
-    state.settings.proxyRemote = !!$("setBlockRemote")?.checked;
-    state.settings.compact = !!$("setCompact")?.checked;
-
-    localStorage.setItem("setDefaultHtml", JSON.stringify(state.settings.defaultHtml));
-    localStorage.setItem("setBlockRemote", JSON.stringify(state.settings.proxyRemote));
-    localStorage.setItem("setCompact", JSON.stringify(state.settings.compact));
-
-    closeSettings();
-    renderCountsAndList();
-}
-
-async function flushDatabase() {
-    const confirmText = prompt('Type FLUSH to confirm deleting all tickets and sync state:');
-    if (confirmText !== "FLUSH") return;
-
+function loadSettings() {
     try {
-        await apiFetchAny(API.admin.flush, { method: "POST" });
-        alert("Database flushed.");
-        await loadTickets();
-    } catch (e) {
-        alert(`Flush failed: ${e?.message || e}`);
+        const raw = localStorage.getItem(SETTINGS_KEY);
+        if (raw) {
+            const parsed = JSON.parse(raw);
+            // Backward compatibility: older versions used blockRemoteImages.
+            if (typeof parsed.proxyRemoteImages === "undefined" && typeof parsed.blockRemoteImages !== "undefined") {
+                parsed.proxyRemoteImages = !!parsed.blockRemoteImages;
+            }
+            settings = { ...settings, ...parsed };
+        }
+    } catch {
+        // ignore
     }
 }
 
-/* ----------------------------- USERS (ADMIN) ----------------------------- */
+function saveSettings() {
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch { }
+}
+
+
 function openUsersModal() {
-    showModal("usersModal");
+    const modal = document.getElementById("usersModal");
+    if (!modal) return;
+    modal.classList.remove("hidden");
     renderUsersList();
 }
 
 function closeUsersModal() {
-    hideModal("usersModal");
+    const modal = document.getElementById("usersModal");
+    if (!modal) return;
+    modal.classList.add("hidden");
 }
 
-async function loadUsers() {
-    try {
-        state.users = await apiFetchAny(API.auth.users, { method: "GET" });
-        // normalize expected shape
-        if (!Array.isArray(state.users)) state.users = state.users?.items || state.users?.users || [];
-    } catch (e) {
-        // Non-fatal: tickets can still work without users
-        console.warn("users load failed:", e?.message || e);
-        state.users = [];
+async function renderUsersList() {
+    await loadUsersCache();
+    const list = document.getElementById("usersList");
+    if (!list) return;
+    list.innerHTML = "";
+    for (const u of usersCache) {
+        const row = document.createElement("div");
+        row.className = "flex items-center justify-between gap-3 p-2 rounded-lg border bg-white";
+        row.innerHTML = `
+            <div class="min-w-0">
+              <div class="font-medium text-slate-900 truncate">${escapeHtml(u.name)}</div>
+              <div class="text-xs text-slate-500 truncate">${escapeHtml(u.email)} • ${escapeHtml(u.role)}${u.is_active ? "" : " • Inactive"}</div>
+            </div>
+            <div class="flex items-center gap-2">
+              <select class="px-2 py-1 rounded-md border bg-white text-sm" data-user-role="${u.id}">
+                ${["ADMIN", "PM", "LEASING", "SALES", "ACCOUNTS", "READONLY"].map(r => `<option value="${r}" ${r === u.role ? "selected" : ""}>${r}</option>`).join("")}
+              </select>
+              <label class="text-sm text-slate-600 flex items-center gap-1">
+                <input type="checkbox" ${u.is_active ? "checked" : ""} data-user-active="${u.id}" />
+                Active
+              </label>
+              <button class="px-3 py-1.5 rounded-md border text-sm" onclick="saveUserEdits(${u.id})">Save</button>
+            </div>
+        `;
+        list.appendChild(row);
     }
 }
 
-function renderUsersList() {
-    const wrap = $("usersList");
-    if (!wrap) return;
-
-    if (!state.users.length) {
-        wrap.innerHTML = `<div class="text-sm text-slate-500">No users loaded.</div>`;
+async function saveUserEdits(userId) {
+    const roleSel = document.querySelector(`[data-user-role="${userId}"]`);
+    const activeChk = document.querySelector(`[data-user-active="${userId}"]`);
+    const payload = { role: roleSel ? roleSel.value : undefined, is_active: activeChk ? !!activeChk.checked : undefined };
+    const r = await apiFetch(`/user-auth/users/${userId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+    });
+    if (!r.ok) {
+        alert("Failed to update user (Admin only).");
         return;
     }
-
-    wrap.innerHTML = state.users.map(u => {
-        return `
-      <div class="flex items-center justify-between gap-3 border rounded-lg p-3 bg-white">
-        <div class="min-w-0">
-          <div class="font-medium text-slate-900 truncate">${escapeHtml(u.full_name || u.name || "—")}</div>
-          <div class="text-sm text-slate-500 truncate">${escapeHtml(u.email || "")}</div>
-        </div>
-        <div class="flex items-center gap-2">
-          ${roleBadge(u.role)}
-        </div>
-      </div>
-    `;
-    }).join("");
+    await renderUsersList();
 }
 
 async function createUserFromForm() {
-    const email = ($("newUserEmail")?.value || "").trim();
-    const full_name = ($("newUserName")?.value || "").trim();
-    const role = $("newUserRole")?.value || "PM";
-    const password = $("newUserPassword")?.value || "";
-
-    if (!email || !password) {
-        alert("Email + Temp password are required.");
+    const email = document.getElementById("newUserEmail").value.trim();
+    const name = document.getElementById("newUserName").value.trim();
+    const role = document.getElementById("newUserRole").value;
+    const password = document.getElementById("newUserPassword").value;
+    if (!email || !name || !password) {
+        alert("Email, name and password are required.");
         return;
     }
-
-    try {
-        await apiFetchAny(API.auth.users, {
-            method: "POST",
-            body: JSON.stringify({ email, full_name, role, password }),
-        });
-
-        $("newUserEmail").value = "";
-        $("newUserName").value = "";
-        $("newUserPassword").value = "";
-
-        await loadUsers();
-        renderUsersList();
-        alert("User created.");
-    } catch (e) {
-        alert(`Create user failed: ${e?.message || e}`);
+    const r = await apiFetch("/user-auth/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, name, role, password, is_active: true }),
+    });
+    if (!r.ok) {
+        const msg = await r.text();
+        alert("Failed to create user: " + msg);
+        return;
     }
+    document.getElementById("newUserEmail").value = "";
+    document.getElementById("newUserName").value = "";
+    document.getElementById("newUserPassword").value = "";
+    await renderUsersList();
 }
 
-/* ----------------------------- TABS ----------------------------- */
-function setTab(tab) {
-    state.tab = tab;
+function openSettings() {
+    const m = document.getElementById("settingsModal");
+    if (!m) return;
+    document.getElementById("setDefaultHtml").checked = !!settings.defaultHtmlView;
+    document.getElementById("setBlockRemote").checked = !!settings.proxyRemoteImages;
+    document.getElementById("setCompact").checked = !!settings.compactTickets;
+    m.classList.remove("hidden");
+}
 
-    // Update tab button styling
+function closeSettings() {
+    const m = document.getElementById("settingsModal");
+    if (!m) return;
+    m.classList.add("hidden");
+}
+
+function applySettingsFromModal() {
+    settings.defaultHtmlView = document.getElementById("setDefaultHtml").checked;
+    settings.proxyRemoteImages = document.getElementById("setBlockRemote").checked;
+    settings.compactTickets = document.getElementById("setCompact").checked;
+    saveSettings();
+    closeSettings();
+    loadTickets();
+}
+
+async function flushDatabase() {
+    const text = prompt("Type FLUSH to permanently delete all tickets and sync state:");
+    if (!text) return;
+    if (text.trim().toUpperCase() !== "FLUSH") {
+        alert("Cancelled. Confirmation text did not match.");
+        return;
+    }
+    try {
+        const resp = await apiFetch("/tickets/admin/flush", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ confirm: "FLUSH" }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.detail || "Flush failed");
+        alert("Database flushed. Reloading tickets...");
+        await loadTickets();
+    } catch (e) {
+        alert("Flush failed: " + (e.message || e));
+    }
+}
+function addQuery() { alert("Add Query (MVP): not implemented yet."); }
+
+function formatDate(dt) {
+    if (!dt) return "—";
+    try { return new Date(dt).toLocaleString(); } catch { return dt; }
+}
+
+function setTab(tab) {
+    currentTab = tab;
+
+    // Tailwind tabs (legacy)
     document.querySelectorAll(".tabbtn").forEach(btn => {
-        const isActive = btn.getAttribute("data-tab") === tab;
+        const isActive = (btn.dataset.tab === tab);
         btn.className = isActive
             ? "tabbtn px-4 py-2 rounded-lg border bg-indigo-600 text-white"
             : "tabbtn px-4 py-2 rounded-lg border bg-white";
     });
 
-    renderCountsAndList();
+    // Segmented control (Good UI)
+    const seg = document.getElementById("statusSeg");
+    if (seg) {
+        seg.querySelectorAll("button[data-tab], button[data-status]").forEach(btn => {
+            const key = btn.dataset.tab || btn.dataset.status || "";
+            const isActive = (key === tab);
+            if (isActive) btn.classList.add("active");
+            else btn.classList.remove("active");
+        });
+    }
+
+    loadTickets();
 }
 
-/* ----------------------------- ADD QUERY (placeholder) ----------------------------- */
-/* Your HTML calls addQuery(), but you did not include an Add Query modal in the snippet.
- * If you have one elsewhere, hook it here. For now we keep a safe placeholder.
- */
-function addQuery() {
-    alert("Add Query UI is not included in this template snippet. If you have query rules in backend, tell me the endpoint/fields and I will wire it.");
-}
+async function fetchNow() {
+    const btn = document.getElementById("fetchBtn") || document.getElementById("btnFetch");
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = "Fetching...";
+    }
 
-/* ----------------------------- HEADER / BOOTSTRAP ----------------------------- */
-async function loadMe() {
-    state.me = await apiFetchAny(API.auth.me, { method: "GET" });
-}
+    try {
+        const startEl = document.getElementById("startDate") || document.getElementById("fromDate");
+        const endEl = document.getElementById("endDate") || document.getElementById("toDate");
+        const maxEl = document.getElementById("maxThreads") || document.getElementById("limit");
 
-function updateHeader() {
-    const userBadge = $("userBadge");
-    const logoutBtn = $("logoutBtn");
+        const incEl = document.getElementById("incrementalSync") || document.getElementById("incremental");
+        const allEl = document.getElementById("includeAnywhere") || document.getElementById("allMail");
 
-    if (state.me) {
-        const name = state.me.full_name || state.me.name || state.me.email || "User";
-        userBadge.textContent = `Signed in as: ${name} (${state.me.role || "USER"})`;
-        logoutBtn?.classList.remove("hidden");
-    } else {
-        if (userBadge) userBadge.textContent = "";
-        logoutBtn?.classList.add("hidden");
+        const start = startEl ? (startEl.value || "") : "";
+        const end = endEl ? (endEl.value || "") : "";
+        const maxThreads = parseInt((maxEl && maxEl.value) ? maxEl.value : "500", 10);
+        const incremental = !!(incEl && incEl.checked);
+        const includeAnywhere = !!(allEl && allEl.checked);
+
+        // Persist the selected date filter for the ticket list.
+        currentDateFilter = { start: start || "", end: end || "" };
+
+        const url = new URL("/autopilot/fetch-now", window.location.origin);
+        if (start) url.searchParams.set("start", start);
+        if (end) url.searchParams.set("end", end);
+        if (!Number.isNaN(maxThreads) && maxThreads > 0) url.searchParams.set("max_threads", String(maxThreads));
+        // incremental applies only when no date range
+        if (!start && !end) url.searchParams.set("incremental", incremental ? "true" : "false");
+        if (start || end) url.searchParams.set("include_anywhere", includeAnywhere ? "true" : "false");
+
+        const r = await fetch(url.toString(), { method: "POST" });
+        const text = await r.text();
+        if (!r.ok) {
+            alert(`Fetch failed (${r.status}):\n\n${text}`);
+            return;
+        }
+        const j = JSON.parse(text);
+
+        if (j && j.hit_limit) {
+            alert("Fetch completed, but hit the configured limit. Increase Max and fetch again to capture more emails for the selected range.");
+        }
+        if (j && j.target_mailbox) {
+            const mb1 = document.getElementById("mailboxBadge");
+            const mb2 = document.getElementById("mailboxLabel");
+            if (mb1) mb1.textContent = `Mailbox: ${j.target_mailbox}`;
+            if (mb2) mb2.textContent = j.target_mailbox;
+        }
+
+        const last1 = document.getElementById("lastSync");
+        if (last1) last1.textContent = new Date().toLocaleString();
+
+        await loadTickets();
+        console.log(j);
+    } catch (e) {
+        alert("Fetch failed: " + e);
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = "Fetch Now";
+        }
     }
 }
 
-async function bootstrapAfterAuth() {
-    await loadMe().catch(() => null);
-    updateHeader();
+function clearDateFilter() {
+    const s1 = document.getElementById("startDate") || document.getElementById("fromDate");
+    const e1 = document.getElementById("endDate") || document.getElementById("toDate");
+    if (s1) s1.value = "";
+    if (e1) e1.value = "";
+    currentDateFilter = { start: "", end: "" };
+    loadTickets();
+}
 
-    await loadUsers(); // may fail if non-admin; not fatal
+async function startAutopilot() {
+    const r = await fetch("/autopilot/start", { method: "POST" });
+    const t = await r.text();
+    if (!r.ok) { alert(`Start failed (${r.status}):\n\n${t}`); return; }
+    await refreshAutopilotStatus();
+}
+
+async function stopAutopilot() {
+    const r = await fetch("/autopilot/stop", { method: "POST" });
+    const t = await r.text();
+    if (!r.ok) { alert(`Stop failed (${r.status}):\n\n${t}`); return; }
+    await refreshAutopilotStatus();
+}
+
+async function refreshAutopilotStatus() {
+    try {
+        const r = await fetch("/autopilot/status");
+        const j = await r.json();
+        const running = !!j.running;
+
+        const s1 = document.getElementById("autopilotStatus");
+        if (s1) s1.textContent = running ? "Active" : "Stopped";
+
+        const dot = document.getElementById("statusDot");
+        if (dot) {
+            // Tailwind variant
+            dot.className = running ? "h-2 w-2 rounded-full bg-green-500" : "h-2 w-2 rounded-full bg-red-500";
+        }
+        const dot2 = document.getElementById("autopilotDot");
+        if (dot2) {
+            dot2.classList.toggle("green", running);
+            dot2.classList.toggle("red", !running);
+        }
+
+        const next = document.getElementById("nextRun");
+        if (next) next.textContent = j.next_run_time || "—";
+
+        const line = document.getElementById("statusLine");
+        if (line) line.textContent = running ? "Active" : "Stopped";
+
+        const info = document.getElementById("autopilotInfo");
+        if (info) {
+            const every = (j.poll_every_minutes || j.poll_every || 5);
+            info.textContent = `Checking every ${every} minutes • Last sync: ${(document.getElementById("lastSync")?.textContent || "—")} • Next run: ${j.next_run_time || "—"}`;
+            const pe = document.getElementById("pollEvery");
+            if (pe) pe.textContent = String(every);
+        }
+    } catch {
+        // ignore
+    }
+}
+
+function priorityBadge(p) {
+    const val = (p || "medium").toLowerCase();
+    if (val === "high") return `<span class="px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-700 border">high</span>`;
+    if (val === "low") return `<span class="px-2 py-0.5 rounded-full text-xs bg-emerald-100 text-emerald-700 border">low</span>`;
+    return `<span class="px-2 py-0.5 rounded-full text-xs bg-amber-100 text-amber-700 border">medium</span>`;
+}
+
+
+function assigneeOptions(selectedId) {
+    const opts = ['<option value="">Unassigned</option>'];
+    for (const u of usersCache) {
+        const sel = String(u.id) === String(selectedId) ? "selected" : "";
+        opts.push(`<option value="${u.id}" ${sel}>${escapeHtml(u.name)} (${escapeHtml(u.role)})</option>`);
+    }
+    return opts.join("");
+}
+
+function categoryOptions(selected) {
+    const cats = ["MAINTENANCE", "RENT_ARREARS", "LEASING", "COMPLIANCE", "SALES", "GENERAL"];
+    return cats.map(c => `<option value="${c}" ${c === (selected || "GENERAL") ? "selected" : ""}>${c.replace("_", " ")}</option>`).join("");
+}
+
+function statusOptions(selected) {
+    const opts = [
+        ["PENDING", "Pending"],
+        ["IN_PROGRESS", "In Progress"],
+        ["RESPONDED", "Responded"],
+        ["NO_REPLY_NEEDED", "Reply Not Needed"]
+    ];
+    return opts.map(([v, label]) => `<option value="${v}" ${v === selected ? "selected" : ""}>${label}</option>`).join("");
+}
+
+function renderTicket(t) {
+    const useGoodUi = !!document.querySelector(".page") && !document.querySelector(".tabbtn");
+
+    const due = t.due_at ? `Due: ${formatDate(t.due_at)}` : "Due: —";
+    const last = t.last_message_at ? `Last: ${formatDate(t.last_message_at)}` : "Last: —";
+
+    const cat = (t.category || "GENERAL").replace("_", " ");
+    const assignee = t.assignee_user_id ? (usersCache.find(u => u.id === t.assignee_user_id)?.name || `User#${t.assignee_user_id}`) : "Unassigned";
+
+    let slaText = "SLA: —";
+    let slaOverdue = false;
+    if (t.sla_due_at) {
+        const dueMs = Date.parse(t.sla_due_at);
+        const nowMs = Date.now();
+        slaOverdue = nowMs > dueMs;
+        slaText = slaOverdue ? `SLA overdue: ${formatDate(t.sla_due_at)}` : `SLA due: ${formatDate(t.sla_due_at)}`;
+    }
+
+    if (useGoodUi) {
+        const card = document.createElement("div");
+        card.className = "ticket";
+
+        const priority = (t.priority || "medium").toLowerCase();
+        const priBadge = priority === "high"
+            ? `<span class="badge priority">High</span>`
+            : (priority === "low" ? `<span class="badge">Low</span>` : `<span class="badge">Medium</span>`);
+
+        const unreadBadge = t.is_unread ? `<span class="badge unread">Unread</span>` : "";
+        const nrBadge = t.is_not_replied ? `<span class="badge priority">Not Replied</span>` : "";
+        const slaBadge = slaOverdue ? `<span class="badge overdue">Overdue</span>` : "";
+
+        card.innerHTML = `
+          <div>
+            <h4>${escapeHtml(t.subject || "(no subject)")}</h4>
+            <div class="from">${escapeHtml(t.from_name || t.from_email || "(unknown sender)")} • ${escapeHtml(t.from_email || "")}</div>
+            <div class="snippet">${escapeHtml(t.snippet || "")}</div>
+
+            <div class="badge-row">
+              ${priBadge}
+              <span class="badge">${escapeHtml(cat)}</span>
+              <span class="badge">${escapeHtml(assignee)}</span>
+              ${nrBadge}
+              ${unreadBadge}
+              ${slaBadge}
+            </div>
+
+            <div class="ticket-meta" style="margin-top:10px">
+              <div>${escapeHtml(last)}</div>
+              <div>${escapeHtml(due)}</div>
+              <div>${escapeHtml(slaText)}</div>
+            </div>
+          </div>
+
+          <div class="ticket-right">
+            <div class="ticket-actions">
+              <button class="btn" onclick="openThread('${t.thread_id}')">Open</button>
+              <button class="btn" onclick="openAckModal('${t.thread_id}')">Quick Reply</button>
+            </div>
+
+            <div class="ticket-controls">
+              <div class="field">
+                <div class="label">Status</div>
+                <select onchange="updateStatus('${t.thread_id}', this.value)">
+                  ${statusOptions(t.status)}
+                </select>
+              </div>
+
+              <div class="field">
+                <div class="label">Assignee</div>
+                <select onchange="updateAssignee('${t.thread_id}', this.value)">
+                  ${assigneeOptions(t.assignee_user_id)}
+                </select>
+              </div>
+
+              <div class="field">
+                <div class="label">Category</div>
+                <select onchange="updateCategory('${t.thread_id}', this.value)">
+                  ${categoryOptions(t.category)}
+                </select>
+              </div>
+
+              ${t.from_email ? `<button class="btn danger" onclick="blacklistSender('${t.from_email}')">Blacklist Sender</button>` : ``}
+            </div>
+          </div>
+        `;
+        return card;
+    }
+
+    // Tailwind card (legacy)
+    const card = document.createElement("div");
+    card.className = settings.compactTickets
+        ? "bg-white rounded-xl shadow border p-4 flex items-start justify-between gap-4"
+        : "bg-white rounded-xl shadow border p-5 flex items-start justify-between gap-4";
+
+    const catBadge = `<span class="px-2 py-0.5 rounded-full text-xs bg-indigo-50 text-indigo-800 border">${cat}</span>`;
+    const assigneeBadge = `<span class="px-2 py-0.5 rounded-full text-xs bg-slate-50 text-slate-700 border">${assignee}</span>`;
+
+    let slaClass = "text-slate-500";
+    if (t.sla_due_at) {
+        slaClass = slaOverdue ? "text-red-700" : "text-emerald-700";
+    }
+
+    card.innerHTML = `
+    <div class="min-w-0 flex-1">
+      <div class="flex items-center gap-2">
+        <div class="font-semibold text-slate-900 truncate">${t.from_name || t.from_email || "(unknown sender)"}</div>
+        ${priorityBadge(t.priority)}
+        ${catBadge}
+        ${assigneeBadge}
+        ${t.is_not_replied ? `<span class="px-2 py-0.5 rounded-full text-xs bg-orange-100 text-orange-700 border">Not Replied</span>` : ``}
+        ${t.is_unread ? `<span class="px-2 py-0.5 rounded-full text-xs bg-slate-100 text-slate-700 border">Unread</span>` : ``}
+      </div>
+
+      <div class="mt-1 text-slate-900 font-medium truncate">${t.subject || "(no subject)"}</div>
+      <div class="mt-1 text-sm text-slate-500 truncate">${t.from_email || ""}</div>
+      <div class="mt-2 text-sm text-slate-600">${t.snippet || ""}</div>
+
+      <div class="mt-3 flex flex-wrap gap-3 text-xs text-slate-500">
+        <div>${last}</div>
+        <div class="text-orange-700">${due}</div>
+        <div class="${slaClass}">${slaText}</div>
+      </div>
+
+      <div class="mt-4 flex flex-wrap gap-2">
+        <button class="px-3 py-2 rounded-lg border text-slate-700 hover:bg-slate-50" onclick="openThread('${t.thread_id}')">Open</button>
+        <button class="px-3 py-2 rounded-lg border text-slate-700 hover:bg-slate-50" onclick="openAckModal('${t.thread_id}')">Quick Reply</button>
+        ${t.from_email ? `<button class="px-3 py-2 rounded-lg border text-red-700 hover:bg-red-50" onclick="blacklistSender('${t.from_email}')">Blacklist Sender</button>` : ``}
+      </div>
+    </div>
+
+    <div class="flex flex-col items-end gap-2 w-56">
+      <label class="w-full text-xs text-slate-500">Status</label>
+      <select class="w-full px-3 py-2 rounded-lg border bg-white"
+        onchange="updateStatus('${t.thread_id}', this.value)">
+        ${statusOptions(t.status)}
+      </select>
+      <label class="w-full text-xs text-slate-500">Assignee</label>
+      <select class="w-full px-3 py-2 rounded-lg border bg-white"
+        onchange="updateAssignee('${t.thread_id}', this.value)">
+        ${assigneeOptions(t.assignee_user_id)}
+      </select>
+      <label class="w-full text-xs text-slate-500">Category</label>
+      <select class="w-full px-3 py-2 rounded-lg border bg-white"
+        onchange="updateCategory('${t.thread_id}', this.value)">
+        ${categoryOptions(t.category)}
+      </select>
+    </div>
+  `;
+
+    return card;
+}
+
+async function loadTickets() {
+    const url = new URL(`/tickets`, window.location.origin);
+    url.searchParams.set("tab", currentTab);
+    url.searchParams.set("limit", "50");
+
+    // Apply current filter (set by Fetch Now). If empty, do not filter.
+    if (currentDateFilter.start) url.searchParams.set("start", currentDateFilter.start);
+    if (currentDateFilter.end) url.searchParams.set("end", currentDateFilter.end);
+
+    const r = await apiFetch(url);
+    const data = await r.json();
+
+    const c = data.counts || {};
+
+    // Legacy KPI tiles (tailwind)
+    const map = [
+        ["countNotReplied", c.not_replied ?? 0],
+        ["countPending", c.pending ?? 0],
+        ["countInProgress", c.in_progress ?? 0],
+        ["countResponded", c.responded ?? 0],
+        ["countNoReplyNeeded", c.no_reply_needed ?? 0],
+    ];
+    for (const [id, val] of map) {
+        const el = document.getElementById(id);
+        if (el) el.textContent = val;
+    }
+
+    // Good UI KPIs
+    const map2 = [
+        ["kpiNotRepliedPriority", c.not_replied ?? 0],
+        ["kpiPending", c.pending ?? 0],
+        ["kpiInProgress", c.in_progress ?? 0],
+        ["kpiResponded", c.responded ?? 0],
+        ["kpiReplyNotNeeded", c.no_reply_needed ?? 0],
+    ];
+    for (const [id, val] of map2) {
+        const el = document.getElementById(id);
+        if (el) el.textContent = val;
+    }
+
+    const list = document.getElementById("ticketList");
+    if (!list) return;
+    list.innerHTML = "";
+
+    (data.items || []).forEach(t => list.appendChild(renderTicket(t)));
+
+    if ((data.items || []).length === 0) {
+        list.innerHTML = `<div class="muted small" style="padding:10px">No tickets in this tab.</div>`;
+    }
+}
+
+
+async function updateAssignee(threadId, userId) {
+    const payload = { assignee_user_id: userId ? Number(userId) : null };
+    const r = await apiFetch(`/tickets/${threadId}/assign`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+    });
+    if (!r.ok) {
+        alert("Failed to assign ticket");
+        return;
+    }
+    await loadTickets();
+}
+
+async function updateCategory(threadId, category) {
+    const r = await apiFetch(`/tickets/${threadId}/category`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ category }),
+    });
+    if (!r.ok) {
+        alert("Failed to update category");
+        return;
+    }
+    await loadTickets();
+}
+
+async function updateStatus(threadId, status) {
+    await apiFetch(`/tickets/${threadId}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status })
+    });
+    await loadTickets();
+}
+
+async function openThread(threadId) {
+    const modal = document.getElementById("threadModal");
+    const content = document.getElementById("threadContent");
+    const gmailLink = document.getElementById("gmailLink");
+
+    const viewerBackdrop = document.getElementById("viewerBackdrop");
+    const viewerFrame = document.getElementById("viewerFrame");
+    const viewerTitle = document.getElementById("viewerTitle");
+
+    const useViewer = (!modal || !content) && viewerBackdrop && viewerFrame;
+
+    if (useViewer) {
+        viewerBackdrop.classList.add("show");
+        if (viewerTitle) viewerTitle.textContent = "Thread";
+        viewerFrame.srcdoc = `<div style="font-family:system-ui; padding:16px; color:#334155">Loading thread…</div>`;
+    } else if (modal && content) {
+        modal.classList.remove("hidden");
+        content.innerHTML = `<div class="text-sm text-slate-600">Loading thread…</div>`;
+    } else {
+        alert("Thread viewer UI is missing from the page (threadModal/threadContent).");
+        return;
+    }
+
+    const r = await apiFetch(`/threads/${threadId}`);
+    const t = await r.text();
+    if (!r.ok) {
+        if (useViewer) viewerFrame.srcdoc = `<pre style="white-space:pre-wrap; color:#b91c1c; padding:16px">${escapeHtml(t)}</pre>`;
+        else content.innerHTML = `<pre class="text-xs text-red-700 whitespace-pre-wrap">${t}</pre>`;
+        return;
+    }
+
+    const j = JSON.parse(t);
+    if (gmailLink) gmailLink.href = j.gmail_url || j.gmail_thread_url || "#";
+
+    const escapeHtmlLocal = (s) => (s || "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+
+    const rewriteCid = (html, messageId) => {
+        if (!html) return "";
+        return html.replace(/src\s*=\s*(["'])cid:([^"'>\s]+)\1/gi, (m, q, cid) => {
+            const url = `/threads/${encodeURIComponent(threadId)}/messages/${encodeURIComponent(messageId)}/inline/${encodeURIComponent(cid)}`;
+            return `src=${q}${url}${q}`;
+        });
+    };
+
+    const rewriteRemoteImagesToProxy = (html) => {
+        if (!html) return "";
+        return html.replace(/(<img\b[^>]*\bsrc\s*=\s*)(["'])(https?:\/\/[^"'>\s]+)\2/gi, (m, pre, q, url) => {
+            const proxied = `${window.location.origin}/threads/proxy-image?url=${encodeURIComponent(url)}`;
+            return `${pre}${q}${proxied}${q}`;
+        });
+    };
+
+    const attachmentBadge = (a, threadIdArg, messageIdArg) => {
+        const name = a.filename || "attachment";
+        const mime = (a.mime_type || "").toLowerCase();
+        let label = "FILE";
+        if (mime.startsWith("image/")) label = "IMAGE";
+        else if (mime == "application/pdf") label = "PDF";
+        else if (mime.startsWith("text/")) label = "TEXT";
+        else if (mime.startsWith("application/vnd")) label = "DOC";
+        const url = `/threads/${encodeURIComponent(threadIdArg)}/messages/${encodeURIComponent(messageIdArg || "")}/attachments/${encodeURIComponent(a.attachment_id)}?filename=${encodeURIComponent(name)}`;
+        return `<a style="display:inline-flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid #e5e7eb;border-radius:999px;text-decoration:none;color:#334155;background:#fff" href="${url}" target="_blank" rel="noreferrer">
+          <span style="font-size:12px;padding:2px 8px;border-radius:999px;background:#f1f5f9;color:#475569;border:1px solid #e5e7eb">${label}</span>
+          <span style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtmlLocal(name)}</span>
+        </a>`;
+    };
+
+    const renderMessage = (m, idx) => {
+        const hasHtml = !!m.body_html;
+        const msgId = m.id;
+        const safeText = escapeHtmlLocal(m.body_text || m.snippet || "");
+        const iframeId = `msg_iframe_${idx}`;
+        const btnId = `msg_toggle_${idx}`;
+
+        let html = hasHtml ? rewriteCid(m.body_html, msgId) : "";
+        if (hasHtml && settings.proxyRemoteImages) {
+            html = rewriteRemoteImagesToProxy(html);
+        }
+
+        const atts = (m.attachments || []).map(a => ({ ...a, message_id: msgId })).filter(a => !a.is_inline);
+        const attachmentsHtml = atts.length ? `<div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:8px">${atts.map(a => attachmentBadge(a, threadId, msgId)).join("")}</div>` : "";
+
+        return `
+        <div style="border:1px solid #e5e7eb;border-radius:14px;padding:14px;background:#f8fafc;margin-top:12px">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
+            <div>
+              <div style="font-size:12px;color:#64748b">${escapeHtmlLocal(m.date || "")}</div>
+              <div style="font-size:13px;color:#0f172a;margin-top:2px"><b>From:</b> ${escapeHtmlLocal(m.from || "")}</div>
+              <div style="font-size:13px;color:#0f172a"><b>To:</b> ${escapeHtmlLocal(m.to || "")}</div>
+              <div style="font-size:13px;color:#0f172a"><b>Subject:</b> ${escapeHtmlLocal(m.subject || "")}</div>
+              ${attachmentsHtml}
+            </div>
+
+            ${hasHtml ? `
+              <button id="${btnId}" class="btn" data-mode="html">View HTML</button>
+            ` : ``}
+          </div>
+
+          <div style="margin-top:12px">
+            <div style="font-size:13px;color:#334155;white-space:pre-wrap" data-mode="text">${safeText}</div>
+            ${hasHtml ? `
+              <div style="margin-top:12px;display:none" data-mode="html">
+                <iframe id="${iframeId}" style="width:100%;height:520px;border:1px solid #e5e7eb;border-radius:12px;background:#fff"
+                  sandbox="allow-popups allow-forms allow-same-origin" referrerpolicy="no-referrer"></iframe>
+              </div>
+            ` : ``}
+          </div>
+        </div>
+      `;
+    };
+
+    const threadHtml = `
+      <div style="font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; padding:16px; color:#0f172a">
+        <div style="font-weight:800;font-size:14px">Thread</div>
+        ${(j.messages || []).map((m, idx) => renderMessage(m, idx)).join("")}
+      </div>
+    `;
+
+    if (useViewer) {
+        viewerFrame.srcdoc = threadHtml;
+    } else {
+        content.innerHTML = (j.messages || []).map((m, idx) => renderMessage(m, idx)).join("");
+    }
+
+    // Attach toggles and populate iframes AFTER insertion (in document for modal, in iframe for viewer)
+    const attachTogglesInDocument = (rootDoc) => {
+        (j.messages || []).forEach((m, idx) => {
+            if (!m.body_html) return;
+            const btn = rootDoc.getElementById(`msg_toggle_${idx}`);
+            const iframe = rootDoc.getElementById(`msg_iframe_${idx}`);
+            if (!btn || !iframe) return;
+
+            let html = rewriteCid(m.body_html, m.id);
+            if (settings.proxyRemoteImages) {
+                html = rewriteRemoteImagesToProxy(html);
+            }
+            iframe.srcdoc = html;
+
+            // Default view preference
+            if (settings.defaultHtmlView) {
+                const card = btn.closest("div");
+                const textEl = card ? card.querySelector('[data-mode="text"]') : null;
+                const htmlWrap = card ? card.querySelector('[data-mode="html"]') : null;
+                if (textEl) textEl.style.display = "none";
+                if (htmlWrap) htmlWrap.style.display = "block";
+                btn.textContent = "View Text";
+            }
+
+            btn.addEventListener("click", () => {
+                const card = btn.closest("div");
+                if (!card) return;
+                const textEl = card.querySelector('[data-mode="text"]');
+                const htmlWrap = card.querySelector('[data-mode="html"]');
+                const showing = htmlWrap && htmlWrap.style.display !== "none";
+                if (showing) {
+                    if (htmlWrap) htmlWrap.style.display = "none";
+                    if (textEl) textEl.style.display = "block";
+                    btn.textContent = "View HTML";
+                } else {
+                    if (textEl) textEl.style.display = "none";
+                    if (htmlWrap) htmlWrap.style.display = "block";
+                    btn.textContent = "View Text";
+                }
+            });
+        });
+    };
+
+    if (useViewer) {
+        const iframeDoc = viewerFrame.contentDocument;
+        // Wait a tick for srcdoc to load
+        setTimeout(() => {
+            if (viewerFrame.contentDocument) attachTogglesInDocument(viewerFrame.contentDocument);
+        }, 0);
+    } else {
+        attachTogglesInDocument(document);
+    }
+}
+
+function clearDateFilter() {
+    const s1 = document.getElementById("startDate") || document.getElementById("fromDate");
+    const e1 = document.getElementById("endDate") || document.getElementById("toDate");
+    if (s1) s1.value = "";
+    if (e1) e1.value = "";
+    currentDateFilter = { start: "", end: "" };
+    loadTickets();
+}
+
+function closeThreadModal() {
+    const m = document.getElementById("threadModal");
+    if (m) m.classList.add("hidden");
+    const v = document.getElementById("viewerBackdrop");
+    if (v) v.classList.remove("show");
+}
+
+async function openAckModal(threadId) {
+    currentAckThreadId = threadId;
+    document.getElementById("ackModal").classList.remove("hidden");
+    document.getElementById("ackSubject").value = "";
+    document.getElementById("ackBody").value = "Loading draft…";
+    document.getElementById("sendAckBtn").disabled = true;
+
+    const r = await apiFetch(`/tickets/${threadId}/draft-ack`, { method: "POST" });
+    const t = await r.text();
+    if (!r.ok) {
+        document.getElementById("ackBody").value = t;
+        document.getElementById("sendAckBtn").disabled = true;
+        return;
+    }
+    const j = JSON.parse(t);
+    document.getElementById("ackSubject").value = j.subject || "";
+    document.getElementById("ackBody").value = j.body || "";
+    document.getElementById("sendAckBtn").disabled = false;
+}
+
+function closeAckModal() {
+    document.getElementById("ackModal").classList.add("hidden");
+    currentAckThreadId = null;
+}
+
+async function sendAckFromModal() {
+    if (!currentAckThreadId) return;
+    const subject = document.getElementById("ackSubject").value;
+    const body = document.getElementById("ackBody").value;
+
+    const btn = document.getElementById("sendAckBtn");
+    btn.disabled = true;
+    btn.textContent = "Sending...";
+
+    try {
+        const r = await apiFetch(`/tickets/${currentAckThreadId}/send-ack`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ subject, body, mark_as_responded: true })
+        });
+        const t = await r.text();
+        if (!r.ok) {
+            alert(`Send failed (${r.status}):\n\n${t}`);
+            return;
+        }
+        closeAckModal();
+        await loadTickets();
+        alert("Acknowledgment sent.");
+    } finally {
+        btn.disabled = false;
+        btn.textContent = "Send";
+    }
+}
+
+async function blacklistSender(email) {
+    if (!email) return;
+    if (!confirm(`Blacklist sender ${email}? Future tickets from this sender will be hidden.`)) return;
+
+    // Requires /blacklist endpoint. If you haven't added it yet, this will 404.
+    const r = await apiFetch(`/blacklist?email=${encodeURIComponent(email)}`, { method: "POST" });
+    const t = await r.text();
+    if (!r.ok) {
+        alert(`Blacklist failed (${r.status}):\n\n${t}`);
+        return;
+    }
+    await loadTickets();
+}
+
+function showLoginModal() {
+    const m1 = document.getElementById("loginModal");
+    if (m1) m1.classList.remove("hidden");
+    const m2 = document.getElementById("loginBackdrop");
+    if (m2) m2.classList.add("show");
+}
+
+function hideLoginModal() {
+    const m1 = document.getElementById("loginModal");
+    if (m1) m1.classList.add("hidden");
+    const m2 = document.getElementById("loginBackdrop");
+    if (m2) m2.classList.remove("show");
+}
+
+async function ensureAuthenticated() {
+    if (!authToken) {
+        showLoginModal();
+        return false;
+    }
+    const r = await apiFetch("/user-auth/me");
+    if (!r.ok) {
+        authToken = "";
+        localStorage.removeItem("agent_auth_token");
+        showLoginModal();
+        return false;
+    }
+    currentUser = await r.json();
+    await loadUsersCache();
+
+    // Legacy badge
+    const badge = document.getElementById("userBadge");
+    if (badge) badge.textContent = `Signed in as: ${currentUser.name} (${currentUser.role})`;
+
+    // Good UI pill
+    const authText = document.getElementById("authText");
+    if (authText) authText.textContent = `Signed in as ${currentUser.name} (${currentUser.role})`;
+    const authDot = document.getElementById("authDot");
+    if (authDot) {
+        authDot.classList.add("green");
+    }
+
+    // Logout buttons
+    const logoutBtn = document.getElementById("logoutBtn");
+    if (logoutBtn) logoutBtn.classList.remove("hidden");
+    const btnLogout2 = document.getElementById("btnLogout");
+    if (btnLogout2) btnLogout2.style.display = "inline-flex";
+
+    // Admin-only UI controls (Good UI)
+    const manageUsersBtn = document.getElementById("btnManageUsers");
+    if (manageUsersBtn) {
+        manageUsersBtn.style.display = (String(currentUser.role || "").toUpperCase() === "ADMIN") ? "inline-flex" : "none";
+    }
+
+    return true;
+}
+
+async function loadUsersCache() {
+    try {
+        const r = await apiFetch("/user-auth/users");
+        if (!r.ok) return;
+        usersCache = await r.json();
+    } catch {
+        // ignore
+    }
+}
+
+async function doLogin() {
+    const email = (document.getElementById("loginEmail").value || "").trim();
+    const password = document.getElementById("loginPassword").value || "";
+    const err = document.getElementById("loginError");
+    if (err) err.textContent = "";
+
+    const r = await fetch("/user-auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+    });
+    if (!r.ok) {
+        const t = await r.text();
+        if (err) err.textContent = t || "Login failed";
+        return;
+    }
+    const j = await r.json();
+    authToken = j.access_token;
+    localStorage.setItem("agent_auth_token", authToken);
+    hideLoginModal();
+    await ensureAuthenticated();
+    await refreshGoogleStatus();
     await refreshAutopilotStatus();
     await loadTickets();
-
-    // If admin, allow users modal opening (optional: you can add a button later)
-    renderUsersList();
 }
 
-async function bootstrap() {
-    // If no token -> show login immediately
-    if (!state.token) {
-        showModal("loginModal");
-        return;
+function logout() {
+    authToken = "";
+    currentUser = null;
+    localStorage.removeItem("agent_auth_token");
+
+    const badge = document.getElementById("userBadge");
+    if (badge) badge.textContent = "";
+
+    const authText = document.getElementById("authText");
+    if (authText) authText.textContent = "Not signed in";
+    const authDot = document.getElementById("authDot");
+    if (authDot) {
+        authDot.classList.remove("green");
+        authDot.classList.remove("red");
+        authDot.classList.remove("yellow");
     }
 
-    // Always try /me first; if it fails -> show login
+    const logoutBtn = document.getElementById("logoutBtn");
+    if (logoutBtn) logoutBtn.classList.add("hidden");
+    const btnLogout2 = document.getElementById("btnLogout");
+    if (btnLogout2) btnLogout2.style.display = "none";
+
+    showLoginModal();
+}
+
+window.addEventListener("load", async () => {
+    loadSettings();
+    document.getElementById("lastSync").textContent = new Date().toLocaleString();
+    const ok = await ensureAuthenticated();
+    if (!ok) return;
+
+    await refreshGoogleStatus();
+
+    // Small UX: show a one-time confirmation after OAuth callback.
     try {
-        await loadMe();
-        updateHeader();
-    } catch (e) {
-        console.warn("me() failed, showing login:", e);
-        state.token = null;
-        localStorage.removeItem("agentbot_token");
-        showModal("loginModal");
-        return;
+        const params = new URLSearchParams(window.location.search);
+        if (params.get("connected") === "1") {
+            // Remove the parameter so the alert does not repeat on refresh.
+            params.delete("connected");
+            const newUrl = window.location.pathname + (params.toString() ? `?${params.toString()}` : "");
+            window.history.replaceState({}, "", newUrl);
+            alert("Google account connected successfully.");
+        }
+    } catch {
+        // ignore
     }
 
-    // Everything else should NOT prevent UI from working
-    try { await loadUsers(); } catch { }
-    try { await refreshAutopilotStatus(); } catch { }
-    try { await loadTickets(); } catch { }
-}
-
-bootstrap();
-
-/* Expose required functions globally (onclick in HTML relies on these) */
-window.doLogin = doLogin;
-window.logout = logout;
-
-window.googleConnectOrManage = googleConnectOrManage;
-
-window.fetchNow = fetchNow;
-window.clearDateFilter = clearDateFilter;
-window.startAutopilot = startAutopilot;
-window.stopAutopilot = stopAutopilot;
-
-window.setTab = setTab;
-
-window.openThreadModal = openThreadModal;
-window.closeThreadModal = closeThreadModal;
-
-window.openAckModal = openAckModal;
-window.closeAckModal = closeAckModal;
-window.sendAckFromModal = sendAckFromModal;
-
-window.openSettings = openSettings;
-window.closeSettings = closeSettings;
-window.applySettingsFromModal = applySettingsFromModal;
-window.flushDatabase = flushDatabase;
-
-window.openUsersModal = openUsersModal;
-window.closeUsersModal = closeUsersModal;
-window.createUserFromForm = createUserFromForm;
-
-window.updateTicketStatus = updateTicketStatus;
-window.updateTicketCategory = updateTicketCategory;
-window.updateTicketAssignee = updateTicketAssignee;
-
-window.addQuery = addQuery;
+    await refreshAutopilotStatus();
+    await loadTickets();
+});

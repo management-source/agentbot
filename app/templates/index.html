@@ -23,6 +23,14 @@
     }
 
     *{box-sizing:border-box}
+    .hidden{display:none !important}
+    .modal-backdrop.hidden{display:none !important}
+    .modal-backdrop{display:none}
+    .modal-backdrop.show{display:flex}
+    /* For modals toggled via .hidden (settings/ack) */
+    #ackModal:not(.hidden){display:flex}
+    #settingsModal:not(.hidden){display:flex}
+    #usersModal:not(.hidden){display:flex}
     html,body{height:100%}
     body{
       margin:0;
@@ -325,22 +333,34 @@
                         <div class="pill"><span class="dot"
                                 id="authDot"></span><span id="authText">Not
                                 signed in</span></div>
-                        <button class="btn" id="btnLogout"
-                            style="display:none">Logout</button>
+                        <button class="btn" id="btnLogout" style="display:none"
+                            onclick="logout()">Logout</button>
                     </div>
 
                     <div style="margin-top:10px" class="row">
-                        <button class="btn" id="btnSettings">Settings</button>
-                        <button class="btn primary" id="btnAddQuery">+ Add
+                        <button class="btn" id="btnSettings"
+                            onclick="openSettings()">Settings</button>
+                        <button class="btn" id="googleBtn"
+                            onclick="googleConnectOrManage()">Connect to
+                            Google</button>
+                        <button class="btn primary" id="btnAddQuery"
+                            onclick="addQuery()">+ Add
                             Query</button>
                         <button class="btn" id="btnManageUsers"
-                            style="display:none">Manage Users</button>
+                            style="display:none"
+                            onclick="openUsersModal()">Manage Users</button>
                     </div>
 
                     <p class="small muted" style="margin-top:10px">Mailbox:
                         <span id="mailboxLabel">—</span></p>
                     <p class="small muted" style="margin-top:0">Status: <span
                             id="statusLine">—</span></p>
+                    <p class="small muted" style="margin-top:0">Last sync: <span
+                            id="lastSync">—</span> • Next run: <span
+                            id="nextRun">—</span></p>
+                    <span id="autopilotStatus" style="display:none">—</span>
+                    <span id="pollEvery" style="display:none">5</span>
+                    <span id="statusDot" style="display:none"></span>
                 </div>
 
                 <div class="card">
@@ -380,12 +400,16 @@
                     </div>
 
                     <div class="controls-actions">
-                        <button class="btn primary" id="btnFetch">Fetch
+                        <button class="btn primary" id="btnFetch"
+                            onclick="fetchNow()">Fetch
                             Now</button>
-                        <button class="btn" id="btnClearFilter">Clear
+                        <button class="btn" id="btnClearFilter"
+                            onclick="clearDateFilter()">Clear
                             Filter</button>
-                        <button class="btn success" id="btnStart">Start</button>
-                        <button class="btn danger" id="btnStop">Stop</button>
+                        <button class="btn success" id="btnStart"
+                            onclick="startAutopilot()">Start</button>
+                        <button class="btn danger" id="btnStop"
+                            onclick="stopAutopilot()">Stop</button>
                     </div>
                 </div>
             </div>
@@ -420,7 +444,7 @@
                     <button data-status="pending">Pending</button>
                     <button data-status="in_progress">In Progress</button>
                     <button data-status="responded">Responded</button>
-                    <button data-status="reply_not_needed">Reply Not
+                    <button data-status="no_reply_needed">Reply Not
                         Needed</button>
                 </div>
 
@@ -459,7 +483,8 @@
             <div class="modal">
                 <div class="modal-head">
                     <h3>Sign in</h3>
-                    <button class="btn ghost" id="btnLoginClose">Close</button>
+                    <button class="btn ghost" id="btnLoginClose"
+                        onclick="hideLoginModal()">Close</button>
                 </div>
                 <div class="modal-body">
                     <div class="field">
@@ -476,17 +501,19 @@
                         style="display:none"></div>
                 </div>
                 <div class="modal-foot">
-                    <button class="btn primary" id="btnLogin">Sign in</button>
+                    <button class="btn primary" id="btnLogin"
+                        onclick="doLogin()">Sign in</button>
                 </div>
             </div>
         </div>
 
         <!-- Manage Users Modal (Admin) -->
-        <div class="modal-backdrop" id="usersBackdrop">
+        <div class="modal-backdrop hidden" id="usersModal">
             <div class="modal">
                 <div class="modal-head">
                     <h3>Manage Users</h3>
-                    <button class="btn ghost" id="btnUsersClose">Close</button>
+                    <button class="btn ghost" id="btnUsersClose"
+                        onclick="closeUsersModal()">Close</button>
                 </div>
                 <div class="modal-body">
                     <div class="row" style="align-items:flex-end">
@@ -514,20 +541,22 @@
                             <input type="password" id="newUserPassword" />
                         </div>
                         <button class="btn primary"
-                            id="btnCreateUser">Create</button>
+                            id="btnCreateUser"
+                            onclick="createUserFromForm()">Create</button>
                     </div>
 
                     <div class="error" id="usersError"
                         style="display:none"></div>
 
-                    <div style="margin-top:14px" class="card"
-                        id="usersTableWrap">
-                        <div class="small muted">Users</div>
-                        <div id="usersTable" style="margin-top:10px"></div>
+                    <div style="margin-top:14px" class="card">
+                        <div class="small muted">Existing users</div>
+                        <div id="usersList"
+                            style="margin-top:10px; display:flex; flex-direction:column; gap:10px"></div>
                     </div>
                 </div>
                 <div class="modal-foot">
-                    <button class="btn" id="btnUsersRefresh">Refresh</button>
+                    <button class="btn" id="btnUsersRefresh"
+                        onclick="renderUsersList()">Refresh</button>
                 </div>
             </div>
         </div>
@@ -537,7 +566,8 @@
             <div class="viewer">
                 <div class="viewer-head">
                     <div class="title" id="viewerTitle">Thread</div>
-                    <button class="btn" id="btnViewerClose">Close</button>
+                    <button class="btn" id="btnViewerClose"
+                        onclick="closeThreadModal()">Close</button>
                 </div>
                 <div class="viewer-body">
                     <iframe id="viewerFrame"
@@ -546,6 +576,108 @@
             </div>
         </div>
 
-        <script src="/static/app.js?v=1"></script>
+        <script src="/static/app_fixed.js?v=1"></script>
+
+        <script>
+  // Wire segmented status buttons to existing tab logic
+  window.addEventListener("load", () => {
+    const seg = document.getElementById("statusSeg");
+    if (seg) {
+      seg.querySelectorAll("button[data-status]").forEach(btn => {
+        btn.addEventListener("click", () => setTab(btn.dataset.status));
+      });
+    }
+    // Close viewer on backdrop click (optional)
+    const vb = document.getElementById("viewerBackdrop");
+    if (vb) {
+      vb.addEventListener("click", (e) => {
+        if (e.target === vb) closeThreadModal();
+      });
+    }
+  });
+</script>
+
+        <!-- Quick Reply Modal (required by app.js) -->
+        <div class="modal-backdrop hidden" id="ackModal">
+            <div class="modal">
+                <div class="modal-head">
+                    <h3>Quick Reply</h3>
+                    <button class="btn ghost"
+                        onclick="closeAckModal()">Close</button>
+                </div>
+                <div class="modal-body">
+                    <div class="field">
+                        <div class="label">Subject</div>
+                        <input id="ackSubject" type="text" />
+                    </div>
+                    <div class="field" style="margin-top:10px">
+                        <div class="label">Body</div>
+                        <textarea id="ackBody"
+                            style="width:100%;min-height:160px;padding:10px 12px;border:1px solid var(--border);border-radius:12px;font-size:13px"></textarea>
+                    </div>
+                </div>
+                <div class="modal-foot">
+                    <button class="btn"
+                        onclick="closeAckModal()">Cancel</button>
+                    <button class="btn primary" id="sendAckBtn"
+                        onclick="sendAckFromModal()">Send</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Settings Modal (required by app.js) -->
+        <div class="modal-backdrop hidden" id="settingsModal">
+            <div class="modal">
+                <div class="modal-head">
+                    <h3>Settings</h3>
+                    <button class="btn ghost"
+                        onclick="closeSettings()">Close</button>
+                </div>
+                <div class="modal-body">
+                    <label class="checkbox">
+                        <input id="setDefaultHtml" type="checkbox" />
+                        Default to HTML view when available
+                    </label>
+                    <div style="height:10px"></div>
+                    <label class="checkbox">
+                        <input id="setBlockRemote" type="checkbox" />
+                        Proxy remote images (recommended)
+                    </label>
+                    <div style="height:10px"></div>
+                    <label class="checkbox">
+                        <input id="setCompact" type="checkbox" />
+                        Compact ticket cards
+                    </label>
+
+                    <div
+                        style="margin-top:14px;border-top:1px solid var(--border);padding-top:14px">
+                        <div class="small"
+                            style="font-weight:800;color:var(--danger)">Danger
+                            zone</div>
+                        <div class="small muted" style="margin-top:6px">Flush
+                            permanently deletes all tickets and sync
+                            state.</div>
+                        <div
+                            style="margin-top:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+                            <button class="btn danger"
+                                onclick="flushDatabase()">Flush
+                                database</button>
+                            <div class="small muted">You will be asked to type
+                                FLUSH to confirm.</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-foot">
+                    <button class="btn"
+                        onclick="closeSettings()">Cancel</button>
+                    <button class="btn primary"
+                        onclick="applySettingsFromModal()">Save</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Legacy Thread Modal (optional; app.js will fall back to viewer) -->
+        <div id="threadModal" class="hidden" style="display:none"></div>
+
     </body>
 </html>
