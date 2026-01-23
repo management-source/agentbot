@@ -107,50 +107,68 @@ def _sanitize_html(html: str) -> str:
     - removes event handler attributes (on*)
     - restricts protocols
 
-    This is not intended to be a perfect email renderer; it is a pragmatic safety layer.
+    Pragmatic safety layer for rendering email HTML.
     """
     if not html:
         return ""
 
     allowed_tags = set(bleach.sanitizer.ALLOWED_TAGS) | {
-        "div","span","p","br","hr","table","thead","tbody","tfoot","tr","td","th",
-        "img","a","ul","ol","li","strong","em","b","i","u","blockquote","pre","code",
-        "h1","h2","h3","h4","h5","h6","style"
+        "div", "span", "p", "br", "hr",
+        "table", "thead", "tbody", "tfoot", "tr", "td", "th",
+        "img", "a", "ul", "ol", "li",
+        "strong", "em", "b", "i", "u",
+        "blockquote", "pre", "code",
+        "h1", "h2", "h3", "h4", "h5", "h6",
+        "style",
     }
-    allowed_attrs = dict(bleach.sanitizer.ALLOWED_ATTRIBUTES)
 
-    css_sanitizer = CSSSanitizer(
-        allowed_css_properties=[
-            'color','background-color','font','font-family','font-size','font-weight','font-style','text-decoration',
-            'text-align','vertical-align','margin','margin-left','margin-right','margin-top','margin-bottom',
-            'padding','padding-left','padding-right','padding-top','padding-bottom',
-            'border','border-width','border-style','border-color','border-collapse',
-            'width','height','max-width','min-width',
-            'display','white-space','line-height'
-        ],
-        allowed_css_functions=['rgb','rgba','url'],
-        allowed_svg_properties=[]
-    )
+    allowed_attrs = dict(bleach.sanitizer.ALLOWED_ATTRIBUTES)
     allowed_attrs.update({
-        "*": ["class","style","title","dir","lang"],
-        "a": ["href","title","target","rel","name"],
-        "img": ["src","alt","title","width","height"],
-        "td": ["colspan","rowspan","align","valign"],
-        "th": ["colspan","rowspan","align","valign"],
-        "table": ["cellpadding","cellspacing","border","width"],
+        "*": ["class", "style", "title", "dir", "lang"],
+        "a": ["href", "title", "target", "rel", "name"],
+        "img": ["src", "alt", "title", "width", "height"],
+        "td": ["colspan", "rowspan", "align", "valign"],
+        "th": ["colspan", "rowspan", "align", "valign"],
+        "table": ["cellpadding", "cellspacing", "border", "width"],
     })
+
+    css_props = [
+        "color", "background-color",
+        "font", "font-family", "font-size", "font-weight", "font-style",
+        "text-decoration",
+        "text-align", "vertical-align",
+        "margin", "margin-left", "margin-right", "margin-top", "margin-bottom",
+        "padding", "padding-left", "padding-right", "padding-top", "padding-bottom",
+        "border", "border-width", "border-style", "border-color", "border-collapse",
+        "width", "height", "max-width", "min-width",
+        "display", "white-space", "line-height",
+    ]
+
+    # Bleach/CSSSanitizer compatibility:
+    # Some versions do not support `allowed_css_functions`.
+    try:
+        css_sanitizer = CSSSanitizer(
+            allowed_css_properties=css_props,
+            allowed_css_functions=["rgb", "rgba", "url"],
+            allowed_svg_properties=[],
+        )
+    except TypeError:
+        css_sanitizer = CSSSanitizer(
+            allowed_css_properties=css_props,
+            allowed_svg_properties=[],
+        )
 
     cleaned = bleach.clean(
         html,
         tags=list(allowed_tags),
         attributes=allowed_attrs,
-        protocols=["http","https","mailto","cid","data"],
+        protocols=["http", "https", "mailto", "cid", "data"],
         strip=True,
         css_sanitizer=css_sanitizer,
     )
 
-    # Remove any lingering on* attributes that can slip through style blocks, etc.
-    cleaned = re.sub(r'\son\w+\s*=\s*([\"\']).*?\1', '', cleaned, flags=re.I)
+    # Remove any lingering on* attributes (defense-in-depth)
+    cleaned = re.sub(r"\son\w+\s*=\s*([\"']).*?\1", "", cleaned, flags=re.I)
 
     return cleaned
 
