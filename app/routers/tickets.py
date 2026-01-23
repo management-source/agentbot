@@ -173,7 +173,7 @@ def list_tickets(
     counts["urgent_ai"] = db.query(func.count(ThreadTicket.thread_id)).filter(ThreadTicket.ai_urgency >= 4).scalar() or 0
 
     return TicketListOut(
-        items=[TicketOut.model_validate(t.__dict__) for t in items],
+        items=[TicketOut.model_validate(t) for t in items],
         counts=counts,
     )
 

@@ -1,5 +1,6 @@
 from datetime import datetime
 from pydantic import BaseModel
+from pydantic import ConfigDict
 from app.models import TicketStatus, TicketCategory, UserRole
 
 
@@ -31,29 +32,24 @@ class TicketAuditOut(BaseModel):
 
 class TicketOut(BaseModel):
     thread_id: str
-    subject: str | None
-    snippet: str | None
-    from_name: str | None
-    from_email: str | None
-    last_message_at: datetime | None
+    subject: str
+    snippet: str
+    from_name: str
+    from_email: str
+    last_message_at: datetime
     is_unread: bool
     is_not_replied: bool
-    priority: str
+    priority: int
     due_at: datetime | None
-    category: TicketCategory
-    owner_user_id: int | None = None
-    assignee_user_id: int | None = None
-    sla_due_at: datetime | None = None
-    escalated_at: datetime | None = None
-    escalation_level: int = 0
-    status: TicketStatus
+    category: str
+    status: str
 
-    # --- AI metadata (optional) ---
+    # AI fields (optional)
     ai_category: str | None = None
     ai_urgency: int | None = None
-    ai_confidence: int | None = None  # 0..100
-    ai_reasons: str | None = None
-    ai_summary: str | None = None
+    ai_confidence: float | None = None
+
+    model_config = ConfigDict(from_attributes=True)
 
 class TicketListOut(BaseModel):
     items: list[TicketOut]
