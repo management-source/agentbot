@@ -801,7 +801,7 @@ async function openThread(threadId) {
         const attachmentsHtml = atts.length ? `<div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:8px">${atts.map(a => attachmentBadge(a, threadId, msgId)).join("")}</div>` : "";
 
         return `
-        <div style="border:1px solid #e5e7eb;border-radius:14px;padding:14px;background:#f8fafc;margin-top:12px">
+        <div data-msg-card="1" style="border:1px solid #e5e7eb;border-radius:14px;padding:14px;background:#f8fafc;margin-top:12px">
           <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
             <div>
               <div style="font-size:12px;color:#64748b">${escapeHtmlLocal(m.date || "")}</div>
@@ -858,7 +858,7 @@ async function openThread(threadId) {
 
             // Default view preference
             if (settings.defaultHtmlView) {
-                const card = btn.closest("div");
+                const card = btn.closest('[data-msg-card="1"]');
                 const textEl = card ? card.querySelector('[data-mode="text"]') : null;
                 const htmlWrap = card ? card.querySelector('[data-mode="html"]') : null;
                 if (textEl) textEl.style.display = "none";
@@ -867,7 +867,7 @@ async function openThread(threadId) {
             }
 
             btn.addEventListener("click", () => {
-                const card = btn.closest("div");
+                const card = btn.closest('[data-msg-card="1"]');
                 if (!card) return;
                 const textEl = card.querySelector('[data-mode="text"]');
                 const htmlWrap = card.querySelector('[data-mode="html"]');
