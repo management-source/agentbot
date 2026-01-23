@@ -23,6 +23,15 @@ SCOPES = [
 @router.get("/status")
 def auth_status(db: Session = Depends(get_db)):
     """Lightweight status check for UI."""
+    if settings.GMAIL_AUTH_MODE == "service_account":
+        return {
+            "connected": True,
+            "provider": "google_service_account",
+            "mode": "service_account",
+            "impersonate_user": settings.IMPERSONATE_USER,
+            "scopes": SCOPES,
+            "target_mailbox": settings.IMPERSONATE_USER,
+        }
     token = db.query(OAuthToken).filter(OAuthToken.provider == "google").first()
     return {
         "connected": bool(token),
@@ -38,6 +47,8 @@ def auth_status(db: Session = Depends(get_db)):
 @router.post("/google/disconnect")
 def google_disconnect(db: Session = Depends(get_db)):
     """Disconnect Google by deleting stored OAuth token (MVP single-row store)."""
+    if settings.GMAIL_AUTH_MODE == "service_account":
+        raise HTTPException(status_code=400, detail="Service account mode does not use OAuth tokens.")
     token = db.query(OAuthToken).filter(OAuthToken.provider == "google").first()
     if token is None:
         return {"ok": True, "message": "No Google connection found."}
@@ -47,6 +58,8 @@ def google_disconnect(db: Session = Depends(get_db)):
     return {"ok": True, "message": "Google account disconnected."}
 
 def _flow() -> Flow:
+    if settings.GMAIL_AUTH_MODE == "service_account":
+        raise HTTPException(status_code=400, detail="Service account mode enabled")
     if not settings.GOOGLE_CLIENT_ID or not settings.GOOGLE_CLIENT_SECRET:
         raise HTTPException(status_code=500, detail="Google OAuth client not configured")
     if not settings.GOOGLE_REDIRECT_URI:

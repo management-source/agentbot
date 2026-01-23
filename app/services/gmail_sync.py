@@ -197,12 +197,13 @@ def sync_inbox_threads(
     start: str | None = None,
     end: str | None = None,
     incremental: bool = True,
-    include_anywhere=False
+    include_anywhere: bool = False,
 ) -> dict:
     """Synchronize Gmail INBOX threads into the local DB.
 
     Modes:
       - Date range provided: fetch threads in that range with pagination (accurate up to max_threads).
+        If include_anywhere=True, includes archived mail via Gmail search `in:anywhere`.
       - No date range: use Gmail historyId incremental sync (accurate) when available.
 
     max_threads is a safety cap to avoid very large pulls.

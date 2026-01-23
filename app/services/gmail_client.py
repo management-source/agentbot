@@ -1,40 +1,72 @@
-from google.oauth2.credentials import Credentials
-from google.auth.transport.requests import Request as GoogleRequest
-from googleapiclient.discovery import build
-from email.utils import parseaddr
+from __future__ import annotations
 
-from app.config import settings
-from app.models import OAuthToken
+from email.utils import parseaddr
 from sqlalchemy.orm import Session
 
-def gmail_user_id() -> str:
-    """Return the Gmail userId to operate on.
+from googleapiclient.discovery import build
 
-    - "me" operates on the authenticated user.
-    - If DELEGATED_MAILBOX is set, we operate on that mailbox instead (Gmail delegation).
+from app.config import settings
+
+# OAuth (user flow)
+from google.oauth2.credentials import Credentials
+from google.auth.transport.requests import Request as GoogleRequest
+from app.models import OAuthToken
+
+# Service Account (Domain-Wide Delegation)
+from google.oauth2 import service_account
+
+
+GMAIL_SCOPES = [
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.modify",
+    "https://www.googleapis.com/auth/gmail.send",
+    "https://www.googleapis.com/auth/gmail.labels",
+]
+
+
+def gmail_user_id() -> str:
+    """Return the Gmail userId to operate on for API calls.
+
+    - service_account mode: always "me" (credentials already impersonate IMPERSONATE_USER)
+    - oauth mode: "me" unless DELEGATED_MAILBOX is set (Gmail UI delegation)
     """
+    if settings.GMAIL_AUTH_MODE == "service_account":
+        return "me"
     mb = (settings.DELEGATED_MAILBOX or "").strip()
     return mb if mb else "me"
 
 
-def get_gmail_service(db: Session):
+def get_gmail_service(db: Session | None = None):
+    """Build a Gmail API service using either OAuth or Service Account DWD."""
+    if settings.GMAIL_AUTH_MODE == "service_account":
+        info = settings.service_account_info()
+        if not info:
+            raise RuntimeError("Service account JSON is not configured.")
+        subject = (settings.IMPERSONATE_USER or "").strip()
+        if not subject:
+            raise RuntimeError("IMPERSONATE_USER is not configured.")
+        creds = service_account.Credentials.from_service_account_info(info, scopes=GMAIL_SCOPES).with_subject(subject)
+        return build("gmail", "v1", credentials=creds, cache_discovery=False)
+
+    # OAuth mode
+    if db is None:
+        raise RuntimeError("Database session is required for OAuth mode.")
+
     token = db.query(OAuthToken).filter(OAuthToken.provider == "google").first()
     if not token:
         raise RuntimeError("Google is not connected. Visit /auth/google/login first.")
 
-    scopes = [s for s in (token.scopes or "").split(",") if s]
+    scopes = [s for s in (token.scopes or "").split(",") if s] or GMAIL_SCOPES
 
     creds = Credentials(
         token=token.access_token,
         refresh_token=token.refresh_token,
         token_uri=token.token_uri or "https://oauth2.googleapis.com/token",
-        # CRITICAL: use env vars (not DB) after JSON removal
         client_id=settings.GOOGLE_CLIENT_ID,
         client_secret=settings.GOOGLE_CLIENT_SECRET,
         scopes=scopes,
     )
 
-    # Refresh if needed
     if creds.expired and creds.refresh_token:
         creds.refresh(GoogleRequest())
         token.access_token = creds.token
