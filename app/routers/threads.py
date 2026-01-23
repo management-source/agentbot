@@ -6,9 +6,11 @@ import ipaddress
 from urllib.parse import urlparse
 
 import logging
+import inspect
 
 import bleach
 from bleach.css_sanitizer import CSSSanitizer
+
 import httpx
 from typing import Any, Dict, Optional, Tuple
 
@@ -104,11 +106,6 @@ def _gmail_b64url_decode(data: str) -> bytes:
 
 
 def _build_css_sanitizer():
-    """
-    Bleach's CSSSanitizer signature differs across versions.
-    Build kwargs dynamically so we don't crash on older/newer bleach.
-    """
-    # Keep this conservative; HTML email CSS is often messy.
     desired_kwargs = {
         "allowed_css_properties": [
             "color", "background-color",
@@ -121,20 +118,15 @@ def _build_css_sanitizer():
             "height", "max-height", "min-height",
             "line-height", "white-space",
         ],
-        # Only some bleach versions support this:
+        # Only supported on some bleach versions; we’ll only pass it if available.
         "allowed_css_functions": ["rgb", "rgba", "url", "calc"],
     }
 
     sig = inspect.signature(CSSSanitizer.__init__)
     supported = set(sig.parameters.keys())
-
     kwargs = {k: v for k, v in desired_kwargs.items() if k in supported}
 
-    try:
-        return CSSSanitizer(**kwargs)
-    except Exception:
-        log.exception("Failed to initialize CSSSanitizer; falling back to default.")
-        return CSSSanitizer()
+    return CSSSanitizer(**kwargs)
 
 def _sanitize_html(html: str) -> str:
     if not html:
@@ -165,9 +157,8 @@ def _sanitize_html(html: str) -> str:
         tags=allowed_tags,
         attributes=allowed_attrs,
         strip=True,
-        css_sanitizer=css_sanitizer,  # THIS removes your NoCssSanitizerWarning too
+        css_sanitizer=css_sanitizer,
     )
-
 
 @router.get("/{thread_id}")
 def get_thread(thread_id: str, db: Session = Depends(get_db)):

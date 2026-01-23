@@ -909,20 +909,28 @@ async function bootstrapAfterAuth() {
 }
 
 async function bootstrap() {
-    // Load settings persisted
-    // (already loaded into state.settings above)
-
+    // If no token -> show login immediately
     if (!state.token) {
         showModal("loginModal");
         return;
     }
 
+    // Always try /me first; if it fails -> show login
     try {
-        await bootstrapAfterAuth();
+        await loadMe();
+        updateHeader();
     } catch (e) {
-        console.error("bootstrap failed:", e);
+        console.warn("me() failed, showing login:", e);
+        state.token = null;
+        localStorage.removeItem("agentbot_token");
         showModal("loginModal");
+        return;
     }
+
+    // Everything else should NOT prevent UI from working
+    try { await loadUsers(); } catch { }
+    try { await refreshAutopilotStatus(); } catch { }
+    try { await loadTickets(); } catch { }
 }
 
 bootstrap();
