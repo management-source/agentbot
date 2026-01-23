@@ -3,6 +3,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.config import settings
 from app.models import Base
+from app.db_migrate import migrate
 
 def _normalize_database_url(url: str) -> str:
     # Render and some providers expose Postgres URLs as postgres://
@@ -26,6 +27,8 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def init_db():
     Base.metadata.create_all(bind=engine)
+    # Lightweight schema migrations for optional columns.
+    migrate(engine)
 
 def get_db():
     db = SessionLocal()

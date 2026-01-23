@@ -1,5 +1,6 @@
 let currentTab = "all";
 let currentAckThreadId = null;
+let currentAiThreadId = null;
 
 // Local user auth (JWT)
 let authToken = localStorage.getItem("agent_auth_token") || "";
@@ -436,6 +437,20 @@ function priorityBadge(p) {
     return `<span class="px-2 py-0.5 rounded-full text-xs bg-amber-100 text-amber-700 border">medium</span>`;
 }
 
+function aiUrgencyBadge(u) {
+    const val = Number(u || 0);
+    if (!val) return "";
+    if (val >= 4) return `<span class="px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-700 border">AI urgent ${val}/5</span>`;
+    if (val === 3) return `<span class="px-2 py-0.5 rounded-full text-xs bg-amber-100 text-amber-700 border">AI ${val}/5</span>`;
+    return `<span class="px-2 py-0.5 rounded-full text-xs bg-slate-50 text-slate-700 border">AI ${val}/5</span>`;
+}
+
+function aiCategoryBadge(cat) {
+    if (!cat) return "";
+    const label = String(cat).replace("_", " ").toUpperCase();
+    return `<span class="px-2 py-0.5 rounded-full text-xs bg-violet-50 text-violet-800 border">AI: ${escapeHtml(label)}</span>`;
+}
+
 
 function assigneeOptions(selectedId) {
     const opts = ['<option value="">Unassigned</option>'];
@@ -500,6 +515,8 @@ function renderTicket(t) {
 
             <div class="badge-row">
               ${priBadge}
+              ${aiCategoryBadge(t.ai_category)}
+              ${aiUrgencyBadge(t.ai_urgency)}
               <span class="badge">${escapeHtml(cat)}</span>
               <span class="badge">${escapeHtml(assignee)}</span>
               ${nrBadge}
@@ -517,6 +534,7 @@ function renderTicket(t) {
           <div class="ticket-right">
             <div class="ticket-actions">
               <button class="btn" onclick="openThread('${t.thread_id}')">Open</button>
+              <button class="btn" onclick="openAiReplyModal('${t.thread_id}')">AI Draft</button>
               <button class="btn" onclick="openAckModal('${t.thread_id}')">Quick Reply</button>
             </div>
 
@@ -568,6 +586,8 @@ function renderTicket(t) {
       <div class="flex items-center gap-2">
         <div class="font-semibold text-slate-900 truncate">${t.from_name || t.from_email || "(unknown sender)"}</div>
         ${priorityBadge(t.priority)}
+        ${aiCategoryBadge(t.ai_category)}
+        ${aiUrgencyBadge(t.ai_urgency)}
         ${catBadge}
         ${assigneeBadge}
         ${t.is_not_replied ? `<span class="px-2 py-0.5 rounded-full text-xs bg-orange-100 text-orange-700 border">Not Replied</span>` : ``}
@@ -586,6 +606,7 @@ function renderTicket(t) {
 
       <div class="mt-4 flex flex-wrap gap-2">
         <button class="px-3 py-2 rounded-lg border text-slate-700 hover:bg-slate-50" onclick="openThread('${t.thread_id}')">Open</button>
+        <button class="px-3 py-2 rounded-lg border text-slate-700 hover:bg-slate-50" onclick="openAiReplyModal('${t.thread_id}')">AI Draft</button>
         <button class="px-3 py-2 rounded-lg border text-slate-700 hover:bg-slate-50" onclick="openAckModal('${t.thread_id}')">Quick Reply</button>
         ${t.from_email ? `<button class="px-3 py-2 rounded-lg border text-red-700 hover:bg-red-50" onclick="blacklistSender('${t.from_email}')">Blacklist Sender</button>` : ``}
       </div>
@@ -837,6 +858,10 @@ async function openThread(threadId) {
     `;
 
     if (useViewer) {
+        // Ensure toggles wire up after the viewer iframe loads its srcdoc.
+        viewerFrame.onload = () => {
+            try { attachTogglesInDocument(viewerFrame.contentDocument); } catch (e) {}
+        };
         viewerFrame.srcdoc = threadHtml;
     } else {
         content.innerHTML = (j.messages || []).map((m, idx) => renderMessage(m, idx)).join("");
@@ -885,13 +910,7 @@ async function openThread(threadId) {
         });
     };
 
-    if (useViewer) {
-        const iframeDoc = viewerFrame.contentDocument;
-        // Wait a tick for srcdoc to load
-        setTimeout(() => {
-            if (viewerFrame.contentDocument) attachTogglesInDocument(viewerFrame.contentDocument);
-        }, 0);
-    } else {
+    if (!useViewer) {
         attachTogglesInDocument(document);
     }
 }
@@ -930,6 +949,50 @@ async function openAckModal(threadId) {
     document.getElementById("ackSubject").value = j.subject || "";
     document.getElementById("ackBody").value = j.body || "";
     document.getElementById("sendAckBtn").disabled = false;
+}
+
+async function openAiReplyModal(threadId) {
+    currentAiThreadId = threadId;
+    const modal = document.getElementById("aiReplyModal");
+    if (modal) modal.classList.remove("hidden");
+    document.getElementById("aiReplySubject").value = "";
+    document.getElementById("aiReplyBody").value = "Loading draft…";
+    const metaEl = document.getElementById("aiReplyMeta");
+    if (metaEl) metaEl.textContent = "";
+
+    const r = await apiFetch(`/tickets/${threadId}/draft-ai-reply?tone=neutral`, { method: "POST" });
+    const text = await r.text();
+    if (!r.ok) {
+        document.getElementById("aiReplyBody").value = text;
+        return;
+    }
+    const j = JSON.parse(text);
+    document.getElementById("aiReplySubject").value = j.subject || "";
+    document.getElementById("aiReplyBody").value = j.body || "";
+    if (metaEl) {
+        const role = j.meta?.role ? `Sender role: ${j.meta.role}` : "";
+        const used = j.meta?.used_ai ? "AI: on" : "AI: off";
+        metaEl.textContent = [used, role].filter(Boolean).join(" • ");
+    }
+}
+
+function closeAiReplyModal() {
+    const modal = document.getElementById("aiReplyModal");
+    if (modal) modal.classList.add("hidden");
+    currentAiThreadId = null;
+}
+
+function useAiDraftInQuickReply() {
+    const subj = (document.getElementById("aiReplySubject").value || "").trim();
+    const body = (document.getElementById("aiReplyBody").value || "").trim();
+    const tid = currentAiThreadId;
+    closeAiReplyModal();
+    if (!tid) return;
+    // Open Quick Reply and inject the draft.
+    openAckModal(tid).then(() => {
+        document.getElementById("ackSubject").value = subj;
+        document.getElementById("ackBody").value = body;
+    });
 }
 
 function closeAckModal() {

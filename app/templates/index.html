@@ -625,6 +625,32 @@
             </div>
         </div>
 
+        <!-- AI Draft Reply Modal -->
+        <div class="modal-backdrop hidden" id="aiReplyModal">
+            <div class="modal">
+                <div class="modal-head">
+                    <h3>AI Draft Reply</h3>
+                    <button class="btn ghost" onclick="closeAiReplyModal()">Close</button>
+                </div>
+                <div class="modal-body">
+                    <div class="field">
+                        <div class="label">Subject</div>
+                        <input id="aiReplySubject" type="text" />
+                    </div>
+                    <div class="field" style="margin-top:10px">
+                        <div class="label">Body</div>
+                        <textarea id="aiReplyBody"
+                            style="width:100%;min-height:180px;padding:10px 12px;border:1px solid var(--border);border-radius:12px;font-size:13px"></textarea>
+                    </div>
+                    <div class="small muted" id="aiReplyMeta" style="margin-top:10px"></div>
+                </div>
+                <div class="modal-foot">
+                    <button class="btn" onclick="closeAiReplyModal()">Cancel</button>
+                    <button class="btn" onclick="useAiDraftInQuickReply()">Use in Quick Reply</button>
+                </div>
+            </div>
+        </div>
+
         <!-- Settings Modal (required by app.js) -->
         <div class="modal-backdrop hidden" id="settingsModal">
             <div class="modal">

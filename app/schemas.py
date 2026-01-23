@@ -48,9 +48,31 @@ class TicketOut(BaseModel):
     escalation_level: int = 0
     status: TicketStatus
 
+    # --- AI metadata (optional) ---
+    ai_category: str | None = None
+    ai_urgency: int | None = None
+    ai_confidence: int | None = None  # 0..100
+    ai_reasons: str | None = None
+    ai_summary: str | None = None
+
 class TicketListOut(BaseModel):
     items: list[TicketOut]
     counts: dict[str, int]
+
+
+class AiAnalyzeOut(BaseModel):
+    ai_category: str
+    ticket_category: TicketCategory
+    ai_urgency: int
+    ai_confidence: int  # 0..100
+    ai_reasons: list[str] = []
+    ai_summary: str = ""
+
+
+class DraftAiReplyOut(BaseModel):
+    subject: str
+    body: str
+    meta: dict[str, object] | None = None
 
 class StatusUpdateIn(BaseModel):
     status: TicketStatus

@@ -188,6 +188,21 @@ class ThreadTicket(Base):
 
     ack_sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
+    # --- AI metadata (triage + drafts) ---
+    # Populated on-demand (e.g., when listing tickets or requesting a draft).
+    ai_category: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    ai_urgency: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    # Stored as integer percent (0..100) for compatibility across DBs.
+    ai_confidence: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    ai_reasons: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ai_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ai_source_hash: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    ai_last_scored_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+
+    ai_draft_subject: Mapped[str | None] = mapped_column(String, nullable=True)
+    ai_draft_body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ai_draft_updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
     reminder_count: Mapped[int] = mapped_column(Integer, default=0)
     last_reminded_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 

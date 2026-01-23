@@ -27,10 +27,15 @@ from app.schemas import (
     SendAckIn,
     TicketNoteOut,
     TicketAuditOut,
+    AiAnalyzeOut,
+    DraftAiReplyOut,
 )
 from app.services.audit import add_audit
 from app.services.ai_reply import draft_acknowledgement
+from app.services.ai_assistant import triage_email, content_hash, draft_context_reply
 from app.services.gmail_send import send_reply_in_thread
+from app.services.gmail_client import get_gmail_service, gmail_user_id
+from app.services.gmail_parse import extract_message_body
 
 router = APIRouter()
 
@@ -132,6 +137,28 @@ def list_tickets(
     q = q.order_by(ThreadTicket.last_message_at.desc().nullslast()).limit(limit)
     items = q.all()
 
+    # --- AI enrichment (on-demand) ---
+    # We keep this best-effort and bounded to avoid slow pages/cost spikes.
+    ai_updates = 0
+    for t in items:
+        if ai_updates >= 10:
+            break
+        subj = t.subject or ""
+        snip = t.snippet or ""
+        src_hash = content_hash(subj, snip)
+        if not t.ai_category or t.ai_source_hash != src_hash:
+            res = triage_email(subj, snip, "")
+            t.ai_category = res.ai_category
+            t.ai_urgency = res.urgency
+            t.ai_confidence = res.confidence_percent
+            t.ai_reasons = json.dumps(res.reasons)
+            t.ai_summary = res.summary
+            t.ai_source_hash = src_hash
+            t.ai_last_scored_at = datetime.utcnow()
+            ai_updates += 1
+    if ai_updates:
+        db.commit()
+
     # Counters for top tiles / tabs
     counts = {
         "not_replied": db.query(func.count(ThreadTicket.thread_id)).filter(ThreadTicket.is_not_replied == True).scalar() or 0,
@@ -141,6 +168,9 @@ def list_tickets(
         "no_reply_needed": db.query(func.count(ThreadTicket.thread_id)).filter(ThreadTicket.status == TicketStatus.NO_REPLY_NEEDED).scalar() or 0,
         "all": db.query(func.count(ThreadTicket.thread_id)).scalar() or 0,
     }
+
+    # AI KPI: urgent
+    counts["urgent_ai"] = db.query(func.count(ThreadTicket.thread_id)).filter(ThreadTicket.ai_urgency >= 4).scalar() or 0
 
     return TicketListOut(
         items=[TicketOut.model_validate(t.__dict__) for t in items],
@@ -185,6 +215,98 @@ def draft_ack(thread_id: str, db: Session = Depends(get_db), user: User = Depend
         snippet=t.snippet or "",
     )
     return DraftAckOut(subject=subject, body=body)
+
+
+@router.post("/{thread_id}/ai-analyze", response_model=AiAnalyzeOut)
+def ai_analyze(thread_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Run AI triage on a single ticket and persist the result."""
+    t = db.get(ThreadTicket, thread_id)
+    if not t:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+
+    subj = t.subject or ""
+    snip = t.snippet or ""
+    src_hash = content_hash(subj, snip)
+    res = triage_email(subj, snip, "")
+
+    t.ai_category = res.ai_category
+    t.ai_urgency = res.urgency
+    t.ai_confidence = res.confidence_percent
+    t.ai_reasons = json.dumps(res.reasons)
+    t.ai_summary = res.summary
+    t.ai_source_hash = src_hash
+    t.ai_last_scored_at = datetime.utcnow()
+    db.commit()
+
+    return AiAnalyzeOut(
+        ai_category=res.ai_category,
+        ticket_category=res.ticket_category,
+        ai_urgency=res.urgency,
+        ai_confidence=res.confidence_percent,
+        ai_reasons=res.reasons,
+        ai_summary=res.summary or "",
+    )
+
+
+@router.post("/{thread_id}/draft-ai-reply", response_model=DraftAiReplyOut)
+def draft_ai_reply(thread_id: str, tone: str = "neutral", db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Draft a context-aware reply using the latest message body.
+
+    This is designed as a human-in-the-loop tool; it does not send email.
+    """
+    t = db.get(ThreadTicket, thread_id)
+    if not t:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+
+    # Fetch last message body (plain text) from Gmail.
+    service = get_gmail_service(db)
+    th = (
+        service.users()
+        .threads()
+        .get(userId=gmail_user_id(), id=thread_id, format="full")
+        .execute()
+    )
+    messages = th.get("messages", []) or []
+    last_body_text = ""
+    if messages:
+        last = messages[-1]
+        payload = last.get("payload") or {}
+        body_info = extract_message_body(payload)
+        last_body_text = (body_info.get("body_text") or "").strip()
+        if not last_body_text:
+            last_body_text = (last.get("snippet") or "").strip()
+
+    # Ensure we have triage info.
+    subj = t.subject or ""
+    snip = t.snippet or ""
+    if not t.ai_category:
+        res = triage_email(subj, snip, last_body_text)
+        t.ai_category = res.ai_category
+        t.ai_urgency = res.urgency
+        t.ai_confidence = res.confidence_percent
+        t.ai_reasons = json.dumps(res.reasons)
+        t.ai_summary = res.summary
+        t.ai_source_hash = content_hash(subj, snip)
+        t.ai_last_scored_at = datetime.utcnow()
+
+    reply_subject, reply_body, meta = draft_context_reply(
+        from_name=t.from_name,
+        from_email=t.from_email,
+        subject=subj,
+        last_message_text=last_body_text or snip,
+        ai_category=t.ai_category or "general",
+        urgency=int(t.ai_urgency or 1),
+        tone=tone,
+    )
+
+    # Cache draft in DB (optional convenience)
+    t.ai_draft_subject = reply_subject
+    t.ai_draft_body = reply_body
+    t.ai_draft_updated_at = datetime.utcnow()
+    db.commit()
+
+    return DraftAiReplyOut(subject=reply_subject, body=reply_body, meta=meta)
+
 
 @router.post("/{thread_id}/send-ack")
 def send_ack(thread_id: str, payload: SendAckIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
