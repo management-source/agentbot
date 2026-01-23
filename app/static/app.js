@@ -15,6 +15,24 @@ async function apiFetch(url, options = {}) {
     return fetch(url, opts);
 }
 
+function normalizePriority(priority) {
+    // Backend now sends priority as int (1–5)
+    if (typeof priority === "number") {
+        if (priority >= 4) return "urgent";
+        if (priority === 3) return "high";
+        if (priority === 2) return "medium";
+        return "low";
+    }
+
+    // Backward compatibility if string slips through
+    if (typeof priority === "string") {
+        return priority.toLowerCase();
+    }
+
+    return "medium";
+}
+
+
 function escapeHtml(text) {
     if (typeof text !== "string") return "";
     return text
@@ -498,7 +516,7 @@ function renderTicket(t) {
         const card = document.createElement("div");
         card.className = "ticket";
 
-        const priority = (t.priority || "medium").toLowerCase();
+        const priority = normalizePriority(t.priority);
         const priBadge = priority === "high"
             ? `<span class="badge priority">High</span>`
             : (priority === "low" ? `<span class="badge">Low</span>` : `<span class="badge">Medium</span>`);
@@ -860,7 +878,7 @@ async function openThread(threadId) {
     if (useViewer) {
         // Ensure toggles wire up after the viewer iframe loads its srcdoc.
         viewerFrame.onload = () => {
-            try { attachTogglesInDocument(viewerFrame.contentDocument); } catch (e) {}
+            try { attachTogglesInDocument(viewerFrame.contentDocument); } catch (e) { }
         };
         viewerFrame.srcdoc = threadHtml;
     } else {
