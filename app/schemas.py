@@ -1,6 +1,33 @@
 from datetime import datetime
 from pydantic import BaseModel
-from app.models import TicketStatus
+from app.models import TicketStatus, TicketCategory, UserRole
+
+
+class UserOut(BaseModel):
+    id: int
+    email: str
+    name: str
+    role: UserRole
+    is_active: bool
+
+
+class TicketNoteOut(BaseModel):
+    id: int
+    thread_id: str
+    author_user_id: int
+    author_name: str | None = None
+    body: str
+    created_at: datetime
+
+
+class TicketAuditOut(BaseModel):
+    id: int
+    thread_id: str
+    action: str
+    actor_user_id: int | None
+    actor_name: str | None = None
+    detail: str | None
+    created_at: datetime
 
 class TicketOut(BaseModel):
     thread_id: str
@@ -13,6 +40,12 @@ class TicketOut(BaseModel):
     is_not_replied: bool
     priority: str
     due_at: datetime | None
+    category: TicketCategory
+    owner_user_id: int | None = None
+    assignee_user_id: int | None = None
+    sla_due_at: datetime | None = None
+    escalated_at: datetime | None = None
+    escalation_level: int = 0
     status: TicketStatus
 
 class TicketListOut(BaseModel):

@@ -9,6 +9,9 @@ import bleach
 import httpx
 from typing import Any, Dict, Optional, Tuple
 
+import html2text
+from premailer import transform
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from googleapiclient.errors import HttpError
@@ -167,7 +170,21 @@ def get_thread(thread_id: str, db: Session = Depends(get_db)):
         body_info = extract_message_body(payload)
         body_html = body_info.get("body_html")
         if body_html:
+            # Inline CSS <style> into elements to improve rendering consistency.
+            try:
+                body_html = transform(body_html, disable_leftover_css=True)
+            except Exception:
+                pass
+
             body_html = _sanitize_html(body_html)
+
+        # Always provide a text variant for consistent preview/search.
+        body_text = (body_info.get("body_text") or "").strip()
+        if not body_text and body_html:
+            try:
+                body_text = html2text.html2text(body_html).strip()
+            except Exception:
+                body_text = ""
 
         messages_out.append(
             {
@@ -179,7 +196,8 @@ def get_thread(thread_id: str, db: Session = Depends(get_db)):
                 "subject": headers.get("subject"),
                 "date": headers.get("date"),
                 "snippet": m.get("snippet"),
-                "body_text": body_info.get("body_text") or "",
+                "body_text": body_text,
+                "body_text_preview": (body_text[:800] + "…") if len(body_text) > 800 else body_text,
                 "body_html": body_html,  # may be None
                 "used_mime": body_info.get("used_mime"),
                 "attachments": _extract_attachments(payload),

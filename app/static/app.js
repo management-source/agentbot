@@ -1,6 +1,19 @@
 let currentTab = "all";
 let currentAckThreadId = null;
 
+// Local user auth (JWT)
+let authToken = localStorage.getItem("agent_auth_token") || "";
+let currentUser = null;
+let usersCache = [];
+
+async function apiFetch(url, options = {}) {
+    const opts = { ...options, headers: { ...(options.headers || {}) } };
+    if (authToken) {
+        opts.headers["Authorization"] = `Bearer ${authToken}`;
+    }
+    return fetch(url, opts);
+}
+
 // Date filter applied to ticket list (set when you click Fetch Now).
 let currentDateFilter = { start: "", end: "" };
 
@@ -131,7 +144,7 @@ async function flushDatabase() {
     return;
   }
   try {
-    const resp = await fetch("/tickets/admin/flush", {
+    const resp = await apiFetch("/tickets/admin/flush", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ confirm: "FLUSH" }),
@@ -277,11 +290,30 @@ function renderTicket(t) {
     const due = t.due_at ? `Due: ${formatDate(t.due_at)}` : "Due: —";
     const last = t.last_message_at ? `Last: ${formatDate(t.last_message_at)}` : "Last: —";
 
+    const cat = (t.category || "GENERAL").replace("_", " ");
+    const catBadge = `<span class="px-2 py-0.5 rounded-full text-xs bg-indigo-50 text-indigo-800 border">${cat}</span>`;
+    const assignee = t.assignee_user_id ? (usersCache.find(u => u.id === t.assignee_user_id)?.name || `User#${t.assignee_user_id}`) : "Unassigned";
+    const assigneeBadge = `<span class="px-2 py-0.5 rounded-full text-xs bg-slate-50 text-slate-700 border">${assignee}</span>`;
+
+    let slaText = "SLA: —";
+    let slaClass = "text-slate-500";
+    if (t.sla_due_at) {
+        const dueMs = Date.parse(t.sla_due_at);
+        const nowMs = Date.now();
+        const overdue = nowMs > dueMs;
+        slaText = overdue ? `SLA overdue: ${formatDate(t.sla_due_at)}` : `SLA due: ${formatDate(t.sla_due_at)}`;
+        slaClass = overdue ? "text-red-700" : "text-emerald-700";
+    }
+
     card.innerHTML = `
     <div class="min-w-0 flex-1">
       <div class="flex items-center gap-2">
         <div class="font-semibold text-slate-900 truncate">${t.from_name || t.from_email || "(unknown sender)"}</div>
         ${priorityBadge(t.priority)}
+        ${catBadge}
+        ${assigneeBadge}
+        ${catBadge}
+        ${assigneeBadge}
         ${t.is_not_replied ? `<span class="px-2 py-0.5 rounded-full text-xs bg-orange-100 text-orange-700 border">Not Replied</span>` : ``}
         ${t.is_unread ? `<span class="px-2 py-0.5 rounded-full text-xs bg-slate-100 text-slate-700 border">Unread</span>` : ``}
       </div>
@@ -293,6 +325,7 @@ function renderTicket(t) {
       <div class="mt-3 flex flex-wrap gap-3 text-xs text-slate-500">
         <div>${last}</div>
         <div class="text-orange-700">${due}</div>
+        <div class="${slaClass}">${slaText}</div>
       </div>
 
       <div class="mt-4 flex flex-wrap gap-2">
@@ -322,7 +355,7 @@ async function loadTickets() {
     if (currentDateFilter.start) url.searchParams.set("start", currentDateFilter.start);
     if (currentDateFilter.end) url.searchParams.set("end", currentDateFilter.end);
 
-    const r = await fetch(url);
+    const r = await apiFetch(url);
     const data = await r.json();
 
     const c = data.counts || {};
@@ -343,7 +376,7 @@ async function loadTickets() {
 }
 
 async function updateStatus(threadId, status) {
-    await fetch(`/tickets/${threadId}/status`, {
+    await apiFetch(`/tickets/${threadId}/status`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status })
@@ -359,7 +392,7 @@ async function openThread(threadId) {
     modal.classList.remove("hidden");
     content.innerHTML = `<div class="text-sm text-slate-600">Loading thread…</div>`;
 
-    const r = await fetch(`/threads/${threadId}`);
+    const r = await apiFetch(`/threads/${threadId}`);
     const t = await r.text();
     if (!r.ok) {
         content.innerHTML = `<pre class="text-xs text-red-700 whitespace-pre-wrap">${t}</pre>`;
@@ -517,7 +550,7 @@ async function openAckModal(threadId) {
     document.getElementById("ackBody").value = "Loading draft…";
     document.getElementById("sendAckBtn").disabled = true;
 
-    const r = await fetch(`/tickets/${threadId}/draft-ack`, { method: "POST" });
+    const r = await apiFetch(`/tickets/${threadId}/draft-ack`, { method: "POST" });
     const t = await r.text();
     if (!r.ok) {
         document.getElementById("ackBody").value = t;
@@ -545,7 +578,7 @@ async function sendAckFromModal() {
     btn.textContent = "Sending...";
 
     try {
-        const r = await fetch(`/tickets/${currentAckThreadId}/send-ack`, {
+        const r = await apiFetch(`/tickets/${currentAckThreadId}/send-ack`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ subject, body, mark_as_responded: true })
@@ -569,7 +602,7 @@ async function blacklistSender(email) {
     if (!confirm(`Blacklist sender ${email}? Future tickets from this sender will be hidden.`)) return;
 
     // Requires /blacklist endpoint. If you haven't added it yet, this will 404.
-    const r = await fetch(`/blacklist?email=${encodeURIComponent(email)}`, { method: "POST" });
+    const r = await apiFetch(`/blacklist?email=${encodeURIComponent(email)}`, { method: "POST" });
     const t = await r.text();
     if (!r.ok) {
         alert(`Blacklist failed (${r.status}):\n\n${t}`);
@@ -578,9 +611,90 @@ async function blacklistSender(email) {
     await loadTickets();
 }
 
+function showLoginModal() {
+    const m = document.getElementById("loginModal");
+    if (m) m.classList.remove("hidden");
+}
+
+function hideLoginModal() {
+    const m = document.getElementById("loginModal");
+    if (m) m.classList.add("hidden");
+}
+
+async function ensureAuthenticated() {
+    if (!authToken) {
+        showLoginModal();
+        return false;
+    }
+    const r = await apiFetch("/user-auth/me");
+    if (!r.ok) {
+        authToken = "";
+        localStorage.removeItem("agent_auth_token");
+        showLoginModal();
+        return false;
+    }
+    currentUser = await r.json();
+    await loadUsersCache();
+    const badge = document.getElementById("userBadge");
+    if (badge) badge.textContent = `Signed in as: ${currentUser.name} (${currentUser.role})`;
+    const logoutBtn = document.getElementById("logoutBtn");
+    if (logoutBtn) logoutBtn.classList.remove("hidden");
+    return true;
+}
+
+async function loadUsersCache() {
+    try {
+        const r = await apiFetch("/user-auth/users");
+        if (!r.ok) return;
+        usersCache = await r.json();
+    } catch {
+        // ignore
+    }
+}
+
+async function doLogin() {
+    const email = (document.getElementById("loginEmail").value || "").trim();
+    const password = document.getElementById("loginPassword").value || "";
+    const err = document.getElementById("loginError");
+    if (err) err.textContent = "";
+
+    const r = await fetch("/user-auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+    });
+    if (!r.ok) {
+        const t = await r.text();
+        if (err) err.textContent = t || "Login failed";
+        return;
+    }
+    const j = await r.json();
+    authToken = j.access_token;
+    localStorage.setItem("agent_auth_token", authToken);
+    hideLoginModal();
+    await ensureAuthenticated();
+    await refreshGoogleStatus();
+    await refreshAutopilotStatus();
+    await loadTickets();
+}
+
+function logout() {
+    authToken = "";
+    currentUser = null;
+    localStorage.removeItem("agent_auth_token");
+    const badge = document.getElementById("userBadge");
+    if (badge) badge.textContent = "";
+    const logoutBtn = document.getElementById("logoutBtn");
+    if (logoutBtn) logoutBtn.classList.add("hidden");
+    showLoginModal();
+}
+
 window.addEventListener("load", async () => {
     loadSettings();
     document.getElementById("lastSync").textContent = new Date().toLocaleString();
+    const ok = await ensureAuthenticated();
+    if (!ok) return;
+
     await refreshGoogleStatus();
 
     // Small UX: show a one-time confirmation after OAuth callback.

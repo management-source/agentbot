@@ -18,6 +18,8 @@
                     </div>
 
                     <div class="flex flex-col items-end gap-2">
+                        <div class="text-xs text-slate-500" id="userBadge"></div>
+                        <button id="logoutBtn" class="hidden px-4 py-2 rounded-lg border text-slate-700 hover:bg-slate-50" onclick="logout()">Logout</button>
                         <button id="googleBtn"
                             class="px-4 py-2 rounded-lg border text-slate-700 hover:bg-slate-50"
                             onclick="googleConnectOrManage()">
@@ -218,6 +220,20 @@
                             class="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700"
                             onclick="sendAckFromModal()">Send</button>
                     </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Login Modal -->
+        <div id="loginModal" class="hidden fixed inset-0 bg-black/40">
+            <div class="max-w-md mx-auto mt-24 bg-white rounded-xl shadow border p-6">
+                <div class="text-lg font-semibold text-slate-900">Sign in</div>
+                <div class="text-sm text-slate-500">Use your AgentBot user account.</div>
+                <div class="mt-4 space-y-3">
+                    <input id="loginEmail" type="email" placeholder="Email" class="w-full px-3 py-2 rounded-lg border" />
+                    <input id="loginPassword" type="password" placeholder="Password" class="w-full px-3 py-2 rounded-lg border" />
+                    <div id="loginError" class="text-sm text-red-600"></div>
+                    <button class="w-full px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700" onclick="doLogin()">Sign in</button>
                 </div>
             </div>
         </div>

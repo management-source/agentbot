@@ -12,11 +12,12 @@ services:
       - key: ENABLE_SCHEDULER
         value: "false"
 
-      # Provide either a managed Postgres URL (recommended) or a SQLite URL.
-      # IMPORTANT: Render free web services have an ephemeral filesystem; SQLite will reset
-      # on redeploy/restart unless you attach a persistent disk (paid) and point SQLite at it.
+      # Production requires Postgres. In Render, provision a managed Postgres database
+      # and set DATABASE_URL via the database connection string.
       - key: DATABASE_URL
-        sync: false
+        fromDatabase:
+          name: agentbot-postgres
+          property: connectionString
 
       - key: GOOGLE_CLIENT_ID
         sync: false
@@ -36,3 +37,8 @@ services:
       # Optional (only needed if you enable the AI features)
       - key: OPENAI_API_KEY
         value: ""
+
+databases:
+  - name: agentbot-postgres
+    databaseName: agentbot
+    plan: free

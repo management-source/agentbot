@@ -1,8 +1,16 @@
 from datetime import datetime
 from enum import Enum
 
-from sqlalchemy import String, DateTime, Boolean, Integer, Enum as SAEnum, Text
-from sqlalchemy.orm import Mapped, mapped_column, declarative_base
+from sqlalchemy import (
+    String,
+    DateTime,
+    Boolean,
+    Integer,
+    Enum as SAEnum,
+    Text,
+    ForeignKey,
+)
+from sqlalchemy.orm import Mapped, mapped_column, declarative_base, relationship
 
 Base = declarative_base()
 
@@ -12,6 +20,35 @@ class TicketStatus(str, Enum):
     IN_PROGRESS = "IN_PROGRESS"
     RESPONDED = "RESPONDED"
     NO_REPLY_NEEDED = "NO_REPLY_NEEDED"
+
+
+class UserRole(str, Enum):
+    ADMIN = "ADMIN"
+    PM = "PM"  # Property Management
+    LEASING = "LEASING"
+    SALES = "SALES"
+    ACCOUNTS = "ACCOUNTS"
+    READONLY = "READONLY"
+
+
+class TicketCategory(str, Enum):
+    MAINTENANCE = "MAINTENANCE"
+    RENT_ARREARS = "RENT_ARREARS"
+    LEASING = "LEASING"
+    COMPLIANCE = "COMPLIANCE"
+    SALES = "SALES"
+    GENERAL = "GENERAL"
+
+
+class AuditAction(str, Enum):
+    CREATED = "CREATED"
+    UPDATED = "UPDATED"
+    STATUS_CHANGED = "STATUS_CHANGED"
+    ASSIGNED = "ASSIGNED"
+    CATEGORY_SET = "CATEGORY_SET"
+    NOTE_ADDED = "NOTE_ADDED"
+    ESCALATED = "ESCALATED"
+    REPLIED = "REPLIED"
 
 
 class BlacklistedSender(Base):
@@ -57,6 +94,54 @@ class AppState(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
 
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    email: Mapped[str] = mapped_column(String, unique=True, index=True)
+    name: Mapped[str] = mapped_column(String)
+    role: Mapped[UserRole] = mapped_column(SAEnum(UserRole), default=UserRole.PM, index=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+    # Relationships
+    owned_tickets = relationship("ThreadTicket", foreign_keys="ThreadTicket.owner_user_id", back_populates="owner")
+    assigned_tickets = relationship(
+        "ThreadTicket", foreign_keys="ThreadTicket.assignee_user_id", back_populates="assignee"
+    )
+
+
+class ThreadTicketNote(Base):
+    __tablename__ = "thread_ticket_notes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    thread_id: Mapped[str] = mapped_column(String, index=True)
+    author_user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), index=True)
+
+    body: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+    author = relationship("User")
+
+
+class ThreadTicketAudit(Base):
+    __tablename__ = "thread_ticket_audit"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    thread_id: Mapped[str] = mapped_column(String, index=True)
+    action: Mapped[AuditAction] = mapped_column(SAEnum(AuditAction), index=True)
+    actor_user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+
+    # JSON-like payload stored as text for simplicity
+    detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+    actor = relationship("User")
+
+
 class ThreadTicket(Base):
     __tablename__ = "thread_tickets"
 
@@ -86,6 +171,21 @@ class ThreadTicket(Base):
         index=True,
     )
 
+    category: Mapped[TicketCategory] = mapped_column(
+        SAEnum(TicketCategory),
+        default=TicketCategory.GENERAL,
+        index=True,
+    )
+
+    # Ownership & assignment
+    owner_user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    assignee_user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+
+    # SLA support
+    sla_due_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    escalated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    escalation_level: Mapped[int] = mapped_column(Integer, default=0)
+
     ack_sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     reminder_count: Mapped[int] = mapped_column(Integer, default=0)
@@ -93,3 +193,6 @@ class ThreadTicket(Base):
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+    owner = relationship("User", foreign_keys=[owner_user_id], back_populates="owned_tickets")
+    assignee = relationship("User", foreign_keys=[assignee_user_id], back_populates="assigned_tickets")

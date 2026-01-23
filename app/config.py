@@ -21,6 +21,14 @@ class Settings(BaseSettings):
     # Prefer Postgres in production (Render Postgres). SQLite is OK for local dev.
     DATABASE_URL: str = "sqlite:///./email_autopilot.db"
 
+    # App auth (local users). For production you MUST set JWT_SECRET.
+    JWT_SECRET: str = "dev-insecure-change-me"
+
+    # Bootstrap admin (created on startup if no users exist)
+    BOOTSTRAP_ADMIN_EMAIL: str = "admin@example.com"
+    BOOTSTRAP_ADMIN_NAME: str = "Admin"
+    BOOTSTRAP_ADMIN_PASSWORD: str = "ChangeMeNow!"
+
     # Scheduler (APScheduler) can be enabled later (e.g., background worker).
     ENABLE_SCHEDULER: bool = True
 
@@ -56,6 +64,9 @@ class Settings(BaseSettings):
 
     OPENAI_API_KEY: Optional[str] = None
     OPENAI_MODEL: str = "gpt-4o-mini"
+
+    # Observability
+    SENTRY_DSN: Optional[str] = None
 
     def my_emails_list(self) -> List[str]:
         return [e.strip().lower() for e in self.MY_EMAILS.split(",") if e.strip()]

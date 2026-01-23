@@ -10,7 +10,7 @@ This version is optimized for **Render Web Service** deployment without a backgr
 
 ## Critical: database persistence
 
-If you use SQLite (`app.db`) on Render, you will lose data on restarts/redeploys because the filesystem is ephemeral.
+Production deployments must use Postgres. Render web services have an ephemeral filesystem; SQLite will be lost on restarts/redeploys.
 
 For production-like accuracy, use a persistent Postgres database and set:
 
@@ -28,6 +28,16 @@ Set these in Render (Environment tab):
 - `GOOGLE_CLIENT_ID`
 - `GOOGLE_CLIENT_SECRET`
 - `GOOGLE_REDIRECT_URI` = `https://<your-service>.onrender.com/auth/google/callback`
+
+Also required for multi-user login:
+
+- `JWT_SECRET` (strong random string)
+
+Optional bootstrap admin (created on first start if no users exist):
+
+- `BOOTSTRAP_ADMIN_EMAIL`
+- `BOOTSTRAP_ADMIN_PASSWORD`
+- `BOOTSTRAP_ADMIN_NAME`
 
 Recommended:
 
