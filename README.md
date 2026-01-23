@@ -61,3 +61,19 @@ All Gmail API calls will then target that mailbox.
 
 In Settings, use **Flush database** to delete all tickets + sync state.
 This does **not** disconnect Google.
+
+## Security (recommended)
+
+For production, protect the UI/API with HTTP Basic Auth:
+
+- `UI_BASIC_AUTH_USER`
+- `UI_BASIC_AUTH_PASSWORD`
+
+This is especially important if you deploy on a public Render URL.
+
+## Email HTML images / icons
+
+The thread viewer now supports:
+- Inline `cid:` images (existing)
+- Remote images proxied through `/threads/proxy-image` (default in UI settings)
+- Attachment download links

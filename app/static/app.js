@@ -75,14 +75,21 @@ async function googleConnectOrManage() {
 const SETTINGS_KEY = "agent_settings_v1";
 let settings = {
     defaultHtmlView: false,
-    blockRemoteImages: true,
+    proxyRemoteImages: true,
     compactTickets: false,
 };
 
 function loadSettings() {
     try {
         const raw = localStorage.getItem(SETTINGS_KEY);
-        if (raw) settings = { ...settings, ...JSON.parse(raw) };
+        if (raw) {
+            const parsed = JSON.parse(raw);
+            // Backward compatibility: older versions used blockRemoteImages.
+            if (typeof parsed.proxyRemoteImages === "undefined" && typeof parsed.blockRemoteImages !== "undefined") {
+                parsed.proxyRemoteImages = !!parsed.blockRemoteImages;
+            }
+            settings = { ...settings, ...parsed };
+        }
     } catch {
         // ignore
     }
@@ -96,7 +103,7 @@ function openSettings() {
     const m = document.getElementById("settingsModal");
     if (!m) return;
     document.getElementById("setDefaultHtml").checked = !!settings.defaultHtmlView;
-    document.getElementById("setBlockRemote").checked = !!settings.blockRemoteImages;
+    document.getElementById("setBlockRemote").checked = !!settings.proxyRemoteImages;
     document.getElementById("setCompact").checked = !!settings.compactTickets;
     m.classList.remove("hidden");
 }
@@ -109,7 +116,7 @@ function closeSettings() {
 
 function applySettingsFromModal() {
     settings.defaultHtmlView = document.getElementById("setDefaultHtml").checked;
-    settings.blockRemoteImages = document.getElementById("setBlockRemote").checked;
+    settings.proxyRemoteImages = document.getElementById("setBlockRemote").checked;
     settings.compactTickets = document.getElementById("setCompact").checked;
     saveSettings();
     closeSettings();
@@ -378,10 +385,30 @@ async function openThread(threadId) {
         });
     };
 
-    const stripRemoteImages = (html) => {
+    const rewriteRemoteImagesToProxy = (html) => {
         if (!html) return "";
-        // Remove <img> tags that reference remote resources (http/https). CID and data URIs remain.
-        return html.replace(/<img\b[^>]*\bsrc\s*=\s*(["'])https?:\/\/[^"'>\s]+\1[^>]*>/gi, "");
+        // Replace remote <img src="https://..."> with a privacy-preserving proxy endpoint.
+        return html.replace(/(<img\b[^>]*\bsrc\s*=\s*)(["'])(https?:\/\/[^"'>\s]+)\2/gi, (m, pre, q, url) => {
+            const proxied = `/threads/proxy-image?url=${encodeURIComponent(url)}`;
+            return `${pre}${q}${proxied}${q}`;
+        });
+    };
+
+
+    const attachmentBadge = (a) => {
+        const name = a.filename || "attachment";
+        const mime = (a.mime_type || "").toLowerCase();
+        let label = "FILE";
+        if (mime.startsWith("image/")) label = "IMAGE";
+        else if (mime == "application/pdf") label = "PDF";
+        else if (mime.startsWith("text/")) label = "TEXT";
+        else if (mime.startsWith("application/vnd")) label = "DOC";
+        const url = `/threads/${encodeURIComponent(threadId)}/messages/${encodeURIComponent(a.message_id || "")}/attachments/${encodeURIComponent(a.attachment_id)}?filename=${encodeURIComponent(name)}`;
+        // message_id may be absent from API; we set it in-line below when building.
+        return `<a class="inline-flex items-center gap-2 px-3 py-1 rounded-full border bg-white text-sm text-slate-700 hover:bg-slate-50" href="${url}" target="_blank" rel="noreferrer">
+          <span class="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">${label}</span>
+          <span class="truncate max-w-[220px]">${escapeHtml(name)}</span>
+        </a>`;
     };
 
     const renderMessage = (m, idx) => {
@@ -391,9 +418,12 @@ async function openThread(threadId) {
         const iframeId = `msg_iframe_${idx}`;
         const btnId = `msg_toggle_${idx}`;
         let html = hasHtml ? rewriteCid(m.body_html, msgId) : "";
-        if (hasHtml && settings.blockRemoteImages) {
-            html = stripRemoteImages(html);
+        if (hasHtml && settings.proxyRemoteImages) {
+            html = rewriteRemoteImagesToProxy(html);
         }
+
+        const atts = (m.attachments || []).map(a => ({...a, message_id: msgId})).filter(a => !a.is_inline);
+        const attachmentsHtml = atts.length ? `<div class="mt-2 flex flex-wrap gap-2">${atts.map(attachmentBadge).join("")}</div>` : "";
 
         return `
         <div class="border rounded-xl p-4 bg-slate-50">
@@ -403,6 +433,7 @@ async function openThread(threadId) {
               <div class="text-sm"><span class="font-medium">From:</span> ${escapeHtml(m.from || "")}</div>
               <div class="text-sm"><span class="font-medium">To:</span> ${escapeHtml(m.to || "")}</div>
               <div class="text-sm"><span class="font-medium">Subject:</span> ${escapeHtml(m.subject || "")}</div>
+              ${attachmentsHtml}
             </div>
 
             ${hasHtml ? `
@@ -434,8 +465,8 @@ async function openThread(threadId) {
         if (!btn || !iframe) return;
 
         let html = rewriteCid(m.body_html, m.id);
-        if (settings.blockRemoteImages) {
-            html = stripRemoteImages(html);
+        if (settings.proxyRemoteImages) {
+            html = rewriteRemoteImagesToProxy(html);
         }
         iframe.srcdoc = html;
 

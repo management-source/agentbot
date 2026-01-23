@@ -11,6 +11,13 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     APP_ENV: str = "dev"
 
+    # Runtime
+    DEBUG: bool = False
+
+    # Optional UI/API protection (recommended for production)
+    UI_BASIC_AUTH_USER: Optional[str] = None
+    UI_BASIC_AUTH_PASSWORD: Optional[str] = None
+
     # Prefer Postgres in production (Render Postgres). SQLite is OK for local dev.
     DATABASE_URL: str = "sqlite:///./email_autopilot.db"
 
@@ -70,19 +77,22 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _validate_modes(self):
+        """Normalize modes and validate only when strictly required.
+
+        We *do not* hard-fail startup in OAuth mode if GOOGLE_* vars are missing,
+        because the UI can still load and show a helpful message.
+        """
         mode = (self.GMAIL_AUTH_MODE or "oauth").strip().lower()
         object.__setattr__(self, "GMAIL_AUTH_MODE", mode)
 
         if mode == "service_account":
             if not self.service_account_info():
-                raise ValueError("SERVICE_ACCOUNT_JSON (or SERVICE_ACCOUNT_JSON_B64) is required when GMAIL_AUTH_MODE=service_account")
+                raise ValueError(
+                    "SERVICE_ACCOUNT_JSON (or SERVICE_ACCOUNT_JSON_B64) is required when GMAIL_AUTH_MODE=service_account"
+                )
             if not (self.IMPERSONATE_USER or "").strip():
                 raise ValueError("IMPERSONATE_USER is required when GMAIL_AUTH_MODE=service_account")
-        else:
-            # oauth mode
-            missing = [k for k in ("GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REDIRECT_URI") if not (getattr(self, k) or "").strip()]
-            if missing:
-                raise ValueError(f"Missing required OAuth settings: {', '.join(missing)}")
+
         return self
 
     class Config:
