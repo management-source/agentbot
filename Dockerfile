@@ -7,6 +7,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-ENV PYTHONUNBUFFERED=1
-
-CMD exec gunicorn -k uvicorn.workers.UvicornWorker -w 1 -b 0.0.0.0:${PORT} app.main:app
+CMD ["gunicorn", "-k", "uvicorn.workers.UvicornWorker", "app.main:app", "--bind", "0.0.0.0:10000"]
