@@ -17,8 +17,9 @@
                             query detection & management</div>
                     </div>
 
-                    <div class="flex flex-col items-end gap-2">
+                    <div class="flex flex-col items-end gap-3">
                         <div class="text-xs text-slate-500" id="userBadge"></div>
+                        <div class="flex items-center justify-end flex-wrap gap-2">
                         <button id="logoutBtn" class="hidden px-4 py-2 rounded-lg border text-slate-700 hover:bg-slate-50" onclick="logout()">Logout</button>
                         <button id="googleBtn"
                             class="px-4 py-2 rounded-lg border text-slate-700 hover:bg-slate-50"
@@ -103,6 +104,7 @@
                             onclick="stopAutopilot()">
                             Stop
                         </button>
+                        </div>
                     </div>
                 </div>
 
@@ -219,6 +221,7 @@
                         <button id="sendAckBtn"
                             class="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700"
                             onclick="sendAckFromModal()">Send</button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -304,6 +307,42 @@
             </div>
         </div>
 
-        <script src="/static/app.js?v=8"></script>
+        
+<!-- Users Modal -->
+<div id="usersModal" class="hidden fixed inset-0 bg-black/40">
+    <div class="max-w-4xl mx-auto mt-16 bg-white rounded-xl shadow border p-6">
+        <div class="flex items-center justify-between gap-4">
+            <div>
+                <div class="text-lg font-semibold text-slate-900">User Management</div>
+                <div class="text-sm text-slate-500">Create and manage users (Admin only)</div>
+            </div>
+            <button class="px-3 py-2 rounded-lg border text-slate-700 hover:bg-slate-50" onclick="closeUsersModal()">Close</button>
+        </div>
+
+        <div class="mt-4 grid grid-cols-1 md:grid-cols-4 gap-3">
+            <input id="newUserEmail" class="px-3 py-2 rounded-lg border" placeholder="Email" />
+            <input id="newUserName" class="px-3 py-2 rounded-lg border" placeholder="Full name" />
+            <select id="newUserRole" class="px-3 py-2 rounded-lg border bg-white">
+                <option value="PM">PM</option>
+                <option value="LEASING">LEASING</option>
+                <option value="SALES">SALES</option>
+                <option value="ACCOUNTS">ACCOUNTS</option>
+                <option value="READONLY">READONLY</option>
+                <option value="ADMIN">ADMIN</option>
+            </select>
+            <input id="newUserPassword" class="px-3 py-2 rounded-lg border" placeholder="Temp password" type="password" />
+        </div>
+        <div class="mt-3 flex justify-end">
+            <button class="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700" onclick="createUserFromForm()">Create user</button>
+        </div>
+
+        <div class="mt-5">
+            <div class="text-sm font-medium text-slate-900 mb-2">Existing users</div>
+            <div id="usersList" class="space-y-2"></div>
+        </div>
+    </div>
+</div>
+
+<script src="/static/app.js?v=8"></script>
     </body>
 </html>

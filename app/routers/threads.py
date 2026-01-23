@@ -6,6 +6,7 @@ import ipaddress
 from urllib.parse import urlparse
 
 import bleach
+from bleach.css_sanitizer import CSSSanitizer
 import httpx
 from typing import Any, Dict, Optional, Tuple
 
@@ -117,6 +118,19 @@ def _sanitize_html(html: str) -> str:
         "h1","h2","h3","h4","h5","h6","style"
     }
     allowed_attrs = dict(bleach.sanitizer.ALLOWED_ATTRIBUTES)
+
+    css_sanitizer = CSSSanitizer(
+        allowed_css_properties=[
+            'color','background-color','font','font-family','font-size','font-weight','font-style','text-decoration',
+            'text-align','vertical-align','margin','margin-left','margin-right','margin-top','margin-bottom',
+            'padding','padding-left','padding-right','padding-top','padding-bottom',
+            'border','border-width','border-style','border-color','border-collapse',
+            'width','height','max-width','min-width',
+            'display','white-space','line-height'
+        ],
+        allowed_css_functions=['rgb','rgba','url'],
+        allowed_svg_properties=[]
+    )
     allowed_attrs.update({
         "*": ["class","style","title","dir","lang"],
         "a": ["href","title","target","rel","name"],
@@ -132,6 +146,7 @@ def _sanitize_html(html: str) -> str:
         attributes=allowed_attrs,
         protocols=["http","https","mailto","cid","data"],
         strip=True,
+        css_sanitizer=css_sanitizer,
     )
 
     # Remove any lingering on* attributes that can slip through style blocks, etc.

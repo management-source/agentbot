@@ -69,6 +69,10 @@ def setup_logging():
     handler.setFormatter(JsonFormatter())
     root.handlers = [handler]
 
+    # Silence noisy third-party CSS parsers used by premailer
+    logging.getLogger('CSSUTILS').setLevel(logging.CRITICAL)
+    logging.getLogger('cssutils').setLevel(logging.CRITICAL)
+
 
 class RequestIdMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):

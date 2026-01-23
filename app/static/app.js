@@ -112,6 +112,89 @@ function saveSettings() {
     try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch { }
 }
 
+
+function openUsersModal() {
+    const modal = document.getElementById("usersModal");
+    if (!modal) return;
+    modal.classList.remove("hidden");
+    renderUsersList();
+}
+
+function closeUsersModal() {
+    const modal = document.getElementById("usersModal");
+    if (!modal) return;
+    modal.classList.add("hidden");
+}
+
+async function renderUsersList() {
+    await loadUsersCache();
+    const list = document.getElementById("usersList");
+    if (!list) return;
+    list.innerHTML = "";
+    for (const u of usersCache) {
+        const row = document.createElement("div");
+        row.className = "flex items-center justify-between gap-3 p-2 rounded-lg border bg-white";
+        row.innerHTML = `
+            <div class="min-w-0">
+              <div class="font-medium text-slate-900 truncate">${escapeHtml(u.name)}</div>
+              <div class="text-xs text-slate-500 truncate">${escapeHtml(u.email)} • ${escapeHtml(u.role)}${u.is_active ? "" : " • Inactive"}</div>
+            </div>
+            <div class="flex items-center gap-2">
+              <select class="px-2 py-1 rounded-md border bg-white text-sm" data-user-role="${u.id}">
+                ${["ADMIN","PM","LEASING","SALES","ACCOUNTS","READONLY"].map(r => `<option value="${r}" ${r===u.role?"selected":""}>${r}</option>`).join("")}
+              </select>
+              <label class="text-sm text-slate-600 flex items-center gap-1">
+                <input type="checkbox" ${u.is_active ? "checked":""} data-user-active="${u.id}" />
+                Active
+              </label>
+              <button class="px-3 py-1.5 rounded-md border text-sm" onclick="saveUserEdits(${u.id})">Save</button>
+            </div>
+        `;
+        list.appendChild(row);
+    }
+}
+
+async function saveUserEdits(userId) {
+    const roleSel = document.querySelector(`[data-user-role="${userId}"]`);
+    const activeChk = document.querySelector(`[data-user-active="${userId}"]`);
+    const payload = { role: roleSel ? roleSel.value : undefined, is_active: activeChk ? !!activeChk.checked : undefined };
+    const r = await apiFetch(`/user-auth/users/${userId}`, {
+        method: "PATCH",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify(payload),
+    });
+    if (!r.ok) {
+        alert("Failed to update user (Admin only).");
+        return;
+    }
+    await renderUsersList();
+}
+
+async function createUserFromForm() {
+    const email = document.getElementById("newUserEmail").value.trim();
+    const name = document.getElementById("newUserName").value.trim();
+    const role = document.getElementById("newUserRole").value;
+    const password = document.getElementById("newUserPassword").value;
+    if (!email || !name || !password) {
+        alert("Email, name and password are required.");
+        return;
+    }
+    const r = await apiFetch("/user-auth/users", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ email, name, role, password, is_active: true }),
+    });
+    if (!r.ok) {
+        const msg = await r.text();
+        alert("Failed to create user: " + msg);
+        return;
+    }
+    document.getElementById("newUserEmail").value = "";
+    document.getElementById("newUserName").value = "";
+    document.getElementById("newUserPassword").value = "";
+    await renderUsersList();
+}
+
 function openSettings() {
     const m = document.getElementById("settingsModal");
     if (!m) return;
@@ -271,6 +354,21 @@ function priorityBadge(p) {
     return `<span class="px-2 py-0.5 rounded-full text-xs bg-amber-100 text-amber-700 border">medium</span>`;
 }
 
+
+function assigneeOptions(selectedId) {
+    const opts = ['<option value="">Unassigned</option>'];
+    for (const u of usersCache) {
+        const sel = String(u.id) === String(selectedId) ? "selected" : "";
+        opts.push(`<option value="${u.id}" ${sel}>${escapeHtml(u.name)} (${escapeHtml(u.role)})</option>`);
+    }
+    return opts.join("");
+}
+
+function categoryOptions(selected) {
+    const cats = ["MAINTENANCE","RENT_ARREARS","LEASING","COMPLIANCE","SALES","GENERAL"];
+    return cats.map(c => `<option value="${c}" ${c=== (selected||"GENERAL") ? "selected": ""}>${c.replace("_"," ")}</option>`).join("");
+}
+
 function statusOptions(selected) {
     const opts = [
         ["PENDING", "Pending"],
@@ -312,8 +410,6 @@ function renderTicket(t) {
         ${priorityBadge(t.priority)}
         ${catBadge}
         ${assigneeBadge}
-        ${catBadge}
-        ${assigneeBadge}
         ${t.is_not_replied ? `<span class="px-2 py-0.5 rounded-full text-xs bg-orange-100 text-orange-700 border">Not Replied</span>` : ``}
         ${t.is_unread ? `<span class="px-2 py-0.5 rounded-full text-xs bg-slate-100 text-slate-700 border">Unread</span>` : ``}
       </div>
@@ -335,10 +431,21 @@ function renderTicket(t) {
       </div>
     </div>
 
-    <div class="flex flex-col items-end gap-2">
-      <select class="px-3 py-2 rounded-lg border bg-white"
+    <div class="flex flex-col items-end gap-2 w-56">
+      <label class="w-full text-xs text-slate-500">Status</label>
+      <select class="w-full px-3 py-2 rounded-lg border bg-white"
         onchange="updateStatus('${t.thread_id}', this.value)">
         ${statusOptions(t.status)}
+      </select>
+      <label class="w-full text-xs text-slate-500">Assignee</label>
+      <select class="w-full px-3 py-2 rounded-lg border bg-white"
+        onchange="updateAssignee('${t.thread_id}', this.value)">
+        ${assigneeOptions(t.assignee_user_id)}
+      </select>
+      <label class="w-full text-xs text-slate-500">Category</label>
+      <select class="w-full px-3 py-2 rounded-lg border bg-white"
+        onchange="updateCategory('${t.thread_id}', this.value)">
+        ${categoryOptions(t.category)}
       </select>
     </div>
   `;
@@ -373,6 +480,34 @@ async function loadTickets() {
     if ((data.items || []).length === 0) {
         list.innerHTML = `<div class="text-slate-600 text-sm">No tickets in this tab.</div>`;
     }
+}
+
+
+async function updateAssignee(threadId, userId) {
+    const payload = { assignee_user_id: userId ? Number(userId) : null };
+    const r = await apiFetch(`/tickets/${threadId}/assign`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+    });
+    if (!r.ok) {
+        alert("Failed to assign ticket");
+        return;
+    }
+    await loadTickets();
+}
+
+async function updateCategory(threadId, category) {
+    const r = await apiFetch(`/tickets/${threadId}/category`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ category }),
+    });
+    if (!r.ok) {
+        alert("Failed to update category");
+        return;
+    }
+    await loadTickets();
 }
 
 async function updateStatus(threadId, status) {
@@ -422,7 +557,7 @@ async function openThread(threadId) {
         if (!html) return "";
         // Replace remote <img src="https://..."> with a privacy-preserving proxy endpoint.
         return html.replace(/(<img\b[^>]*\bsrc\s*=\s*)(["'])(https?:\/\/[^"'>\s]+)\2/gi, (m, pre, q, url) => {
-            const proxied = `/threads/proxy-image?url=${encodeURIComponent(url)}`;
+            const proxied = `${window.location.origin}/threads/proxy-image?url=${encodeURIComponent(url)}`;
             return `${pre}${q}${proxied}${q}`;
         });
     };
@@ -480,7 +615,7 @@ async function openThread(threadId) {
             <div class="text-sm text-slate-700 whitespace-pre-wrap" data-mode="text">${safeText}</div>
             ${hasHtml ? `
               <div class="mt-3 hidden" data-mode="html">
-                <iframe id="${iframeId}" class="w-full rounded-lg border bg-white" style="height: 520px;" sandbox="allow-popups allow-forms" referrerpolicy="no-referrer"></iframe>
+                <iframe id="${iframeId}" class="w-full rounded-lg border bg-white" style="height: 520px;" sandbox="allow-popups allow-forms allow-same-origin" referrerpolicy="no-referrer"></iframe>
               </div>
             ` : ``}
           </div>
