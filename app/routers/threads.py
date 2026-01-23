@@ -5,6 +5,8 @@ import re
 import ipaddress
 from urllib.parse import urlparse
 
+import logging
+
 import bleach
 from bleach.css_sanitizer import CSSSanitizer
 import httpx
@@ -25,6 +27,7 @@ from app.services.gmail_parse import extract_message_body
 
 router = APIRouter()
 
+log = logging.getLogger(__name__)
 
 def _normalize_cid(cid: str) -> str:
     """Normalize content-id values (strip brackets, whitespace)."""
@@ -100,59 +103,70 @@ def _gmail_b64url_decode(data: str) -> bytes:
     return base64.b64decode(data + pad)
 
 
-def _sanitize_html(html: str) -> str:
-    """Sanitize HTML for safe inline rendering.
-
-    - strips scripts/iframes/objects
-    - removes event handler attributes (on*)
-    - restricts protocols
-
-    This is not intended to be a perfect email renderer; it is a pragmatic safety layer.
+def _build_css_sanitizer():
     """
+    Bleach's CSSSanitizer signature differs across versions.
+    Build kwargs dynamically so we don't crash on older/newer bleach.
+    """
+    # Keep this conservative; HTML email CSS is often messy.
+    desired_kwargs = {
+        "allowed_css_properties": [
+            "color", "background-color",
+            "font", "font-family", "font-size", "font-style", "font-weight",
+            "text-decoration", "text-align",
+            "margin", "margin-left", "margin-right", "margin-top", "margin-bottom",
+            "padding", "padding-left", "padding-right", "padding-top", "padding-bottom",
+            "border", "border-radius", "border-width", "border-style", "border-color",
+            "display", "width", "max-width", "min-width",
+            "height", "max-height", "min-height",
+            "line-height", "white-space",
+        ],
+        # Only some bleach versions support this:
+        "allowed_css_functions": ["rgb", "rgba", "url", "calc"],
+    }
+
+    sig = inspect.signature(CSSSanitizer.__init__)
+    supported = set(sig.parameters.keys())
+
+    kwargs = {k: v for k, v in desired_kwargs.items() if k in supported}
+
+    try:
+        return CSSSanitizer(**kwargs)
+    except Exception:
+        log.exception("Failed to initialize CSSSanitizer; falling back to default.")
+        return CSSSanitizer()
+
+def _sanitize_html(html: str) -> str:
     if not html:
         return ""
 
-    allowed_tags = set(bleach.sanitizer.ALLOWED_TAGS) | {
-        "div","span","p","br","hr","table","thead","tbody","tfoot","tr","td","th",
-        "img","a","ul","ol","li","strong","em","b","i","u","blockquote","pre","code",
-        "h1","h2","h3","h4","h5","h6","style"
-    }
-    allowed_attrs = dict(bleach.sanitizer.ALLOWED_ATTRIBUTES)
+    css_sanitizer = _build_css_sanitizer()
 
-    css_sanitizer = CSSSanitizer(
-        allowed_css_properties=[
-            'color','background-color','font','font-family','font-size','font-weight','font-style','text-decoration',
-            'text-align','vertical-align','margin','margin-left','margin-right','margin-top','margin-bottom',
-            'padding','padding-left','padding-right','padding-top','padding-bottom',
-            'border','border-width','border-style','border-color','border-collapse',
-            'width','height','max-width','min-width',
-            'display','white-space','line-height'
-        ],
-        allowed_css_functions=['rgb','rgba','url'],
-        allowed_svg_properties=[]
-    )
-    allowed_attrs.update({
-        "*": ["class","style","title","dir","lang"],
-        "a": ["href","title","target","rel","name"],
-        "img": ["src","alt","title","width","height"],
-        "td": ["colspan","rowspan","align","valign"],
-        "th": ["colspan","rowspan","align","valign"],
-        "table": ["cellpadding","cellspacing","border","width"],
+    allowed_tags = bleach.sanitizer.ALLOWED_TAGS.union({
+        "div", "span", "p", "br", "hr",
+        "table", "thead", "tbody", "tfoot", "tr", "td", "th",
+        "img", "a",
+        "h1", "h2", "h3", "h4", "h5", "h6",
+        "ul", "ol", "li",
+        "strong", "em", "b", "i", "u",
+        "blockquote", "pre", "code",
     })
 
-    cleaned = bleach.clean(
+    allowed_attrs = {
+        "*": ["class", "style", "title"],
+        "a": ["href", "name", "target", "rel"],
+        "img": ["src", "alt", "title", "width", "height"],
+        "td": ["colspan", "rowspan"],
+        "th": ["colspan", "rowspan"],
+    }
+
+    return bleach.clean(
         html,
-        tags=list(allowed_tags),
+        tags=allowed_tags,
         attributes=allowed_attrs,
-        protocols=["http","https","mailto","cid","data"],
         strip=True,
-        css_sanitizer=css_sanitizer,
+        css_sanitizer=css_sanitizer,  # THIS removes your NoCssSanitizerWarning too
     )
-
-    # Remove any lingering on* attributes that can slip through style blocks, etc.
-    cleaned = re.sub(r'\son\w+\s*=\s*([\"\']).*?\1', '', cleaned, flags=re.I)
-
-    return cleaned
 
 
 @router.get("/{thread_id}")
