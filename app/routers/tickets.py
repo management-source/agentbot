@@ -38,7 +38,7 @@ from app.config import settings
 from app.services.gmail_send import send_reply_in_thread
 from app.services.gmail_client import get_gmail_service, gmail_user_id
 from app.services.gmail_parse import extract_message_body
-from app.schemas import DraftAIReplyIn
+from app.schemas import DraftAiIn
 
 router = APIRouter()
 
