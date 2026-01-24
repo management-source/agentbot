@@ -38,6 +38,7 @@ from app.config import settings
 from app.services.gmail_send import send_reply_in_thread
 from app.services.gmail_client import get_gmail_service, gmail_user_id
 from app.services.gmail_parse import extract_message_body
+from app.schemas import DraftAIReplyIn
 
 router = APIRouter()
 
@@ -318,10 +319,12 @@ def draft_ai_reply(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Draft a context-aware reply using the latest message body.
+    """Draft a context-aware reply using the latest message body (human-in-the-loop)."""
 
-    This is designed as a human-in-the-loop tool; it does not send email.
-    """
+    # Read request body safely
+    req_tone = ((payload.tone if payload and payload.tone else None) or tone or "neutral").strip()
+    additional_info = (payload.additional_info if payload else None)
+
     t = db.get(ThreadTicket, thread_id)
     if not t:
         raise HTTPException(status_code=404, detail="Ticket not found")
@@ -334,12 +337,13 @@ def draft_ai_reply(
         .get(userId=gmail_user_id(), id=thread_id, format="full")
         .execute()
     )
+
     messages = th.get("messages", []) or []
     last_body_text = ""
     if messages:
         last = messages[-1]
-        payload = last.get("payload") or {}
-        body_info = extract_message_body(payload)
+        gmail_payload = last.get("payload") or {}  # IMPORTANT: do NOT overwrite request payload
+        body_info = extract_message_body(gmail_payload)
         last_body_text = (body_info.get("body_text") or "").strip()
         if not last_body_text:
             last_body_text = (last.get("snippet") or "").strip()
@@ -361,20 +365,18 @@ def draft_ai_reply(
     if not settings.OPENAI_API_KEY:
         raise HTTPException(status_code=400, detail="AI drafting is not configured. Set OPENAI_API_KEY.")
 
-    req_tone = (payload.tone if payload else tone) or tone
-    extra_context = payload.extra_context if payload else None
     signature = (get_state(db, "signature_text") or settings.DEFAULT_SIGNATURE or "").strip()
 
     try:
         reply_subject, reply_body, meta = draft_context_reply(
-        from_name=t.from_name,
-        from_email=t.from_email,
-        subject=subj,
-        last_message_text=last_body_text or snip,
-        ai_category=t.ai_category or "general",
-        urgency=int(t.ai_urgency or 1),
-        tone=req_tone,
-        extra_context=extra_context,
+            from_name=t.from_name or "",
+            from_email=t.from_email or "",
+            subject=subj,
+            last_message_text=(last_body_text or snip),
+            ai_category=t.ai_category or "general",
+            urgency=int(t.ai_urgency or 1),
+            tone=req_tone,
+            extra_context=additional_info,   # <-- map additional info into extra_context
             signature=signature,
         )
     except RuntimeError as e:
@@ -387,7 +389,6 @@ def draft_ai_reply(
     db.commit()
 
     return DraftAiReplyOut(subject=reply_subject, body=reply_body, meta=meta)
-
 
 @router.post("/{thread_id}/send-ack")
 def send_ack(thread_id: str, payload: SendAckIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):

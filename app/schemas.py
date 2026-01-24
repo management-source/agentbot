@@ -2,6 +2,7 @@ from datetime import datetime
 from pydantic import BaseModel
 from pydantic import ConfigDict
 from app.models import TicketStatus, TicketCategory, UserRole
+from typing import Optional
 
 
 class UserOut(BaseModel):
@@ -73,6 +74,10 @@ class AiAnalyzeOut(BaseModel):
     ai_reasons: list[str] = []
     ai_summary: str = ""
 
+
+class DraftAiIn(BaseModel):
+    tone: str | None = None
+    additional_info: str | None = None
 
 class DraftAiReplyOut(BaseModel):
     subject: str
