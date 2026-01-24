@@ -1,7 +1,6 @@
 import logging
 import uuid
 from datetime import datetime
-from pydantic import ValidationError
 
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
@@ -25,7 +24,6 @@ from app.security import hash_password
 from app.services.gmail_sync import sync_inbox_threads
 from app.services.reminders import run_reminders
 from app.services.escalation import run_sla_escalations
-from fastapi.responses import JSONResponse
 
 
 app = FastAPI(title="Email Autopilot Manager", debug=settings.DEBUG)
@@ -43,14 +41,6 @@ REQUEST_LATENCY = Histogram(
     "HTTP request latency",
     ["method", "path"],
 )
-
-
-@app.exception_handler(ValidationError)
-async def pydantic_validation_exception_handler(request: Request, exc: ValidationError):
-    return JSONResponse(
-        status_code=422,
-        content={"error": "validation_error", "details": exc.errors()},
-    )
 
 
 class JsonFormatter(logging.Formatter):

@@ -15,24 +15,6 @@ async function apiFetch(url, options = {}) {
     return fetch(url, opts);
 }
 
-function normalizePriority(priority) {
-    // Backend now sends priority as int (1–5)
-    if (typeof priority === "number") {
-        if (priority >= 4) return "urgent";
-        if (priority === 3) return "high";
-        if (priority === 2) return "medium";
-        return "low";
-    }
-
-    // Backward compatibility if string slips through
-    if (typeof priority === "string") {
-        return priority.toLowerCase();
-    }
-
-    return "medium";
-}
-
-
 function escapeHtml(text) {
     if (typeof text !== "string") return "";
     return text
@@ -45,6 +27,11 @@ function escapeHtml(text) {
 
 // Date filter applied to ticket list (set when you click Fetch Now).
 let currentDateFilter = { start: "", end: "" };
+
+// UI filters
+let currentSearch = "";
+let currentAssignee = ""; // user id as string
+let currentAiCategory = ""; // one of AI categories
 
 let googleConnected = false;
 
@@ -449,7 +436,7 @@ async function refreshAutopilotStatus() {
 }
 
 function priorityBadge(p) {
-    const val = (p || "medium").toLowerCase();
+    const val = String(p || "medium").toLowerCase();
     if (val === "high") return `<span class="px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-700 border">high</span>`;
     if (val === "low") return `<span class="px-2 py-0.5 rounded-full text-xs bg-emerald-100 text-emerald-700 border">low</span>`;
     return `<span class="px-2 py-0.5 rounded-full text-xs bg-amber-100 text-amber-700 border">medium</span>`;
@@ -500,7 +487,8 @@ function renderTicket(t) {
     const due = t.due_at ? `Due: ${formatDate(t.due_at)}` : "Due: —";
     const last = t.last_message_at ? `Last: ${formatDate(t.last_message_at)}` : "Last: —";
 
-    const cat = (t.category || "GENERAL").replace("_", " ");
+    // Legacy manual category removed from UI; prefer AI category.
+    const cat = "";
     const assignee = t.assignee_user_id ? (usersCache.find(u => u.id === t.assignee_user_id)?.name || `User#${t.assignee_user_id}`) : "Unassigned";
 
     let slaText = "SLA: —";
@@ -516,7 +504,7 @@ function renderTicket(t) {
         const card = document.createElement("div");
         card.className = "ticket";
 
-        const priority = normalizePriority(t.priority);
+        const priority = String(t.priority || "medium").toLowerCase();
         const priBadge = priority === "high"
             ? `<span class="badge priority">High</span>`
             : (priority === "low" ? `<span class="badge">Low</span>` : `<span class="badge">Medium</span>`);
@@ -535,7 +523,7 @@ function renderTicket(t) {
               ${priBadge}
               ${aiCategoryBadge(t.ai_category)}
               ${aiUrgencyBadge(t.ai_urgency)}
-              <span class="badge">${escapeHtml(cat)}</span>
+              ${cat ? `<span class="badge">${escapeHtml(cat)}</span>` : ``}
               <span class="badge">${escapeHtml(assignee)}</span>
               ${nrBadge}
               ${unreadBadge}
@@ -571,13 +559,6 @@ function renderTicket(t) {
                 </select>
               </div>
 
-              <div class="field">
-                <div class="label">Category</div>
-                <select onchange="updateCategory('${t.thread_id}', this.value)">
-                  ${categoryOptions(t.category)}
-                </select>
-              </div>
-
               ${t.from_email ? `<button class="btn danger" onclick="blacklistSender('${t.from_email}')">Blacklist Sender</button>` : ``}
             </div>
           </div>
@@ -591,7 +572,7 @@ function renderTicket(t) {
         ? "bg-white rounded-xl shadow border p-4 flex items-start justify-between gap-4"
         : "bg-white rounded-xl shadow border p-5 flex items-start justify-between gap-4";
 
-    const catBadge = `<span class="px-2 py-0.5 rounded-full text-xs bg-indigo-50 text-indigo-800 border">${cat}</span>`;
+    const catBadge = ""; // legacy manual category removed; use AI category badge instead
     const assigneeBadge = `<span class="px-2 py-0.5 rounded-full text-xs bg-slate-50 text-slate-700 border">${assignee}</span>`;
 
     let slaClass = "text-slate-500";
@@ -641,11 +622,7 @@ function renderTicket(t) {
         onchange="updateAssignee('${t.thread_id}', this.value)">
         ${assigneeOptions(t.assignee_user_id)}
       </select>
-      <label class="w-full text-xs text-slate-500">Category</label>
-      <select class="w-full px-3 py-2 rounded-lg border bg-white"
-        onchange="updateCategory('${t.thread_id}', this.value)">
-        ${categoryOptions(t.category)}
-      </select>
+      <!-- Manual category removed; AI category is computed automatically -->
     </div>
   `;
 
@@ -660,6 +637,12 @@ async function loadTickets() {
     // Apply current filter (set by Fetch Now). If empty, do not filter.
     if (currentDateFilter.start) url.searchParams.set("start", currentDateFilter.start);
     if (currentDateFilter.end) url.searchParams.set("end", currentDateFilter.end);
+
+    // Search / assignee / AI category filters
+    const q = (currentSearch || "").trim();
+    if (q) url.searchParams.set("query", q);
+    if (currentAssignee) url.searchParams.set("assignee_user_id", currentAssignee);
+    if (currentAiCategory) url.searchParams.set("ai_category", currentAiCategory);
 
     const r = await apiFetch(url);
     const data = await r.json();
@@ -878,7 +861,7 @@ async function openThread(threadId) {
     if (useViewer) {
         // Ensure toggles wire up after the viewer iframe loads its srcdoc.
         viewerFrame.onload = () => {
-            try { attachTogglesInDocument(viewerFrame.contentDocument); } catch (e) { }
+            try { attachTogglesInDocument(viewerFrame.contentDocument); } catch (e) {}
         };
         viewerFrame.srcdoc = threadHtml;
     } else {
@@ -1201,5 +1184,48 @@ window.addEventListener("load", async () => {
     }
 
     await refreshAutopilotStatus();
+
+    // Wire filters
+    const searchEl = document.getElementById("searchBox");
+    if (searchEl) {
+        let tmr = null;
+        searchEl.addEventListener("input", () => {
+            currentSearch = searchEl.value || "";
+            if (tmr) clearTimeout(tmr);
+            tmr = setTimeout(() => loadTickets(), 250);
+        });
+    }
+
+    const assigneeFilter = document.getElementById("assigneeFilter");
+    if (assigneeFilter) {
+        assigneeFilter.addEventListener("change", () => {
+            currentAssignee = assigneeFilter.value || "";
+            loadTickets();
+        });
+    }
+
+    const catFilter = document.getElementById("categoryFilter");
+    if (catFilter) {
+        catFilter.addEventListener("change", () => {
+            currentAiCategory = catFilter.value || "";
+            loadTickets();
+        });
+    }
+
+    // Populate assignee filter now that we have users cache
+    try { populateAssigneeFilter(); } catch {}
+
     await loadTickets();
 });
+
+function populateAssigneeFilter() {
+    const sel = document.getElementById("assigneeFilter");
+    if (!sel) return;
+    const current = sel.value;
+    const opts = ['<option value="">All</option>'];
+    for (const u of usersCache || []) {
+        opts.push(`<option value="${u.id}">${escapeHtml(u.name)} (${escapeHtml(u.role)})</option>`);
+    }
+    sel.innerHTML = opts.join("");
+    if (current) sel.value = current;
+}

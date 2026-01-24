@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from datetime import datetime, timedelta
 from pydantic import BaseModel
 
@@ -24,11 +24,11 @@ from app.schemas import (
     TicketListOut,
     TicketOut,
     DraftAckOut,
+    DraftAiReplyOut,
     SendAckIn,
     TicketNoteOut,
     TicketAuditOut,
     AiAnalyzeOut,
-    DraftAiReplyOut,
 )
 from app.services.audit import add_audit
 from app.services.ai_reply import draft_acknowledgement
@@ -94,7 +94,9 @@ def _tab_filter(q, tab: str):
 def list_tickets(
     tab: str = "all",
     category: TicketCategory | None = None,
+    ai_category: str | None = None,
     assignee_user_id: int | None = None,
+    query: str | None = None,
     mine: bool = False,
     overdue: bool = False,
     limit: int = 50,
@@ -113,6 +115,22 @@ def list_tickets(
 
     if category:
         q = q.filter(ThreadTicket.category == category)
+
+    # AI category filter (preferred)
+    if ai_category:
+        q = q.filter(ThreadTicket.ai_category == ai_category)
+
+    # Full-text-ish search across key fields
+    if query:
+        like = f"%{query.strip()}%"
+        q = q.filter(
+            or_(
+                ThreadTicket.subject.ilike(like),
+                ThreadTicket.snippet.ilike(like),
+                ThreadTicket.from_email.ilike(like),
+                ThreadTicket.from_name.ilike(like),
+            )
+        )
 
     if mine:
         q = q.filter(ThreadTicket.assignee_user_id == user.id)
@@ -213,8 +231,45 @@ def draft_ack(thread_id: str, db: Session = Depends(get_db), user: User = Depend
         from_name=t.from_name,
         subject=t.subject or "",
         snippet=t.snippet or "",
+        ai_category=t.ai_category,
+        ai_urgency=t.ai_urgency,
     )
     return DraftAckOut(subject=subject, body=body)
+
+
+@router.post("/{thread_id}/draft-reply", response_model=DraftAiReplyOut)
+def draft_reply(thread_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Generate a context-aware draft reply for a ticket.
+
+    This uses AI when configured, and a deterministic fallback template otherwise.
+    """
+    t = db.get(ThreadTicket, thread_id)
+    if not t:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+
+    subj = t.subject or ""
+    snip = t.snippet or ""
+    # Prefer AI category if present; otherwise fall back to legacy category.
+    cat = t.ai_category or (t.category.value.lower() if hasattr(t.category, "value") else str(t.category).lower())
+
+    out = draft_context_reply(
+        from_name=t.from_name,
+        subject=subj,
+        snippet=snip,
+        category=cat,
+        tone="professional",
+        constraints=[
+            "Be factual; do not invent details.",
+            "If dates, amounts, or addresses are missing, ask for them.",
+            "Avoid legal advice; keep to process and next steps.",
+        ],
+    )
+
+    return DraftAiReplyOut(subject=out.subject, body=out.body, meta={
+        "ai_category": t.ai_category,
+        "ai_urgency": t.ai_urgency,
+        "ai_confidence": t.ai_confidence,
+    })
 
 
 @router.post("/{thread_id}/ai-analyze", response_model=AiAnalyzeOut)

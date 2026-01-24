@@ -2,18 +2,10 @@ from datetime import datetime
 from pydantic import BaseModel
 from pydantic import ConfigDict
 from app.models import TicketStatus, TicketCategory, UserRole
-from typing import Optional, Any
-from pydantic import field_validator
 
-PRIORITY_MAP = {
-    "low": 1,
-    "medium": 2,
-    "high": 3,
-    "urgent": 4,
-    "critical": 5,
-}
 
 class UserOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     id: int
     email: str
     name: str
@@ -22,6 +14,7 @@ class UserOut(BaseModel):
 
 
 class TicketNoteOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     id: int
     thread_id: str
     author_user_id: int
@@ -31,6 +24,7 @@ class TicketNoteOut(BaseModel):
 
 
 class TicketAuditOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     id: int
     thread_id: str
     action: str
@@ -39,54 +33,32 @@ class TicketAuditOut(BaseModel):
     detail: str | None
     created_at: datetime
 
-
 class TicketOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     thread_id: str
-    subject: str
-    snippet: str
-
-    from_name: str = ""          # allow missing
-    from_email: str
-
-    last_message_at: datetime
+    subject: str | None
+    snippet: str | None
+    from_name: str | None
+    from_email: str | None
+    last_message_at: datetime | None
     is_unread: bool
     is_not_replied: bool
+    priority: str
+    due_at: datetime | None
+    category: TicketCategory
+    owner_user_id: int | None = None
+    assignee_user_id: int | None = None
+    sla_due_at: datetime | None = None
+    escalated_at: datetime | None = None
+    escalation_level: int = 0
+    status: TicketStatus
 
-    priority: int = 2            # default medium
-    due_at: Optional[datetime] = None
-    category: str
-    status: str
-
-    # AI fields (optional)
-    ai_category: Optional[str] = None
-    ai_urgency: Optional[int] = None
-    ai_confidence: Optional[float] = None
-
-    model_config = ConfigDict(from_attributes=True)
-
-    @field_validator("from_name", mode="before")
-    @classmethod
-    def _from_name_none_to_empty(cls, v: Any) -> str:
-        if v is None:
-            return ""
-        return str(v)
-
-    @field_validator("priority", mode="before")
-    @classmethod
-    def _priority_to_int(cls, v: Any) -> int:
-        # already int-like
-        if v is None:
-            return 2
-        if isinstance(v, int):
-            return v
-        if isinstance(v, str):
-            s = v.strip().lower()
-            if s.isdigit():
-                return int(s)
-            if s in PRIORITY_MAP:
-                return PRIORITY_MAP[s]
-        # safe fallback
-        return 2
+    # --- AI metadata (optional) ---
+    ai_category: str | None = None
+    ai_urgency: int | None = None
+    ai_confidence: int | None = None  # 0..100
+    ai_reasons: str | None = None
+    ai_summary: str | None = None
 
 class TicketListOut(BaseModel):
     items: list[TicketOut]
