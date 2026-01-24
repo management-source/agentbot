@@ -308,7 +308,10 @@ def ai_analyze(thread_id: str, db: Session = Depends(get_db), user: User = Depen
 
 class DraftAiIn(BaseModel):
     tone: str = "neutral"
+    # Frontend historically sent `extra_context`. Some older UI versions may send
+    # `additional_info`. Support both for backwards compatibility.
     extra_context: str | None = None
+    additional_info: str | None = None
 
 
 @router.post("/{thread_id}/draft-ai-reply", response_model=DraftAiReplyOut)
@@ -323,7 +326,9 @@ def draft_ai_reply(
 
     # Read request body safely
     req_tone = ((payload.tone if payload and payload.tone else None) or tone or "neutral").strip()
-    additional_info = (payload.additional_info if payload else None)
+    additional_info = None
+    if payload:
+        additional_info = (payload.additional_info or payload.extra_context)
 
     t = db.get(ThreadTicket, thread_id)
     if not t:
