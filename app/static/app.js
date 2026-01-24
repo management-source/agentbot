@@ -238,6 +238,25 @@ function openSettings() {
     document.getElementById("setDefaultHtml").checked = !!settings.defaultHtmlView;
     document.getElementById("setBlockRemote").checked = !!settings.proxyRemoteImages;
     document.getElementById("setCompact").checked = !!settings.compactTickets;
+
+    // Load signature from server (best-effort)
+    const sigBox = document.getElementById("signatureText");
+    if (sigBox) {
+        sigBox.value = "Loading...";
+        apiFetch("/settings/signature").then(async (r) => {
+            const t = await r.text();
+            if (!r.ok) {
+                sigBox.value = "";
+                return;
+            }
+            try {
+                const j = JSON.parse(t);
+                sigBox.value = j.signature || "";
+            } catch {
+                sigBox.value = "";
+            }
+        }).catch(() => { sigBox.value = ""; });
+    }
     m.classList.remove("hidden");
 }
 
@@ -252,6 +271,16 @@ function applySettingsFromModal() {
     settings.proxyRemoteImages = document.getElementById("setBlockRemote").checked;
     settings.compactTickets = document.getElementById("setCompact").checked;
     saveSettings();
+
+    // Persist signature (best-effort)
+    const sigBox = document.getElementById("signatureText");
+    const signature = sigBox ? (sigBox.value || "").trim() : "";
+    apiFetch("/settings/signature", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ signature }),
+    }).catch(() => { });
+
     closeSettings();
     loadTickets();
 }
@@ -442,18 +471,46 @@ function priorityBadge(p) {
     return `<span class="px-2 py-0.5 rounded-full text-xs bg-amber-100 text-amber-700 border">medium</span>`;
 }
 
-function aiUrgencyBadge(u) {
-    const val = Number(u || 0);
-    if (!val) return "";
-    if (val >= 4) return `<span class="px-2 py-0.5 rounded-full text-xs bg-red-100 text-red-700 border">AI urgent ${val}/5</span>`;
-    if (val === 3) return `<span class="px-2 py-0.5 rounded-full text-xs bg-amber-100 text-amber-700 border">AI ${val}/5</span>`;
-    return `<span class="px-2 py-0.5 rounded-full text-xs bg-slate-50 text-slate-700 border">AI ${val}/5</span>`;
+function _aiUrgencyLabel(val) {
+    const n = Number(val || 0);
+    if (!n) return "";
+    if (n >= 5) return "Critical";
+    if (n === 4) return "Urgent";
+    if (n === 3) return "High";
+    if (n === 2) return "Medium";
+    return "Low";
 }
 
-function aiCategoryBadge(cat) {
-    if (!cat) return "";
-    const label = String(cat).replace("_", " ").toUpperCase();
-    return `<span class="px-2 py-0.5 rounded-full text-xs bg-violet-50 text-violet-800 border">AI: ${escapeHtml(label)}</span>`;
+function aiBadges(t) {
+    const cat = (t && t.ai_category) ? String(t.ai_category).replace(/_/g, " ") : "";
+    const urg = Number(t && t.ai_urgency || 0);
+    const conf = (t && typeof t.ai_confidence === "number") ? t.ai_confidence : null;
+    let reasons = [];
+    if (Array.isArray(t && t.ai_reasons)) {
+        reasons = t.ai_reasons.filter(Boolean);
+    } else if (typeof (t && t.ai_reasons) === "string" && t.ai_reasons.trim()) {
+        try {
+            const parsed = JSON.parse(t.ai_reasons);
+            if (Array.isArray(parsed)) reasons = parsed.filter(Boolean);
+        } catch {
+            // treat as single reason
+            reasons = [t.ai_reasons];
+        }
+    }
+    const title = reasons.length ? `AI reasons:\n- ${reasons.join("\n- ")}` : "";
+    const out = [];
+    if (cat) {
+        out.push(`<span class="px-2 py-0.5 rounded-full text-xs bg-violet-50 text-violet-800 border" title="${escapeHtml(title)}">AI: ${escapeHtml(cat.toUpperCase())}</span>`);
+    }
+    if (urg) {
+        const lbl = _aiUrgencyLabel(urg);
+        const cls = urg >= 4 ? "bg-red-100 text-red-700" : (urg === 3 ? "bg-amber-100 text-amber-700" : "bg-slate-50 text-slate-700");
+        out.push(`<span class="px-2 py-0.5 rounded-full text-xs ${cls} border" title="${escapeHtml(title)}">Urgency: ${escapeHtml(lbl)} (${urg}/5)</span>`);
+    }
+    if (conf !== null) {
+        out.push(`<span class="px-2 py-0.5 rounded-full text-xs bg-slate-50 text-slate-700 border" title="${escapeHtml(title)}">Confidence: ${conf}%</span>`);
+    }
+    return out.join("\n");
 }
 
 
@@ -521,8 +578,7 @@ function renderTicket(t) {
 
             <div class="badge-row">
               ${priBadge}
-              ${aiCategoryBadge(t.ai_category)}
-              ${aiUrgencyBadge(t.ai_urgency)}
+              ${aiBadges(t)}
               ${cat ? `<span class="badge">${escapeHtml(cat)}</span>` : ``}
               <span class="badge">${escapeHtml(assignee)}</span>
               ${nrBadge}
@@ -585,8 +641,7 @@ function renderTicket(t) {
       <div class="flex items-center gap-2">
         <div class="font-semibold text-slate-900 truncate">${t.from_name || t.from_email || "(unknown sender)"}</div>
         ${priorityBadge(t.priority)}
-        ${aiCategoryBadge(t.ai_category)}
-        ${aiUrgencyBadge(t.ai_urgency)}
+        ${aiBadges(t)}
         ${catBadge}
         ${assigneeBadge}
         ${t.is_not_replied ? `<span class="px-2 py-0.5 rounded-full text-xs bg-orange-100 text-orange-700 border">Not Replied</span>` : ``}
@@ -939,7 +994,12 @@ async function openAckModal(threadId) {
     document.getElementById("ackBody").value = "Loading draft…";
     document.getElementById("sendAckBtn").disabled = true;
 
-    const r = await apiFetch(`/tickets/${threadId}/draft-ack`, { method: "POST" });
+    // Quick Reply uses the same AI drafting as AI Draft, but sends immediately after you review.
+    const r = await apiFetch(`/tickets/${threadId}/draft-ai-reply`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tone: "neutral", extra_context: null }),
+    });
     const t = await r.text();
     if (!r.ok) {
         document.getElementById("ackBody").value = t;
@@ -960,11 +1020,23 @@ async function openAiReplyModal(threadId) {
     document.getElementById("aiReplyBody").value = "Loading draft…";
     const metaEl = document.getElementById("aiReplyMeta");
     if (metaEl) metaEl.textContent = "";
+    const extraEl = document.getElementById("aiExtraContext");
+    if (extraEl) extraEl.value = "";
 
-    const r = await apiFetch(`/tickets/${threadId}/draft-ai-reply?tone=neutral`, { method: "POST" });
+    await generateAiDraft(threadId, "neutral", null);
+}
+
+async function generateAiDraft(threadId, tone, extraContext) {
+    const metaEl = document.getElementById("aiReplyMeta");
+    const r = await apiFetch(`/tickets/${threadId}/draft-ai-reply`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tone: tone || "neutral", extra_context: extraContext || null }),
+    });
     const text = await r.text();
     if (!r.ok) {
         document.getElementById("aiReplyBody").value = text;
+        if (metaEl) metaEl.textContent = "";
         return;
     }
     const j = JSON.parse(text);
@@ -972,9 +1044,19 @@ async function openAiReplyModal(threadId) {
     document.getElementById("aiReplyBody").value = j.body || "";
     if (metaEl) {
         const role = j.meta?.role ? `Sender role: ${j.meta.role}` : "";
-        const used = j.meta?.used_ai ? "AI: on" : "AI: off";
-        metaEl.textContent = [used, role].filter(Boolean).join(" • ");
+        const cat = j.meta?.ai_category ? `AI category: ${j.meta.ai_category}` : "";
+        const urg = (typeof j.meta?.ai_urgency === "number") ? `Urgency: ${j.meta.ai_urgency}/5` : "";
+        const conf = (typeof j.meta?.ai_confidence === "number") ? `Confidence: ${j.meta.ai_confidence}%` : "";
+        metaEl.textContent = [role, cat, urg, conf].filter(Boolean).join(" • ");
     }
+}
+
+async function regenerateAiDraftFromModal() {
+    if (!currentAiThreadId) return;
+    const extraEl = document.getElementById("aiExtraContext");
+    const extra = extraEl ? (extraEl.value || "").trim() : "";
+    document.getElementById("aiReplyBody").value = "Regenerating...";
+    await generateAiDraft(currentAiThreadId, "neutral", extra || null);
 }
 
 function closeAiReplyModal() {
@@ -1041,6 +1123,62 @@ async function blacklistSender(email) {
         alert(`Blacklist failed (${r.status}):\n\n${t}`);
         return;
     }
+    await loadTickets();
+}
+
+function openBlacklistModal() {
+    const m = document.getElementById("blacklistModal");
+    if (!m) return;
+    m.classList.remove("hidden");
+    refreshBlacklist();
+}
+
+function closeBlacklistModal() {
+    const m = document.getElementById("blacklistModal");
+    if (!m) return;
+    m.classList.add("hidden");
+}
+
+async function refreshBlacklist() {
+    const list = document.getElementById("blacklistList");
+    if (!list) return;
+    list.innerHTML = `<div class="muted small">Loading...</div>`;
+    const r = await apiFetch("/blacklist", { method: "GET" });
+    const t = await r.text();
+    if (!r.ok) {
+        list.innerHTML = `<div class="muted small">Failed to load: ${escapeHtml(t)}</div>`;
+        return;
+    }
+    let items = [];
+    try { items = JSON.parse(t); } catch { items = []; }
+    if (!Array.isArray(items) || items.length === 0) {
+        list.innerHTML = `<div class="muted small">No blacklisted senders.</div>`;
+        return;
+    }
+    list.innerHTML = "";
+    for (const b of items) {
+        const email = (b.email || "").trim();
+        const row = document.createElement("div");
+        row.className = "row space";
+        row.style.padding = "10px 0";
+        row.style.borderBottom = "1px solid var(--border)";
+        row.innerHTML = `
+            <div class="small"><b>${escapeHtml(email)}</b></div>
+            <button class="btn" onclick="unblacklistSender('${escapeHtml(email)}')">Remove</button>
+        `;
+        list.appendChild(row);
+    }
+}
+
+async function unblacklistSender(email) {
+    if (!email) return;
+    const r = await apiFetch(`/blacklist?email=${encodeURIComponent(email)}`, { method: "DELETE" });
+    const t = await r.text();
+    if (!r.ok) {
+        alert(`Unblacklist failed (${r.status}):\n\n${t}`);
+        return;
+    }
+    await refreshBlacklist();
     await loadTickets();
 }
 

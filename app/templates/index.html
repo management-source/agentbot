@@ -32,6 +32,7 @@
     #settingsModal:not(.hidden){display:flex}
     #usersModal:not(.hidden){display:flex}
     #aiReplyModal:not(.hidden){display:flex}
+    #blacklistModal:not(.hidden){display:flex}
     html,body{height:100%}
     body{
       margin:0;
@@ -350,6 +351,7 @@
                         <button class="btn" id="btnManageUsers"
                             style="display:none"
                             onclick="openUsersModal()">Manage Users</button>
+                        <button class="btn" id="btnBlacklist" onclick="openBlacklistModal()">Blacklist</button>
                     </div>
 
                     <p class="small muted" style="margin-top:10px">Mailbox:
@@ -466,12 +468,12 @@
                     <div class="label">Category</div>
                     <select id="categoryFilter">
                         <option value>All</option>
-                        <option value="maintenance">Maintenance</option>
-                        <option value="compliance">Compliance</option>
-                        <option value="rent_arrears">Rent arrears</option>
-                        <option value="lease_renewal">Lease renewal</option>
-                        <option value="notice_legal">Notice / legal</option>
-                        <option value="general">General</option>
+                        <option value="MAINTENANCE">Maintenance</option>
+                        <option value="COMPLIANCE">Compliance</option>
+                        <option value="RENT_ARREARS">Rent arrears</option>
+                        <option value="LEASE_RENEWAL">Lease renewal</option>
+                        <option value="NOTICE_LEGAL">Notice / legal</option>
+                        <option value="GENERAL">General</option>
                     </select>
                 </div>
             </div>
@@ -643,10 +645,17 @@
                         <textarea id="aiReplyBody"
                             style="width:100%;min-height:180px;padding:10px 12px;border:1px solid var(--border);border-radius:12px;font-size:13px"></textarea>
                     </div>
+                    <div class="field" style="margin-top:10px">
+                        <div class="label">Additional info (optional) — used for Regenerate</div>
+                        <textarea id="aiReplyExtra"
+                            placeholder="e.g., confirm access window, quote requested, landlord approved, attach invoice number..."
+                            style="width:100%;min-height:90px;padding:10px 12px;border:1px solid var(--border);border-radius:12px;font-size:13px"></textarea>
+                    </div>
                     <div class="small muted" id="aiReplyMeta" style="margin-top:10px"></div>
                 </div>
                 <div class="modal-foot">
                     <button class="btn" onclick="closeAiReplyModal()">Cancel</button>
+                    <button class="btn" id="aiReplyRegenerateBtn" onclick="regenerateAiDraft()">Regenerate</button>
                     <button class="btn" onclick="useAiDraftInQuickReply()">Use in Quick Reply</button>
                 </div>
             </div>
@@ -676,6 +685,18 @@
                         Compact ticket cards
                     </label>
 
+                    <div style="margin-top:14px;border-top:1px solid var(--border);padding-top:14px">
+                        <div class="small" style="font-weight:800">Email signature</div>
+                        <div class="small muted" style="margin-top:6px">Used automatically in AI Draft and Quick Reply.</div>
+                        <textarea id="signatureText"
+                            placeholder="Paste your email signature here..."
+                            style="width:100%;min-height:120px;margin-top:10px;padding:10px 12px;border:1px solid var(--border);border-radius:12px;font-size:13px"></textarea>
+                        <div style="margin-top:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+                            <button class="btn" onclick="openBlacklistModal()">Manage Blacklist</button>
+                            <div class="small muted">View and remove blacklisted senders.</div>
+                        </div>
+                    </div>
+
                     <div
                         style="margin-top:14px;border-top:1px solid var(--border);padding-top:14px">
                         <div class="small"
@@ -699,6 +720,43 @@
                         onclick="closeSettings()">Cancel</button>
                     <button class="btn primary"
                         onclick="applySettingsFromModal()">Save</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Blacklist Modal -->
+        <div class="modal-backdrop hidden" id="blacklistModal">
+            <div class="modal">
+                <div class="modal-head">
+                    <h3>Blacklisted Senders</h3>
+                    <button class="btn ghost" onclick="closeBlacklistModal()">Close</button>
+                </div>
+                <div class="modal-body">
+                    <div class="row space">
+                        <div class="small muted">Emails in this list will be marked as blacklisted.</div>
+                        <button class="btn" onclick="refreshBlacklist()">Refresh</button>
+                    </div>
+                    <div id="blacklistList" style="margin-top:12px"></div>
+                </div>
+                <div class="modal-foot">
+                    <button class="btn" onclick="closeBlacklistModal()">Done</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Blacklist Modal -->
+        <div class="modal-backdrop hidden" id="blacklistModal">
+            <div class="modal">
+                <div class="modal-head">
+                    <h3>Blacklisted Senders</h3>
+                    <button class="btn ghost" onclick="closeBlacklistModal()">Close</button>
+                </div>
+                <div class="modal-body">
+                    <div class="small muted">Blacklisted senders are excluded from ticketing. You can remove any sender below.</div>
+                    <div id="blacklistList" style="margin-top:12px"></div>
+                </div>
+                <div class="modal-foot">
+                    <button class="btn" onclick="closeBlacklistModal()">Done</button>
                 </div>
             </div>
         </div>

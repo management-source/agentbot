@@ -314,6 +314,8 @@ def draft_context_reply(
     ai_category: str,
     urgency: int,
     tone: str = "neutral",
+    extra_context: str | None = None,
+    signature: str | None = None,
 ) -> Tuple[str, str, Dict[str, Any]]:
     """Draft a contextual reply.
 
@@ -371,6 +373,8 @@ def draft_context_reply(
         from openai import OpenAI
 
         client = OpenAI(api_key=settings.OPENAI_API_KEY)
+        extra = _norm(extra_context)[:1200]
+        sig = _norm(signature)
         prompt = (
             "Draft a professional email reply for a property management agency.\n"
             "Constraints:\n"
@@ -385,6 +389,8 @@ def draft_context_reply(
             f"Requested tone adjustment: {tone}\n\n"
             f"Original subject: {safe_subject}\n"
             f"Latest message (plain text):\n{_norm(last_message_text)[:2000]}\n"
+            + (f"\nAdditional context to include (from the agent):\n{extra}\n" if extra else "")
+            + ("\nInclude the following email signature exactly at the end (after a blank line):\n" + sig + "\n" if sig else "")
         )
 
         resp = client.responses.create(
@@ -405,6 +411,16 @@ def draft_context_reply(
         if not text.lower().startswith(("hi", "hello", "dear")):
             text = f"{greeting}\n\n{text}"
 
+        # Append signature if the model didn't include it.
+        if sig:
+            norm_text = text.strip()
+            if sig not in norm_text:
+                text = norm_text + "\n\n" + sig
+
         return reply_subject, text, {"role": role, "used_ai": True}
-    except Exception:
+    except Exception as e:
+        # If AI is configured, do not silently fall back to a canned response.
+        # Callers that want fallback should implement it explicitly.
+        if settings.OPENAI_API_KEY:
+            raise RuntimeError(f"AI drafting failed: {e}")
         return reply_subject, body, {"role": role, "used_ai": False}

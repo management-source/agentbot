@@ -65,6 +65,9 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: Optional[str] = None
     OPENAI_MODEL: str = "gpt-4o-mini"
 
+    # Optional default signature if not set via UI
+    DEFAULT_SIGNATURE: str = ""
+
     # Observability
     SENTRY_DSN: Optional[str] = None
 

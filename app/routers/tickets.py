@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_
 from datetime import datetime, timedelta
@@ -33,6 +33,8 @@ from app.schemas import (
 from app.services.audit import add_audit
 from app.services.ai_reply import draft_acknowledgement
 from app.services.ai_assistant import triage_email, content_hash, draft_context_reply
+from app.services.state import get_state
+from app.config import settings
 from app.services.gmail_send import send_reply_in_thread
 from app.services.gmail_client import get_gmail_service, gmail_user_id
 from app.services.gmail_parse import extract_message_body
@@ -303,8 +305,19 @@ def ai_analyze(thread_id: str, db: Session = Depends(get_db), user: User = Depen
     )
 
 
+class DraftAiIn(BaseModel):
+    tone: str = "neutral"
+    extra_context: str | None = None
+
+
 @router.post("/{thread_id}/draft-ai-reply", response_model=DraftAiReplyOut)
-def draft_ai_reply(thread_id: str, tone: str = "neutral", db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def draft_ai_reply(
+    thread_id: str,
+    tone: str = "neutral",
+    payload: DraftAiIn | None = Body(default=None),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
     """Draft a context-aware reply using the latest message body.
 
     This is designed as a human-in-the-loop tool; it does not send email.
@@ -344,15 +357,28 @@ def draft_ai_reply(thread_id: str, tone: str = "neutral", db: Session = Depends(
         t.ai_source_hash = content_hash(subj, snip)
         t.ai_last_scored_at = datetime.utcnow()
 
-    reply_subject, reply_body, meta = draft_context_reply(
+    # Enforce AI-only drafting: no predefined templates.
+    if not settings.OPENAI_API_KEY:
+        raise HTTPException(status_code=400, detail="AI drafting is not configured. Set OPENAI_API_KEY.")
+
+    req_tone = (payload.tone if payload else tone) or tone
+    extra_context = payload.extra_context if payload else None
+    signature = (get_state(db, "signature_text") or settings.DEFAULT_SIGNATURE or "").strip()
+
+    try:
+        reply_subject, reply_body, meta = draft_context_reply(
         from_name=t.from_name,
         from_email=t.from_email,
         subject=subj,
         last_message_text=last_body_text or snip,
         ai_category=t.ai_category or "general",
         urgency=int(t.ai_urgency or 1),
-        tone=tone,
-    )
+        tone=req_tone,
+        extra_context=extra_context,
+            signature=signature,
+        )
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e))
 
     # Cache draft in DB (optional convenience)
     t.ai_draft_subject = reply_subject
