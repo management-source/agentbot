@@ -9,6 +9,7 @@ from typing import Any, Dict, Optional, Tuple
 
 from app.config import settings
 from app.models import TicketCategory
+from app.services.ai_client import openai_text_completion
 
 
 AI_CATEGORY_KEYS = (
@@ -215,18 +216,20 @@ def _openai_triage(subject: str, snippet: str, body_text: str) -> Optional[AiTri
         from openai import OpenAI
 
         client = OpenAI(api_key=settings.OPENAI_API_KEY)
-        resp = client.responses.create(
+        raw = openai_text_completion(
+            client,
             model=settings.OPENAI_MODEL,
-            input=[
+            messages=[
                 {
                     "role": "system",
                     "content": "You classify property management emails and output strict JSON only.",
                 },
                 {"role": "user", "content": prompt},
             ],
+            temperature=0.1,
+            max_tokens=350,
         )
-
-        raw = (resp.output_text or "").strip()
+        raw = (raw or "").strip()
         # Best-effort: extract JSON object from the response.
         m = re.search(r"\{.*\}", raw, flags=re.S)
         if not m:
@@ -393,17 +396,20 @@ def draft_context_reply(
             + ("\nInclude the following email signature exactly at the end (after a blank line):\n" + sig + "\n" if sig else "")
         )
 
-        resp = client.responses.create(
+        text = openai_text_completion(
+            client,
             model=settings.OPENAI_MODEL,
-            input=[
+            messages=[
                 {
                     "role": "system",
                     "content": "You draft legally cautious, professional property-management email replies.",
                 },
                 {"role": "user", "content": prompt},
             ],
+            temperature=0.3,
+            max_tokens=800,
         )
-        text = (resp.output_text or "").strip()
+        text = (text or "").strip()
         if not text:
             return reply_subject, body, {"role": role, "used_ai": False}
 

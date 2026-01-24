@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from app.config import settings
+from app.services.ai_client import openai_text_completion
 
 
 def draft_acknowledgement(
@@ -89,15 +90,16 @@ def draft_acknowledgement(
             f"Original snippet: {snippet[:600]}\n"
         )
 
-        resp = client.responses.create(
+        text = openai_text_completion(
+            client,
             model=settings.OPENAI_MODEL,
-            input=[
+            messages=[
                 {"role": "system", "content": "You draft concise formal acknowledgment emails."},
                 {"role": "user", "content": prompt},
             ],
+            temperature=0.2,
+            max_tokens=220,
         )
-
-        text = (resp.output_text or "").strip()
         if not text:
             text = fallback
 
