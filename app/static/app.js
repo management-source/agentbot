@@ -994,11 +994,9 @@ async function openAckModal(threadId) {
     document.getElementById("ackBody").value = "Loading draft…";
     document.getElementById("sendAckBtn").disabled = true;
 
-    // Quick Reply uses the same AI drafting as AI Draft, but sends immediately after you review.
-    const r = await apiFetch(`/tickets/${threadId}/draft-ai-reply`, {
+    // Quick Reply is deterministic (non-AI). AI is only invoked when you explicitly click AI Draft.
+    const r = await apiFetch(`/tickets/${threadId}/draft-reply`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tone: "neutral", extra_context: null }),
     });
     const t = await r.text();
     if (!r.ok) {

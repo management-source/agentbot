@@ -158,27 +158,8 @@ def list_tickets(
     q = q.order_by(ThreadTicket.last_message_at.desc().nullslast()).limit(limit)
     items = q.all()
 
-    # --- AI enrichment (on-demand) ---
-    # We keep this best-effort and bounded to avoid slow pages/cost spikes.
-    ai_updates = 0
-    for t in items:
-        if ai_updates >= 10:
-            break
-        subj = t.subject or ""
-        snip = t.snippet or ""
-        src_hash = content_hash(subj, snip)
-        if not t.ai_category or t.ai_source_hash != src_hash:
-            res = triage_email(subj, snip, "")
-            t.ai_category = res.ai_category
-            t.ai_urgency = res.urgency
-            t.ai_confidence = res.confidence_percent
-            t.ai_reasons = json.dumps(res.reasons)
-            t.ai_summary = res.summary
-            t.ai_source_hash = src_hash
-            t.ai_last_scored_at = datetime.utcnow()
-            ai_updates += 1
-    if ai_updates:
-        db.commit()
+    # IMPORTANT: Do not call AI during list/fetch operations.
+    # AI is invoked only when the user explicitly requests it (e.g., AI Draft).
 
     # Counters for top tiles / tabs
     counts = {
@@ -242,36 +223,71 @@ def draft_ack(thread_id: str, db: Session = Depends(get_db), user: User = Depend
 
 @router.post("/{thread_id}/draft-reply", response_model=DraftAiReplyOut)
 def draft_reply(thread_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """Generate a context-aware draft reply for a ticket.
+    """Generate a deterministic (non-AI) quick-reply draft.
 
-    This uses AI when configured, and a deterministic fallback template otherwise.
+    IMPORTANT: To avoid OpenAI rate-limit failures and to keep "Fetch now" reliable,
+    this endpoint NEVER calls OpenAI. Use /draft-ai-reply for AI drafting.
     """
     t = db.get(ThreadTicket, thread_id)
     if not t:
         raise HTTPException(status_code=404, detail="Ticket not found")
 
-    subj = t.subject or ""
-    snip = t.snippet or ""
-    # Prefer AI category if present; otherwise fall back to legacy category.
-    cat = t.ai_category or (t.category.value.lower() if hasattr(t.category, "value") else str(t.category).lower())
+    subj = (t.subject or "").strip()
+    safe_subject = subj or "(no subject)"
+    reply_subject = f"Re: {safe_subject}"
 
-    out = draft_context_reply(
-        from_name=t.from_name,
-        subject=subj,
-        snippet=snip,
-        category=cat,
-        tone="professional",
-        constraints=[
-            "Be factual; do not invent details.",
-            "If dates, amounts, or addresses are missing, ask for them.",
-            "Avoid legal advice; keep to process and next steps.",
-        ],
+    name = (t.from_name or "").strip()
+    greeting = f"Hello {name}," if name else "Hello,"
+
+    # Prefer AI category if present; otherwise fall back to legacy category.
+    cat = (t.ai_category or "").strip() or (
+        (t.category.value.lower() if hasattr(t.category, "value") else str(t.category).lower())
     )
 
-    return DraftAiReplyOut(subject=out.subject, body=out.body, meta={
+    if cat == "maintenance":
+        body = (
+            f"{greeting}\n\n"
+            "Thank you for your email. We have noted the maintenance request and will review the details. "
+            "We will be in touch shortly with the next steps (including arranging access if required).\n\n"
+            "Kind regards,"
+        )
+    elif cat == "rent_arrears":
+        body = (
+            f"{greeting}\n\n"
+            "Thank you for your email. We have noted your message regarding rent and will review the tenant ledger. "
+            "We will follow up shortly with an update.\n\n"
+            "Kind regards,"
+        )
+    elif cat == "compliance":
+        body = (
+            f"{greeting}\n\n"
+            "Thank you for your email. We have noted the compliance matter and will review what is required. "
+            "We will follow up shortly with confirmation of next steps.\n\n"
+            "Kind regards,"
+        )
+    elif cat == "lease_renewal":
+        body = (
+            f"{greeting}\n\n"
+            "Thank you for your email. We have received your message regarding the lease/tenancy and will review the details. "
+            "We will be in touch shortly with an update.\n\n"
+            "Kind regards,"
+        )
+    else:
+        body = (
+            f"{greeting}\n\n"
+            "Thank you for your email. We have received your message and will respond shortly.\n\n"
+            "Kind regards,"
+        )
+
+    signature = (get_state(db, "signature_text") or settings.DEFAULT_SIGNATURE or "").strip()
+    if signature:
+        body = body.rstrip() + "\n\n" + signature + "\n"
+
+    return DraftAiReplyOut(subject=reply_subject, body=body, meta={
         "ai_category": t.ai_category,
         "ai_urgency": t.ai_urgency,
         "ai_confidence": t.ai_confidence,
+        "used_ai": False,
     })
 
 
