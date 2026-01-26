@@ -23,6 +23,16 @@ def fetch_now(
     """
     return sync_inbox_threads(max_threads=max_threads, start=start, end=end, incremental=incremental, include_anywhere=include_anywhere)
 
+
+@router.post("/check-updates")
+def check_updates(max_threads: int = 200):
+    """Fetch only new/changed threads since the last sync.
+
+    This endpoint is intended for frequent use. It always uses Gmail historyId
+    incremental sync (when available) and only upserts affected threads.
+    """
+    return sync_inbox_threads(max_threads=max_threads, start=None, end=None, incremental=True, include_anywhere=False)
+
 @router.post("/start")
 def start_autopilot():
     if not settings.ENABLE_SCHEDULER:

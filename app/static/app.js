@@ -31,7 +31,7 @@ let currentDateFilter = { start: "", end: "" };
 // UI filters
 let currentSearch = "";
 let currentAssignee = ""; // user id as string
-let currentAiCategory = ""; // one of AI categories
+// Category filtering removed (we avoid AI-based categorization and UI filters for now).
 
 let googleConnected = false;
 
@@ -266,6 +266,27 @@ function closeSettings() {
     m.classList.add("hidden");
 }
 
+async function fetchSignatureFromGmail() {
+    const sigBox = document.getElementById("signatureText");
+    if (!sigBox) return;
+    const prev = sigBox.value;
+    sigBox.value = "Fetching from Gmail...";
+    try {
+        const r = await apiFetch("/settings/signature/fetch-gmail", { method: "POST" });
+        const t = await r.text();
+        if (!r.ok) {
+            sigBox.value = prev || "";
+            alert(`Failed to fetch signature (${r.status}):\n\n${t}`);
+            return;
+        }
+        const j = JSON.parse(t);
+        sigBox.value = j.signature || "";
+    } catch (e) {
+        sigBox.value = prev || "";
+        alert("Failed to fetch signature: " + e);
+    }
+}
+
 function applySettingsFromModal() {
     settings.defaultHtmlView = document.getElementById("setDefaultHtml").checked;
     settings.proxyRemoteImages = document.getElementById("setBlockRemote").checked;
@@ -403,6 +424,39 @@ async function fetchNow() {
     }
 }
 
+async function checkUpdates() {
+    const btn = document.getElementById("btnCheckUpdates");
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = "Checking...";
+    }
+
+    try {
+        const url = new URL("/autopilot/check-updates", window.location.origin);
+        // Safety cap; frequent use should stay light.
+        url.searchParams.set("max_threads", "200");
+
+        const r = await fetch(url.toString(), { method: "POST" });
+        const text = await r.text();
+        if (!r.ok) {
+            alert(`Check Updates failed (${r.status}):\n\n${text}`);
+            return;
+        }
+
+        const last1 = document.getElementById("lastSync");
+        if (last1) last1.textContent = new Date().toLocaleString();
+
+        await loadTickets();
+    } catch (e) {
+        alert("Check Updates failed: " + e);
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = "Check Updates";
+        }
+    }
+}
+
 function clearDateFilter() {
     const s1 = document.getElementById("startDate") || document.getElementById("fromDate");
     const e1 = document.getElementById("endDate") || document.getElementById("toDate");
@@ -471,46 +525,11 @@ function priorityBadge(p) {
     return `<span class="px-2 py-0.5 rounded-full text-xs bg-amber-100 text-amber-700 border">medium</span>`;
 }
 
-function _aiUrgencyLabel(val) {
-    const n = Number(val || 0);
-    if (!n) return "";
-    if (n >= 5) return "Critical";
-    if (n === 4) return "Urgent";
-    if (n === 3) return "High";
-    if (n === 2) return "Medium";
-    return "Low";
-}
-
-function aiBadges(t) {
-    const cat = (t && t.ai_category) ? String(t.ai_category).replace(/_/g, " ") : "";
-    const urg = Number(t && t.ai_urgency || 0);
-    const conf = (t && typeof t.ai_confidence === "number") ? t.ai_confidence : null;
-    let reasons = [];
-    if (Array.isArray(t && t.ai_reasons)) {
-        reasons = t.ai_reasons.filter(Boolean);
-    } else if (typeof (t && t.ai_reasons) === "string" && t.ai_reasons.trim()) {
-        try {
-            const parsed = JSON.parse(t.ai_reasons);
-            if (Array.isArray(parsed)) reasons = parsed.filter(Boolean);
-        } catch {
-            // treat as single reason
-            reasons = [t.ai_reasons];
-        }
-    }
-    const title = reasons.length ? `AI reasons:\n- ${reasons.join("\n- ")}` : "";
-    const out = [];
-    if (cat) {
-        out.push(`<span class="px-2 py-0.5 rounded-full text-xs bg-violet-50 text-violet-800 border" title="${escapeHtml(title)}">AI: ${escapeHtml(cat.toUpperCase())}</span>`);
-    }
-    if (urg) {
-        const lbl = _aiUrgencyLabel(urg);
-        const cls = urg >= 4 ? "bg-red-100 text-red-700" : (urg === 3 ? "bg-amber-100 text-amber-700" : "bg-slate-50 text-slate-700");
-        out.push(`<span class="px-2 py-0.5 rounded-full text-xs ${cls} border" title="${escapeHtml(title)}">Urgency: ${escapeHtml(lbl)} (${urg}/5)</span>`);
-    }
-    if (conf !== null) {
-        out.push(`<span class="px-2 py-0.5 rounded-full text-xs bg-slate-50 text-slate-700 border" title="${escapeHtml(title)}">Confidence: ${conf}%</span>`);
-    }
-    return out.join("\n");
+// AI-based categorization is disabled for now. Keep the UI lean and avoid
+// background AI calls. (AI drafting remains available per-ticket via the
+// "AI Draft" modal.)
+function aiBadges(_t) {
+    return "";
 }
 
 
@@ -697,7 +716,7 @@ async function loadTickets() {
     const q = (currentSearch || "").trim();
     if (q) url.searchParams.set("query", q);
     if (currentAssignee) url.searchParams.set("assignee_user_id", currentAssignee);
-    if (currentAiCategory) url.searchParams.set("ai_category", currentAiCategory);
+    // ai_category filter removed
 
     const r = await apiFetch(url);
     const data = await r.json();
@@ -1340,13 +1359,7 @@ window.addEventListener("load", async () => {
         });
     }
 
-    const catFilter = document.getElementById("categoryFilter");
-    if (catFilter) {
-        catFilter.addEventListener("change", () => {
-            currentAiCategory = catFilter.value || "";
-            loadTickets();
-        });
-    }
+    // categoryFilter removed
 
     // Populate assignee filter now that we have users cache
     try { populateAssigneeFilter(); } catch {}

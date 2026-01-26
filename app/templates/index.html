@@ -291,6 +291,37 @@
       font-weight:700;
     }
 
+    /* Login modal layout */
+    .login-split{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap:16px;
+      align-items:stretch;
+    }
+    @media (max-width: 720px){
+      .login-split{grid-template-columns:1fr}
+    }
+    .login-left{
+      border:1px solid var(--border);
+      border-radius:16px;
+      padding:16px;
+      background: linear-gradient(180deg, #fafbff, #ffffff);
+    }
+    .login-logo{
+      width:54px;
+      height:54px;
+      border-radius:16px;
+      border:1px solid var(--border);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      background:#fff;
+      margin-bottom:12px;
+      box-shadow: 0 4px 12px rgba(16,24,40,.06);
+    }
+    .login-brand{font-size:18px; font-weight:800; margin:0}
+    .login-sub{margin:6px 0 0 0; color:var(--muted); font-size:13px; line-height:1.35}
+
     /* iframe email viewer */
     .viewer-backdrop{
       position:fixed; inset:0;
@@ -406,6 +437,8 @@
                         <button class="btn primary" id="btnFetch"
                             onclick="fetchNow()">Fetch
                             Now</button>
+                        <button class="btn" id="btnCheckUpdates"
+                            onclick="checkUpdates()">Check Updates</button>
                         <button class="btn" id="btnClearFilter"
                             onclick="clearDateFilter()">Clear
                             Filter</button>
@@ -464,18 +497,7 @@
                     </select>
                 </div>
 
-                <div class="field" style="min-width:220px">
-                    <div class="label">Category</div>
-                    <select id="categoryFilter">
-                        <option value>All</option>
-                        <option value="MAINTENANCE">Maintenance</option>
-                        <option value="COMPLIANCE">Compliance</option>
-                        <option value="RENT_ARREARS">Rent arrears</option>
-                        <option value="LEASE_RENEWAL">Lease renewal</option>
-                        <option value="NOTICE_LEGAL">Notice / legal</option>
-                        <option value="GENERAL">General</option>
-                    </select>
-                </div>
+                <!-- Category filtering removed: classification is handled without AI and without UI filters. -->
             </div>
 
             <div id="ticketList" style="margin-top:10px"></div>
@@ -490,18 +512,32 @@
                         onclick="hideLoginModal()">Close</button>
                 </div>
                 <div class="modal-body">
-                    <div class="field">
-                        <div class="label">Email</div>
-                        <input type="text" id="loginEmail"
-                            autocomplete="username" />
+                    <div class="login-split">
+                        <div class="login-left">
+                            <div class="login-logo" aria-hidden="true">
+                                <!-- Simple in-app logo (no external assets) -->
+                                <svg width="44" height="44" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M3 10.5L12 3l9 7.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                    <path d="M5 9.5V21h14V9.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                    <path d="M9 21v-7h6v7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </div>
+                            <div class="login-brand">AgentBot</div>
+                            <div class="login-sub">Email-to-ticket workflow for your team.</div>
+                            <div class="small muted" style="margin-top:12px">Sign in to access tickets, drafts, and Gmail sync controls.</div>
+                        </div>
+                        <div class="login-right">
+                            <div class="field">
+                                <div class="label">Email</div>
+                                <input type="text" id="loginEmail" autocomplete="username" />
+                            </div>
+                            <div class="field" style="margin-top:10px">
+                                <div class="label">Password</div>
+                                <input type="password" id="loginPassword" autocomplete="current-password" />
+                            </div>
+                            <div class="error" id="loginError" style="display:none"></div>
+                        </div>
                     </div>
-                    <div class="field" style="margin-top:10px">
-                        <div class="label">Password</div>
-                        <input type="password" id="loginPassword"
-                            autocomplete="current-password" />
-                    </div>
-                    <div class="error" id="loginError"
-                        style="display:none"></div>
                 </div>
                 <div class="modal-foot">
                     <button class="btn primary" id="btnLogin"
@@ -692,8 +728,9 @@
                             placeholder="Paste your email signature here..."
                             style="width:100%;min-height:120px;margin-top:10px;padding:10px 12px;border:1px solid var(--border);border-radius:12px;font-size:13px"></textarea>
                         <div style="margin-top:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+                            <button class="btn" onclick="fetchSignatureFromGmail()">Fetch signature from Gmail</button>
                             <button class="btn" onclick="openBlacklistModal()">Manage Blacklist</button>
-                            <div class="small muted">View and remove blacklisted senders.</div>
+                            <div class="small muted">Fetch uses the connected mailbox’s "Send mail as" signature.</div>
                         </div>
                     </div>
 

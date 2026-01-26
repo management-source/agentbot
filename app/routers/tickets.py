@@ -32,7 +32,7 @@ from app.schemas import (
 )
 from app.services.audit import add_audit
 from app.services.ai_reply import draft_acknowledgement
-from app.services.ai_assistant import triage_email, content_hash, draft_context_reply
+from app.services.ai_assistant import draft_context_reply
 from app.services.state import get_state
 from app.config import settings
 from app.services.gmail_send import send_reply_in_thread
@@ -293,34 +293,12 @@ def draft_reply(thread_id: str, db: Session = Depends(get_db), user: User = Depe
 
 @router.post("/{thread_id}/ai-analyze", response_model=AiAnalyzeOut)
 def ai_analyze(thread_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """Run AI triage on a single ticket and persist the result."""
-    t = db.get(ThreadTicket, thread_id)
-    if not t:
-        raise HTTPException(status_code=404, detail="Ticket not found")
+    """AI triage is disabled.
 
-    subj = t.subject or ""
-    snip = t.snippet or ""
-    src_hash = content_hash(subj, snip)
-    res = triage_email(subj, snip, "")
-
-    t.ai_category = res.ai_category
-    t.ai_urgency = res.urgency
-    t.ai_confidence = res.confidence_percent
-    t.ai_reasons = json.dumps(res.reasons)
-    t.ai_summary = res.summary
-    t.ai_source_hash = src_hash
-    t.ai_last_scored_at = datetime.utcnow()
-    db.commit()
-
-    return AiAnalyzeOut(
-        ai_category=res.ai_category,
-        ticket_category=res.ticket_category,
-        ai_urgency=res.urgency,
-        ai_confidence=res.confidence_percent,
-        ai_reasons=res.reasons,
-        ai_summary=res.summary or "",
-    )
-
+    Rationale: avoid background AI calls and AI-based categorization.
+    AI is only used when the user explicitly requests an AI draft.
+    """
+    raise HTTPException(status_code=410, detail="AI analysis is currently disabled.")
 
 class DraftAiIn(BaseModel):
     tone: str = "neutral"
@@ -369,20 +347,11 @@ def draft_ai_reply(
         if not last_body_text:
             last_body_text = (last.get("snippet") or "").strip()
 
-    # Ensure we have triage info.
     subj = t.subject or ""
     snip = t.snippet or ""
-    if not t.ai_category:
-        res = triage_email(subj, snip, last_body_text)
-        t.ai_category = res.ai_category
-        t.ai_urgency = res.urgency
-        t.ai_confidence = res.confidence_percent
-        t.ai_reasons = json.dumps(res.reasons)
-        t.ai_summary = res.summary
-        t.ai_source_hash = content_hash(subj, snip)
-        t.ai_last_scored_at = datetime.utcnow()
 
-    # Enforce AI-only drafting: no predefined templates.
+    # No AI triage: keep AI requests limited to explicit draft generation.
+    # We pass a neutral/default category and urgency into the drafting prompt.
     if not settings.OPENAI_API_KEY:
         raise HTTPException(status_code=400, detail="AI drafting is not configured. Set OPENAI_API_KEY.")
 
@@ -394,8 +363,8 @@ def draft_ai_reply(
             from_email=t.from_email or "",
             subject=subj,
             last_message_text=(last_body_text or snip),
-            ai_category=t.ai_category or "general",
-            urgency=int(t.ai_urgency or 1),
+            ai_category="general",
+            urgency=3,
             tone=req_tone,
             extra_context=additional_info,   # <-- map additional info into extra_context
             signature=signature,

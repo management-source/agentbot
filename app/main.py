@@ -18,6 +18,7 @@ from app.scheduler import scheduler
 from app.routers import tasks
 
 from app.routers import auth, tickets, autopilot, ui, threads
+from app.routers import blacklist
 from app.routers import settings as app_settings
 from app.routers import user_auth
 from app.models import User, UserRole
@@ -186,6 +187,7 @@ app.include_router(autopilot.router, prefix="/autopilot", tags=["autopilot"])
 app.include_router(threads.router, prefix="/threads", tags=["threads"])
 app.include_router(tasks.router, prefix="/tasks", tags=["tasks"])
 app.include_router(app_settings.router, prefix="/settings", tags=["settings"])
+app.include_router(blacklist.router, prefix="/blacklist", tags=["blacklist"])
 
 @app.on_event("startup")
 def on_startup():
