@@ -8,7 +8,7 @@ from app.authz import get_current_user
 from app.config import settings
 from app.db import get_db
 from app.services.state import get_state, set_state
-from app.services.gmail_client import get_gmail_service, gmail_user_id
+from app.services.gmail_client import get_gmail_service, gmail_user_id, GMAIL_SIGNATURE_SCOPE, GMAIL_SCOPES
 
 import html
 import re
@@ -68,7 +68,8 @@ def fetch_signature_from_gmail(db: Session = Depends(get_db), user=Depends(get_c
     Requires the Gmail settings scope (gmail.settings.basic).
     """
     try:
-        service = get_gmail_service(db)
+        # Request the extra scope only for this endpoint.
+        service = get_gmail_service(db, scopes=list(GMAIL_SCOPES) + [GMAIL_SIGNATURE_SCOPE])
     except RuntimeError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

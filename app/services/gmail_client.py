@@ -21,9 +21,13 @@ GMAIL_SCOPES = [
     "https://www.googleapis.com/auth/gmail.modify",
     "https://www.googleapis.com/auth/gmail.send",
     "https://www.googleapis.com/auth/gmail.labels",
-    # Needed to read the Gmail "Send mail as" signature (users.settings.sendAs.get)
-    "https://www.googleapis.com/auth/gmail.settings.basic",
 ]
+
+# Only required for fetching the Gmail "Send mail as" signature.
+# IMPORTANT: adding this scope to service-account Domain-Wide Delegation requires
+# updating the authorized scopes in Google Workspace Admin. We therefore request
+# it only for the signature endpoint.
+GMAIL_SIGNATURE_SCOPE = "https://www.googleapis.com/auth/gmail.settings.basic"
 
 
 def gmail_user_id() -> str:
@@ -38,8 +42,14 @@ def gmail_user_id() -> str:
     return mb if mb else "me"
 
 
-def get_gmail_service(db: Session | None = None):
-    """Build a Gmail API service using either OAuth or Service Account DWD."""
+def get_gmail_service(db: Session | None = None, scopes: list[str] | None = None):
+    """Build a Gmail API service using either OAuth or Service Account DWD.
+
+    `scopes` lets us request additional scopes for specific endpoints (e.g. signature)
+    without breaking core sync for service-account deployments that haven't authorized
+    those scopes.
+    """
+    scopes = scopes or GMAIL_SCOPES
     if settings.GMAIL_AUTH_MODE == "service_account":
         info = settings.service_account_info()
         if not info:
@@ -47,7 +57,7 @@ def get_gmail_service(db: Session | None = None):
         subject = (settings.IMPERSONATE_USER or "").strip()
         if not subject:
             raise RuntimeError("IMPERSONATE_USER is not configured.")
-        creds = service_account.Credentials.from_service_account_info(info, scopes=GMAIL_SCOPES).with_subject(subject)
+        creds = service_account.Credentials.from_service_account_info(info, scopes=scopes).with_subject(subject)
         return build("gmail", "v1", credentials=creds, cache_discovery=False)
 
     # OAuth mode
@@ -58,7 +68,9 @@ def get_gmail_service(db: Session | None = None):
     if not token:
         raise RuntimeError("Google is not connected. Visit /auth/google/login first.")
 
-    scopes = [s for s in (token.scopes or "").split(",") if s] or GMAIL_SCOPES
+    token_scopes = [s for s in (token.scopes or "").split(",") if s]
+    # Prefer stored OAuth scopes; fall back to requested scopes when none are stored.
+    scopes = token_scopes or scopes
 
     creds = Credentials(
         token=token.access_token,
