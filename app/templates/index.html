@@ -475,26 +475,14 @@
 
             <div class="filters-row">
                 <div class="seg" id="statusSeg">
-                    <button data-status="all" class="active">All</button>
-                    <button data-status="not_replied">Not Replied</button>
-                    <button data-status="pending">Pending</button>
-                    <button data-status="in_progress">In Progress</button>
-                    <button data-status="responded">Responded</button>
-                    <button data-status="no_reply_needed">Reply Not
-                        Needed</button>
+                    <button data-status="not_replied" class="active">Awaiting Reply</button>
+                    <button data-status="all">All</button>
                 </div>
 
                 <div class="field" style="min-width:220px">
                     <div class="label">Search</div>
                     <input type="text" id="searchBox"
                         placeholder="Subject, sender, address…" />
-                </div>
-
-                <div class="field" style="min-width:220px">
-                    <div class="label">Assignee</div>
-                    <select id="assigneeFilter">
-                        <option value>All</option>
-                    </select>
                 </div>
 
                 <!-- Category filtering removed: classification is handled without AI and without UI filters. -->

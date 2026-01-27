@@ -1,4 +1,4 @@
-let currentTab = "all";
+let currentTab = "not_replied";
 let currentAckThreadId = null;
 let currentAiThreadId = null;
 
@@ -662,7 +662,7 @@ function renderTicket(t) {
         ${priorityBadge(t.priority)}
         ${aiBadges(t)}
         ${catBadge}
-        ${assigneeBadge}
+        
         ${t.is_not_replied ? `<span class="px-2 py-0.5 rounded-full text-xs bg-orange-100 text-orange-700 border">Not Replied</span>` : ``}
         ${t.is_unread ? `<span class="px-2 py-0.5 rounded-full text-xs bg-slate-100 text-slate-700 border">Unread</span>` : ``}
       </div>
@@ -691,11 +691,6 @@ function renderTicket(t) {
         onchange="updateStatus('${t.thread_id}', this.value)">
         ${statusOptions(t.status)}
       </select>
-      <label class="w-full text-xs text-slate-500">Assignee</label>
-      <select class="w-full px-3 py-2 rounded-lg border bg-white"
-        onchange="updateAssignee('${t.thread_id}', this.value)">
-        ${assigneeOptions(t.assignee_user_id)}
-      </select>
       <!-- Manual category removed; AI category is computed automatically -->
     </div>
   `;
@@ -715,7 +710,6 @@ async function loadTickets() {
     // Search / assignee / AI category filters
     const q = (currentSearch || "").trim();
     if (q) url.searchParams.set("query", q);
-    if (currentAssignee) url.searchParams.set("assignee_user_id", currentAssignee);
     // ai_category filter removed
 
     const r = await apiFetch(url);

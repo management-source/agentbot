@@ -13,7 +13,9 @@ def fetch_now(
     end: Optional[str] = None,
     max_threads: int = 500,
     incremental: bool = True,
-    include_anywhere: bool = False,
+    include_anywhere: bool = True,
+    awaiting_only: bool = True,
+    auto_triage: bool = True,
 ):
     """Manual sync endpoint.
 
@@ -21,7 +23,7 @@ def fetch_now(
     - Otherwise: performs an incremental sync using Gmail historyId (accurate),
       falling back to a small recent window on first run.
     """
-    return sync_inbox_threads(max_threads=max_threads, start=start, end=end, incremental=incremental, include_anywhere=include_anywhere)
+    return sync_inbox_threads(max_threads=max_threads, start=start, end=end, incremental=incremental, include_anywhere=include_anywhere, awaiting_only=awaiting_only, auto_triage=auto_triage)
 
 
 @router.post("/check-updates")
@@ -31,7 +33,7 @@ def check_updates(max_threads: int = 200):
     This endpoint is intended for frequent use. It always uses Gmail historyId
     incremental sync (when available) and only upserts affected threads.
     """
-    return sync_inbox_threads(max_threads=max_threads, start=None, end=None, incremental=True, include_anywhere=False)
+    return sync_inbox_threads(max_threads=max_threads, start=None, end=None, incremental=True, include_anywhere=False, awaiting_only=True, auto_triage=True)
 
 @router.post("/start")
 def start_autopilot():
