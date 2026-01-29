@@ -360,6 +360,8 @@ function setTab(tab) {
         });
     }
 
+    // UX: when changing tabs, jump to top so the user sees the newest tickets first.
+    try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch { window.scrollTo(0, 0); }
     loadTickets();
 }
 
@@ -715,11 +717,15 @@ function renderPagination(data) {
 function prevPage() {
     if (currentPage <= 1) return;
     currentPage -= 1;
+    // UX: bring user to top of the list when paging.
+    try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch { window.scrollTo(0, 0); }
     loadTickets();
 }
 
 function nextPage() {
     currentPage += 1;
+    // UX: bring user to top of the list when paging.
+    try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch { window.scrollTo(0, 0); }
     loadTickets();
 }
 
@@ -1211,7 +1217,7 @@ async function doLogin() {
     hideLoginModal();
     await ensureAuthenticated();
     await refreshGoogleStatus();
-    await refreshAutopilotStatus();
+    // Autopilot feature removed.
     await loadTickets();
 }
 
@@ -1262,7 +1268,7 @@ window.addEventListener("load", async () => {
         // ignore
     }
 
-    await refreshAutopilotStatus();
+    // Autopilot feature removed.
 
     // Wire filters
     const seg = document.getElementById("statusSeg");
