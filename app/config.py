@@ -55,7 +55,9 @@ class Settings(BaseSettings):
     # If True, date-range sync will search in:anywhere (includes archived).
     SYNC_INCLUDE_ANYWHERE: bool = False
 
-    MY_EMAILS: str = ""
+    # Comma-separated list of mailbox addresses that should count as "our" outbound replies.
+    # Defaulted to your primary operations inbox to make unreplied detection work out-of-the-box.
+    MY_EMAILS: str = "admin@donspremier.com.au"
     POLL_INTERVAL_SECONDS: int = 300
     REMINDER_INTERVAL_SECONDS: int = 900
     REMINDER_COOLDOWN_SECONDS: int = 3600

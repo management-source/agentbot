@@ -415,14 +415,15 @@ def sync_inbox_threads(
                     # If startHistoryId is too old, Gmail returns 404. Fall back to a small recent pull.
                     if he.resp is not None and getattr(he.resp, "status", None) == 404:
                         logger.warning("HistoryId too old; falling back to recent sync and resetting watermark.")
-                        # Pull last 7 days to rebuild state. (This is a compromise, but avoids missing current work.)
-                        recent_start = (date.today() - timedelta(days=7)).isoformat()
+                        # Pull last 30 days to rebuild state. This matches the product requirement
+                        # ("check emails up to a month") and avoids missing active unreplied threads.
+                        recent_start = (date.today() - timedelta(days=30)).isoformat()
                         thread_ids, hit_limit = _list_thread_ids_in_range(service, start=recent_start, end=None, max_threads=max_threads, include_anywhere=False)
                     else:
                         raise
             else:
-                # First sync: pull a recent window (7 days) and set watermark.
-                recent_start = (date.today() - timedelta(days=7)).isoformat()
+                # First sync: pull a recent window (30 days) and set watermark.
+                recent_start = (date.today() - timedelta(days=30)).isoformat()
                 thread_ids, hit_limit = _list_thread_ids_in_range(service, start=recent_start, end=None, max_threads=max_threads, include_anywhere=False)
 
         upserted = 0
