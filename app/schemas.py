@@ -64,6 +64,11 @@ class TicketOut(BaseModel):
 class TicketListOut(BaseModel):
     items: list[TicketOut]
     counts: dict[str, int]
+    # Pagination (optional for backward compatibility)
+    total: int | None = None
+    page: int | None = None
+    page_size: int | None = None
+    has_more: bool | None = None
 
 
 class AiAnalyzeOut(BaseModel):

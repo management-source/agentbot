@@ -3,7 +3,7 @@
     <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width,initial-scale=1" />
-        <title>Email Autopilot Manager</title>
+        <title>Email Reply Manager</title>
         <style>
     :root{
       --bg:#f6f7fb;
@@ -358,9 +358,8 @@
         <div class="page">
             <div class="top-grid">
                 <div class="card brand">
-                    <h1>Email Autopilot Manager</h1>
-                    <p>Automatic customer query detection and management, with
-                        ticketing and assignment.</p>
+                    <h1>Email Reply Manager</h1>
+                    <p>Track emails awaiting your reply, update ticket status, and respond faster.</p>
 
                     <div style="margin-top:14px" class="row space">
                         <div class="pill"><span class="dot"
@@ -376,9 +375,7 @@
                         <button class="btn" id="googleBtn"
                             onclick="googleConnectOrManage()">Connect to
                             Google</button>
-                        <button class="btn primary" id="btnAddQuery"
-                            onclick="addQuery()">+ Add
-                            Query</button>
+                        <!-- Autopilot / Query rules removed -->
                         <button class="btn" id="btnManageUsers"
                             style="display:none"
                             onclick="openUsersModal()">Manage Users</button>
@@ -390,18 +387,14 @@
                     <p class="small muted" style="margin-top:0">Status: <span
                             id="statusLine">—</span></p>
                     <p class="small muted" style="margin-top:0">Last sync: <span
-                            id="lastSync">—</span> • Next run: <span
-                            id="nextRun">—</span></p>
-                    <span id="autopilotStatus" style="display:none">—</span>
-                    <span id="pollEvery" style="display:none">5</span>
-                    <span id="statusDot" style="display:none"></span>
+                            id="lastSync">—</span></p>
                 </div>
 
                 <div class="card">
                     <div class="row space">
                         <div>
-                            <p class="panel-title">Email Autopilot</p>
-                            <p class="panel-sub" id="autopilotInfo">—</p>
+                            <p class="panel-title">Email Sync</p>
+                            <p class="panel-sub" id="syncInfo">Fetch unreplied emails and keep tickets current.</p>
                         </div>
                         <div class="pill" id="googlePill"
                             style="display:none"><span
@@ -435,48 +428,21 @@
 
                     <div class="controls-actions">
                         <button class="btn primary" id="btnFetch"
-                            onclick="fetchNow()">Fetch
-                            Now</button>
+                            onclick="fetchNow()">Fetch Now</button>
                         <button class="btn" id="btnCheckUpdates"
                             onclick="checkUpdates()">Check Updates</button>
                         <button class="btn" id="btnClearFilter"
-                            onclick="clearDateFilter()">Clear
-                            Filter</button>
-                        <button class="btn success" id="btnStart"
-                            onclick="startAutopilot()">Start</button>
-                        <button class="btn danger" id="btnStop"
-                            onclick="stopAutopilot()">Stop</button>
+                            onclick="clearDateFilter()">Clear Dates</button>
                     </div>
-                </div>
-            </div>
-
-            <div class="kpi-row" id="kpiRow">
-                <div class="card kpi">
-                    <h3>Not Replied (Priority)</h3>
-                    <div class="num warn" id="kpiNotRepliedPriority">0</div>
-                </div>
-                <div class="card kpi">
-                    <h3>Pending</h3>
-                    <div class="num accent" id="kpiPending">0</div>
-                </div>
-                <div class="card kpi">
-                    <h3>In Progress</h3>
-                    <div class="num" id="kpiInProgress">0</div>
-                </div>
-                <div class="card kpi">
-                    <h3>Responded</h3>
-                    <div class="num ok" id="kpiResponded">0</div>
-                </div>
-                <div class="card kpi">
-                    <h3>Reply Not Needed</h3>
-                    <div class="num" id="kpiReplyNotNeeded">0</div>
                 </div>
             </div>
 
             <div class="filters-row">
                 <div class="seg" id="statusSeg">
-                    <button data-status="not_replied" class="active">Awaiting Reply</button>
-                    <button data-status="all">All</button>
+                    <button data-tab="awaiting_reply" class="active">Awaiting Reply <span class="pill" style="margin-left:8px" id="tabAwaitingCount">0</span></button>
+                    <button data-tab="in_progress">In Progress <span class="pill" style="margin-left:8px" id="tabInProgressCount">0</span></button>
+                    <button data-tab="responded">Responded <span class="pill" style="margin-left:8px" id="tabRespondedCount">0</span></button>
+                    <button data-tab="no_reply_needed">Reply not Needed <span class="pill" style="margin-left:8px" id="tabNoReplyNeededCount">0</span></button>
                 </div>
 
                 <div class="field" style="min-width:220px">
@@ -489,6 +455,11 @@
             </div>
 
             <div id="ticketList" style="margin-top:10px"></div>
+            <div id="pagination" class="row space" style="margin-top:12px; display:none">
+                <button class="btn" id="btnPrev" onclick="prevPage()">Prev</button>
+                <div class="small muted" id="pageInfo">Page 1</div>
+                <button class="btn" id="btnNext" onclick="nextPage()">Next</button>
+            </div>
         </div>
 
         <!-- Login Modal -->
@@ -503,12 +474,7 @@
                     <div class="login-split">
                         <div class="login-left">
                             <div class="login-logo" aria-hidden="true">
-                                <!-- Simple in-app logo (no external assets) -->
-                                <svg width="44" height="44" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                    <path d="M3 10.5L12 3l9 7.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                                    <path d="M5 9.5V21h14V9.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                                    <path d="M9 21v-7h6v7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                                </svg>
+                                <img src="/static/logo.png" alt="Logo" style="width:44px;height:44px;object-fit:contain" />
                             </div>
                             <div class="login-brand">AgentBot</div>
                             <div class="login-sub">Email-to-ticket workflow for your team.</div>

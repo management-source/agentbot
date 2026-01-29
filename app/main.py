@@ -9,15 +9,22 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 import base64
 
-import sentry_sdk
-from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
+try:
+    import sentry_sdk  # type: ignore
+except Exception:  # pragma: no cover
+    sentry_sdk = None
+
+try:
+    from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST  # type: ignore
+except Exception:  # pragma: no cover
+    Counter = Histogram = generate_latest = CONTENT_TYPE_LATEST = None
 
 from app.db import init_db, SessionLocal
 from app.config import settings
-from app.scheduler import scheduler
 from app.routers import tasks
 
-from app.routers import auth, tickets, autopilot, ui, threads
+from app.routers import auth, tickets, ui, threads
+from app.routers import sync
 from app.routers import blacklist
 from app.routers import settings as app_settings
 from app.routers import user_auth
@@ -28,21 +35,25 @@ from app.services.reminders import run_reminders
 from app.services.escalation import run_sla_escalations
 
 
-app = FastAPI(title="Email Autopilot Manager", debug=settings.DEBUG)
+app = FastAPI(title="Email Reply Manager", debug=settings.DEBUG)
 
 
 # -------- Observability --------
 
-REQUEST_COUNT = Counter(
-    "http_requests_total",
-    "Total HTTP requests",
-    ["method", "path", "status"],
-)
-REQUEST_LATENCY = Histogram(
-    "http_request_duration_seconds",
-    "HTTP request latency",
-    ["method", "path"],
-)
+if Counter and Histogram:
+    REQUEST_COUNT = Counter(
+        "http_requests_total",
+        "Total HTTP requests",
+        ["method", "path", "status"],
+    )
+    REQUEST_LATENCY = Histogram(
+        "http_request_duration_seconds",
+        "HTTP request latency",
+        ["method", "path"],
+    )
+else:  # pragma: no cover
+    REQUEST_COUNT = None
+    REQUEST_LATENCY = None
 
 
 class JsonFormatter(logging.Formatter):
@@ -92,16 +103,20 @@ class MetricsMiddleware(BaseHTTPMiddleware):
 
         path = request.url.path
         method = request.method
-        with REQUEST_LATENCY.labels(method=method, path=path).time():
+        if REQUEST_LATENCY:
+            with REQUEST_LATENCY.labels(method=method, path=path).time():
+                resp = await call_next(request)
+        else:
             resp = await call_next(request)
 
-        REQUEST_COUNT.labels(method=method, path=path, status=str(resp.status_code)).inc()
+        if REQUEST_COUNT:
+            REQUEST_COUNT.labels(method=method, path=path, status=str(resp.status_code)).inc()
         return resp
 
 
 setup_logging()
 
-if settings.SENTRY_DSN:
+if settings.SENTRY_DSN and sentry_sdk:
     sentry_sdk.init(
         dsn=settings.SENTRY_DSN,
         environment=settings.APP_ENV,
@@ -173,6 +188,8 @@ def health():
 
 @app.get("/metrics")
 def metrics():
+    if not generate_latest:
+        return Response(content="prometheus_client not installed", status_code=404)
     data = generate_latest()
     return Response(content=data, media_type=CONTENT_TYPE_LATEST)
 
@@ -183,7 +200,7 @@ app.include_router(ui.router, tags=["ui"])
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(user_auth.router)
 app.include_router(tickets.router, prefix="/tickets", tags=["tickets"])
-app.include_router(autopilot.router, prefix="/autopilot", tags=["autopilot"])
+app.include_router(sync.router, prefix="/sync", tags=["sync"])
 app.include_router(threads.router, prefix="/threads", tags=["threads"])
 app.include_router(tasks.router, prefix="/tasks", tags=["tasks"])
 app.include_router(app_settings.router, prefix="/settings", tags=["settings"])

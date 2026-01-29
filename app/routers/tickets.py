@@ -4,6 +4,7 @@ import json
 from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_
+from sqlalchemy.sql import exists
 from datetime import datetime, timedelta
 from pydantic import BaseModel
 
@@ -16,6 +17,7 @@ from app.models import (
     TicketCategory,
     User,
     UserRole,
+    BlacklistedSender,
     ThreadTicketNote,
     ThreadTicketAudit,
     AuditAction,
@@ -66,11 +68,9 @@ class StatusUpdate(BaseModel):
 def _tab_filter(q, tab: str):
     tab = (tab or "all").lower().strip()
 
-    if tab == "not_replied":
+    if tab in ("awaiting_reply", "awaiting"):
+        # Canonical KPI tab
         return q.filter(ThreadTicket.is_not_replied == True)
-
-    if tab == "pending":
-        return q.filter(ThreadTicket.status == TicketStatus.PENDING)
 
     if tab == "in_progress":
         return q.filter(ThreadTicket.status == TicketStatus.IN_PROGRESS)
@@ -82,12 +82,7 @@ def _tab_filter(q, tab: str):
         return q.filter(ThreadTicket.status == TicketStatus.NO_REPLY_NEEDED)
 
     if tab == "all":
-        # KEEP ALL CLEAN: show only actionable tickets
-        # Option B: Pending + In Progress
-        return q.filter(ThreadTicket.status.in_([TicketStatus.PENDING, TicketStatus.IN_PROGRESS]))
-
-        # If you want Option A (Pending only), use this instead:
-        # return q.filter(ThreadTicket.status == TicketStatus.PENDING)
+        return q
 
     return q  # fallback for unknown tab values
 
@@ -95,14 +90,13 @@ def _tab_filter(q, tab: str):
 
 @router.get("", response_model=TicketListOut)
 def list_tickets(
-    tab: str = "all",
+    tab: str = "awaiting_reply",
     category: TicketCategory | None = None,
     ai_category: str | None = None,
-    assignee_user_id: int | None = None,
     query: str | None = None,
-    mine: bool = False,
     overdue: bool = False,
-    limit: int = 50,
+    page: int = 1,
+    page_size: int = 25,
     start: str | None = None,
     end: str | None = None,
     db: Session = Depends(get_db),
@@ -115,6 +109,11 @@ def list_tickets(
     """
     q = db.query(ThreadTicket)
     q = _tab_filter(q, tab)
+
+    # Always hide blacklisted senders.
+    q = q.filter(
+        ~exists().where(BlacklistedSender.email == func.lower(ThreadTicket.from_email))
+    )
 
     if category:
         q = q.filter(ThreadTicket.category == category)
@@ -135,10 +134,7 @@ def list_tickets(
             )
         )
 
-    if mine:
-        q = q.filter(ThreadTicket.assignee_user_id == user.id)
-    elif assignee_user_id is not None:
-        q = q.filter(ThreadTicket.assignee_user_id == assignee_user_id)
+    # Assignment is removed; no assignee filters.
 
     if overdue:
         now = datetime.utcnow()
@@ -155,28 +151,40 @@ def list_tickets(
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD.")
 
-    q = q.order_by(ThreadTicket.last_message_at.desc().nullslast()).limit(limit)
+    # Pagination
+    page = max(int(page or 1), 1)
+    page_size = int(page_size or 25)
+    page_size = 10 if page_size < 10 else page_size
+    page_size = 100 if page_size > 100 else page_size
+
+    total = q.with_entities(func.count(ThreadTicket.thread_id)).scalar() or 0
+
+    q = q.order_by(ThreadTicket.last_message_at.desc().nullslast())
+    q = q.offset((page - 1) * page_size).limit(page_size)
     items = q.all()
 
     # IMPORTANT: Do not call AI during list/fetch operations.
     # AI is invoked only when the user explicitly requests it (e.g., AI Draft).
 
     # Counters for top tiles / tabs
+    # KPI counts (exclude blacklisted senders to match list behavior)
+    base = db.query(ThreadTicket).filter(
+        ~exists().where(BlacklistedSender.email == func.lower(ThreadTicket.from_email))
+    )
     counts = {
-        "not_replied": db.query(func.count(ThreadTicket.thread_id)).filter(ThreadTicket.is_not_replied == True).scalar() or 0,
-        "pending": db.query(func.count(ThreadTicket.thread_id)).filter(ThreadTicket.status == TicketStatus.PENDING).scalar() or 0,
-        "in_progress": db.query(func.count(ThreadTicket.thread_id)).filter(ThreadTicket.status == TicketStatus.IN_PROGRESS).scalar() or 0,
-        "responded": db.query(func.count(ThreadTicket.thread_id)).filter(ThreadTicket.status == TicketStatus.RESPONDED).scalar() or 0,
-        "no_reply_needed": db.query(func.count(ThreadTicket.thread_id)).filter(ThreadTicket.status == TicketStatus.NO_REPLY_NEEDED).scalar() or 0,
-        "all": db.query(func.count(ThreadTicket.thread_id)).scalar() or 0,
+        "awaiting_reply": base.filter(ThreadTicket.is_not_replied == True).count(),
+        "in_progress": base.filter(ThreadTicket.status == TicketStatus.IN_PROGRESS).count(),
+        "responded": base.filter(ThreadTicket.status == TicketStatus.RESPONDED).count(),
+        "no_reply_needed": base.filter(ThreadTicket.status == TicketStatus.NO_REPLY_NEEDED).count(),
     }
-
-    # AI KPI: urgent
-    counts["urgent_ai"] = db.query(func.count(ThreadTicket.thread_id)).filter(ThreadTicket.ai_urgency >= 4).scalar() or 0
 
     return TicketListOut(
         items=[TicketOut.model_validate(t) for t in items],
         counts=counts,
+        total=total,
+        page=page,
+        page_size=page_size,
+        has_more=(page * page_size) < total,
     )
 
 @router.patch("/{thread_id}/status")
@@ -408,38 +416,6 @@ def send_ack(thread_id: str, payload: SendAckIn, db: Session = Depends(get_db), 
     db.commit()
     return {"ok": True}
 
-
-class AssignIn(BaseModel):
-    assignee_user_id: int | None = None
-
-
-@router.patch("/{thread_id}/assign")
-def assign_ticket(
-    thread_id: str,
-    payload: AssignIn,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    t = db.get(ThreadTicket, thread_id)
-    if not t:
-        raise HTTPException(404, "Ticket not found")
-    assignee = None
-    if payload.assignee_user_id is not None:
-        assignee = db.get(User, payload.assignee_user_id)
-        if not assignee or not assignee.is_active:
-            raise HTTPException(400, "Assignee not found")
-    old = t.assignee_user_id
-    t.assignee_user_id = payload.assignee_user_id
-    t.updated_at = datetime.utcnow()
-    add_audit(
-        db,
-        thread_id=thread_id,
-        action=AuditAction.ASSIGNED,
-        actor_user_id=user.id,
-        detail={"from": old, "to": t.assignee_user_id},
-    )
-    db.commit()
-    return {"ok": True}
 
 
 class CategoryIn(BaseModel):

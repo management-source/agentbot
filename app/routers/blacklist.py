@@ -8,7 +8,8 @@ router = APIRouter()
 @router.get("")
 def list_blacklist(db: Session = Depends(get_db)):
     items = db.query(BlacklistedSender).order_by(BlacklistedSender.created_at.desc()).all()
-    return {"items": [{"id": x.id, "email": x.email} for x in items]}
+    # Frontend expects a JSON array.
+    return [{"id": x.id, "email": x.email} for x in items]
 
 @router.post("")
 def add_blacklist(email: str, db: Session = Depends(get_db)):

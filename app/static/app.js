@@ -1,4 +1,4 @@
-let currentTab = "not_replied";
+let currentTab = "awaiting_reply";
 let currentAckThreadId = null;
 let currentAiThreadId = null;
 
@@ -28,9 +28,12 @@ function escapeHtml(text) {
 // Date filter applied to ticket list (set when you click Fetch Now).
 let currentDateFilter = { start: "", end: "" };
 
+// Pagination state
+let currentPage = 1;
+let pageSize = 25;
+
 // UI filters
 let currentSearch = "";
-let currentAssignee = ""; // user id as string
 // Category filtering removed (we avoid AI-based categorization and UI filters for now).
 
 let googleConnected = false;
@@ -327,7 +330,7 @@ async function flushDatabase() {
         alert("Flush failed: " + (e.message || e));
     }
 }
-function addQuery() { alert("Add Query (MVP): not implemented yet."); }
+// Autopilot / query rules removed.
 
 function formatDate(dt) {
     if (!dt) return "—";
@@ -336,6 +339,7 @@ function formatDate(dt) {
 
 function setTab(tab) {
     currentTab = tab;
+    currentPage = 1;
 
     // Tailwind tabs (legacy)
     document.querySelectorAll(".tabbtn").forEach(btn => {
@@ -383,7 +387,7 @@ async function fetchNow() {
         // Persist the selected date filter for the ticket list.
         currentDateFilter = { start: start || "", end: end || "" };
 
-        const url = new URL("/autopilot/fetch-now", window.location.origin);
+        const url = new URL("/sync/fetch-now", window.location.origin);
         if (start) url.searchParams.set("start", start);
         if (end) url.searchParams.set("end", end);
         if (!Number.isNaN(maxThreads) && maxThreads > 0) url.searchParams.set("max_threads", String(maxThreads));
@@ -432,7 +436,7 @@ async function checkUpdates() {
     }
 
     try {
-        const url = new URL("/autopilot/check-updates", window.location.origin);
+        const url = new URL("/sync/check-updates", window.location.origin);
         // Safety cap; frequent use should stay light.
         url.searchParams.set("max_threads", "200");
 
@@ -466,57 +470,7 @@ function clearDateFilter() {
     loadTickets();
 }
 
-async function startAutopilot() {
-    const r = await fetch("/autopilot/start", { method: "POST" });
-    const t = await r.text();
-    if (!r.ok) { alert(`Start failed (${r.status}):\n\n${t}`); return; }
-    await refreshAutopilotStatus();
-}
-
-async function stopAutopilot() {
-    const r = await fetch("/autopilot/stop", { method: "POST" });
-    const t = await r.text();
-    if (!r.ok) { alert(`Stop failed (${r.status}):\n\n${t}`); return; }
-    await refreshAutopilotStatus();
-}
-
-async function refreshAutopilotStatus() {
-    try {
-        const r = await fetch("/autopilot/status");
-        const j = await r.json();
-        const running = !!j.running;
-
-        const s1 = document.getElementById("autopilotStatus");
-        if (s1) s1.textContent = running ? "Active" : "Stopped";
-
-        const dot = document.getElementById("statusDot");
-        if (dot) {
-            // Tailwind variant
-            dot.className = running ? "h-2 w-2 rounded-full bg-green-500" : "h-2 w-2 rounded-full bg-red-500";
-        }
-        const dot2 = document.getElementById("autopilotDot");
-        if (dot2) {
-            dot2.classList.toggle("green", running);
-            dot2.classList.toggle("red", !running);
-        }
-
-        const next = document.getElementById("nextRun");
-        if (next) next.textContent = j.next_run_time || "—";
-
-        const line = document.getElementById("statusLine");
-        if (line) line.textContent = running ? "Active" : "Stopped";
-
-        const info = document.getElementById("autopilotInfo");
-        if (info) {
-            const every = (j.poll_every_minutes || j.poll_every || 5);
-            info.textContent = `Checking every ${every} minutes • Last sync: ${(document.getElementById("lastSync")?.textContent || "—")} • Next run: ${j.next_run_time || "—"}`;
-            const pe = document.getElementById("pollEvery");
-            if (pe) pe.textContent = String(every);
-        }
-    } catch {
-        // ignore
-    }
-}
+// Autopilot removed.
 
 function priorityBadge(p) {
     const val = String(p || "medium").toLowerCase();
@@ -533,19 +487,7 @@ function aiBadges(_t) {
 }
 
 
-function assigneeOptions(selectedId) {
-    const opts = ['<option value="">Unassigned</option>'];
-    for (const u of usersCache) {
-        const sel = String(u.id) === String(selectedId) ? "selected" : "";
-        opts.push(`<option value="${u.id}" ${sel}>${escapeHtml(u.name)} (${escapeHtml(u.role)})</option>`);
-    }
-    return opts.join("");
-}
-
-function categoryOptions(selected) {
-    const cats = ["MAINTENANCE", "RENT_ARREARS", "LEASING", "COMPLIANCE", "SALES", "GENERAL"];
-    return cats.map(c => `<option value="${c}" ${c === (selected || "GENERAL") ? "selected" : ""}>${c.replace("_", " ")}</option>`).join("");
-}
+// Assignment and manual category selection removed.
 
 function statusOptions(selected) {
     const opts = [
@@ -565,7 +507,8 @@ function renderTicket(t) {
 
     // Legacy manual category removed from UI; prefer AI category.
     const cat = "";
-    const assignee = t.assignee_user_id ? (usersCache.find(u => u.id === t.assignee_user_id)?.name || `User#${t.assignee_user_id}`) : "Unassigned";
+    // Assignment feature removed.
+    const assignee = "";
 
     let slaText = "SLA: —";
     let slaOverdue = false;
@@ -599,7 +542,7 @@ function renderTicket(t) {
               ${priBadge}
               ${aiBadges(t)}
               ${cat ? `<span class="badge">${escapeHtml(cat)}</span>` : ``}
-              <span class="badge">${escapeHtml(assignee)}</span>
+              ${assignee ? `<span class="badge">${escapeHtml(assignee)}</span>` : ``}
               ${nrBadge}
               ${unreadBadge}
               ${slaBadge}
@@ -624,13 +567,6 @@ function renderTicket(t) {
                 <div class="label">Status</div>
                 <select onchange="updateStatus('${t.thread_id}', this.value)">
                   ${statusOptions(t.status)}
-                </select>
-              </div>
-
-              <div class="field">
-                <div class="label">Assignee</div>
-                <select onchange="updateAssignee('${t.thread_id}', this.value)">
-                  ${assigneeOptions(t.assignee_user_id)}
                 </select>
               </div>
 
@@ -701,7 +637,8 @@ function renderTicket(t) {
 async function loadTickets() {
     const url = new URL(`/tickets`, window.location.origin);
     url.searchParams.set("tab", currentTab);
-    url.searchParams.set("limit", "50");
+    url.searchParams.set("page", String(currentPage));
+    url.searchParams.set("page_size", String(pageSize));
 
     // Apply current filter (set by Fetch Now). If empty, do not filter.
     if (currentDateFilter.start) url.searchParams.set("start", currentDateFilter.start);
@@ -719,8 +656,7 @@ async function loadTickets() {
     // If there are no items returned, force KPIs to zero to avoid displaying stale counts.
     if (items.length === 0) {
         data.counts = {
-            not_replied: 0,
-            pending: 0,
+            awaiting_reply: 0,
             in_progress: 0,
             responded: 0,
             no_reply_needed: 0,
@@ -728,32 +664,14 @@ async function loadTickets() {
     }
 
     const c = data.counts || {};
-
-    // Legacy KPI tiles (tailwind)
-    const map = [
-        ["countNotReplied", c.not_replied ?? 0],
-        ["countPending", c.pending ?? 0],
-        ["countInProgress", c.in_progress ?? 0],
-        ["countResponded", c.responded ?? 0],
-        ["countNoReplyNeeded", c.no_reply_needed ?? 0],
-    ];
-    for (const [id, val] of map) {
+    const setText = (id, val) => {
         const el = document.getElementById(id);
-        if (el) el.textContent = val;
-    }
-
-    // Good UI KPIs
-    const map2 = [
-        ["kpiNotRepliedPriority", c.not_replied ?? 0],
-        ["kpiPending", c.pending ?? 0],
-        ["kpiInProgress", c.in_progress ?? 0],
-        ["kpiResponded", c.responded ?? 0],
-        ["kpiReplyNotNeeded", c.no_reply_needed ?? 0],
-    ];
-    for (const [id, val] of map2) {
-        const el = document.getElementById(id);
-        if (el) el.textContent = val;
-    }
+        if (el) el.textContent = String(val ?? 0);
+    };
+    setText("tabAwaitingCount", c.awaiting_reply ?? 0);
+    setText("tabInProgressCount", c.in_progress ?? 0);
+    setText("tabRespondedCount", c.responded ?? 0);
+    setText("tabNoReplyNeededCount", c.no_reply_needed ?? 0);
 
     const list = document.getElementById("ticketList");
     if (!list) return;
@@ -764,35 +682,47 @@ async function loadTickets() {
     if (items.length === 0) {
         list.innerHTML = `<div class="muted small" style="padding:10px">No tickets in this tab.</div>`;
     }
+
+    renderPagination(data);
 }
 
+function renderPagination(data) {
+    const wrap = document.getElementById("pagination");
+    if (!wrap) return;
 
-async function updateAssignee(threadId, userId) {
-    const payload = { assignee_user_id: userId ? Number(userId) : null };
-    const r = await apiFetch(`/tickets/${threadId}/assign`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-    });
-    if (!r.ok) {
-        alert("Failed to assign ticket");
+    const total = Number(data.total || 0);
+    const page = Number(data.page || currentPage);
+    const page_size = Number(data.page_size || pageSize);
+    const has_more = Boolean(data.has_more);
+
+    const btnPrev = document.getElementById("btnPrev");
+    const btnNext = document.getElementById("btnNext");
+    const info = document.getElementById("pageInfo");
+
+    const totalPages = page_size > 0 ? Math.ceil(total / page_size) : 1;
+
+    if (total <= page_size) {
+        wrap.style.display = "none";
         return;
     }
-    await loadTickets();
+
+    wrap.style.display = "flex";
+    if (btnPrev) btnPrev.disabled = page <= 1;
+    if (btnNext) btnNext.disabled = !has_more;
+    if (info) info.textContent = `Page ${page} of ${totalPages} • ${total} tickets`;
 }
 
-async function updateCategory(threadId, category) {
-    const r = await apiFetch(`/tickets/${threadId}/category`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ category }),
-    });
-    if (!r.ok) {
-        alert("Failed to update category");
-        return;
-    }
-    await loadTickets();
+function prevPage() {
+    if (currentPage <= 1) return;
+    currentPage -= 1;
+    loadTickets();
 }
+
+function nextPage() {
+    currentPage += 1;
+    loadTickets();
+}
+
 
 async function updateStatus(threadId, status) {
     await apiFetch(`/tickets/${threadId}/status`, {
@@ -1335,6 +1265,16 @@ window.addEventListener("load", async () => {
     await refreshAutopilotStatus();
 
     // Wire filters
+    const seg = document.getElementById("statusSeg");
+    if (seg) {
+        seg.querySelectorAll("button[data-tab]").forEach(btn => {
+            btn.addEventListener("click", () => {
+                const tab = btn.dataset.tab || "awaiting_reply";
+                setTab(tab);
+            });
+        });
+    }
+
     const searchEl = document.getElementById("searchBox");
     if (searchEl) {
         let tmr = null;
@@ -1345,30 +1285,8 @@ window.addEventListener("load", async () => {
         });
     }
 
-    const assigneeFilter = document.getElementById("assigneeFilter");
-    if (assigneeFilter) {
-        assigneeFilter.addEventListener("change", () => {
-            currentAssignee = assigneeFilter.value || "";
-            loadTickets();
-        });
-    }
+    // Assignment / category filters removed.
 
-    // categoryFilter removed
-
-    // Populate assignee filter now that we have users cache
-    try { populateAssigneeFilter(); } catch {}
-
-    await loadTickets();
+    // Set default tab (will load tickets).
+    setTab(currentTab);
 });
-
-function populateAssigneeFilter() {
-    const sel = document.getElementById("assigneeFilter");
-    if (!sel) return;
-    const current = sel.value;
-    const opts = ['<option value="">All</option>'];
-    for (const u of usersCache || []) {
-        opts.push(`<option value="${u.id}">${escapeHtml(u.name)} (${escapeHtml(u.role)})</option>`);
-    }
-    sel.innerHTML = opts.join("");
-    if (current) sel.value = current;
-}
