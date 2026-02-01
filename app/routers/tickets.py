@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from fastapi import APIRouter, Depends, HTTPException, Body
+from fastapi import APIRouter, Depends, HTTPException, Body, File, Form, UploadFile
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_
 from sqlalchemy.sql import exists
@@ -37,7 +37,7 @@ from app.services.ai_reply import draft_acknowledgement
 from app.services.ai_assistant import draft_context_reply
 from app.services.state import get_state
 from app.config import settings
-from app.services.gmail_send import send_reply_in_thread
+from app.services.gmail_send import send_reply_in_thread, OutgoingAttachment
 from app.services.gmail_client import get_gmail_service, gmail_user_id
 from app.services.gmail_parse import extract_message_body
 from app.schemas import DraftAiIn
@@ -394,12 +394,17 @@ def send_ack(thread_id: str, payload: SendAckIn, db: Session = Depends(get_db), 
     if not t:
         raise HTTPException(status_code=404, detail="Ticket not found")
 
+    signature = (get_state(db, "signature_text") or settings.DEFAULT_SIGNATURE or "").strip()
+    body_text = (payload.body or "").rstrip()
+    if signature and signature not in body_text:
+        body_text = (body_text + "\n\n" + signature).strip()
+
     send_reply_in_thread(
         db=db,
         thread_id=thread_id,
         to_email=t.from_email,
         subject=payload.subject,
-        body=payload.body,
+        body_text=body_text,
     )
 
     # Update ticket bookkeeping
@@ -413,6 +418,75 @@ def send_ack(thread_id: str, payload: SendAckIn, db: Session = Depends(get_db), 
     t.is_not_replied = False
 
     add_audit(db, thread_id=thread_id, action=AuditAction.REPLIED, actor_user_id=user.id, detail={"subject": payload.subject})
+    db.commit()
+    return {"ok": True}
+
+
+@router.post("/{thread_id}/send-reply")
+async def send_reply_form(
+    thread_id: str,
+    subject: str = Form(...),
+    body: str = Form(""),
+    cc: str = Form(""),
+    bcc: str = Form(""),
+    mark_as_responded: bool = Form(True),
+    attachments: list[UploadFile] | None = File(default=None),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Send a reply with Gmail-like compose features (CC/BCC + attachments).
+
+    This endpoint is used by the Quick Reply modal. It avoids breaking the legacy
+    JSON-based /send-ack endpoint.
+    """
+    t = db.get(ThreadTicket, thread_id)
+    if not t:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+
+    # Append stored signature (if any) unless it already exists in the body.
+    signature = (get_state(db, "signature_text") or settings.DEFAULT_SIGNATURE or "").strip()
+    final_body = (body or "").rstrip()
+    if signature and signature not in final_body:
+        final_body = (final_body + "\n\n" + signature).strip()
+
+    out_attachments: list[OutgoingAttachment] = []
+    for f in attachments or []:
+        if not f:
+            continue
+        data = await f.read()
+        if not data:
+            continue
+        out_attachments.append(
+            OutgoingAttachment(
+                filename=f.filename or "attachment",
+                content=data,
+                content_type=f.content_type,
+            )
+        )
+
+    try:
+        send_reply_in_thread(
+            db=db,
+            thread_id=thread_id,
+            to_email=t.from_email,
+            subject=subject,
+            body_text=final_body,
+            cc=cc or None,
+            bcc=bcc or None,
+            from_email=settings.my_emails_list()[0] if settings.my_emails_list() else None,
+            attachments=out_attachments,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Failed to send email: {e}")
+
+    # Update ticket bookkeeping
+    t.ack_sent_at = datetime.utcnow()
+    t.last_from_me = True
+    if mark_as_responded:
+        t.status = TicketStatus.RESPONDED
+    t.is_not_replied = False
+
+    add_audit(db, thread_id=thread_id, action=AuditAction.REPLIED, actor_user_id=user.id, detail={"subject": subject, "cc": cc, "bcc": bcc, "attachments": [a.filename for a in out_attachments]})
     db.commit()
     return {"ok": True}
 

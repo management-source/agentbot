@@ -940,6 +940,14 @@ async function openAckModal(threadId) {
     currentAckThreadId = threadId;
     document.getElementById("ackModal").classList.remove("hidden");
     document.getElementById("ackSubject").value = "";
+    const ccEl = document.getElementById("ackCc");
+    const bccEl = document.getElementById("ackBcc");
+    if (ccEl) ccEl.value = "";
+    if (bccEl) bccEl.value = "";
+    const fEl = document.getElementById("ackAttachments");
+    const listEl = document.getElementById("ackAttachList");
+    if (fEl) fEl.value = "";
+    if (listEl) listEl.innerHTML = "";
     document.getElementById("ackBody").value = "Loading draft…";
     document.getElementById("sendAckBtn").disabled = true;
 
@@ -957,6 +965,19 @@ async function openAckModal(threadId) {
     document.getElementById("ackSubject").value = j.subject || "";
     document.getElementById("ackBody").value = j.body || "";
     document.getElementById("sendAckBtn").disabled = false;
+
+    // Attachments list preview
+    if (fEl) {
+        fEl.onchange = () => {
+            const files = Array.from(fEl.files || []);
+            if (!listEl) return;
+            if (files.length === 0) {
+                listEl.innerHTML = "";
+                return;
+            }
+            listEl.innerHTML = files.map(f => `${escapeHtml(f.name)} <span class="muted">(${Math.round(f.size/1024)} KB)</span>`).join("<br/>");
+        };
+    }
 }
 
 async function openAiReplyModal(threadId) {
@@ -1034,16 +1055,30 @@ async function sendAckFromModal() {
     if (!currentAckThreadId) return;
     const subject = document.getElementById("ackSubject").value;
     const body = document.getElementById("ackBody").value;
+    const cc = (document.getElementById("ackCc")?.value || "").trim();
+    const bcc = (document.getElementById("ackBcc")?.value || "").trim();
+    const filesEl = document.getElementById("ackAttachments");
 
     const btn = document.getElementById("sendAckBtn");
     btn.disabled = true;
     btn.textContent = "Sending...";
 
     try {
-        const r = await apiFetch(`/tickets/${currentAckThreadId}/send-ack`, {
+        const form = new FormData();
+        form.append("subject", subject || "");
+        form.append("body", body || "");
+        form.append("cc", cc);
+        form.append("bcc", bcc);
+        form.append("mark_as_responded", "true");
+        if (filesEl && filesEl.files) {
+            for (const f of Array.from(filesEl.files)) {
+                form.append("attachments", f, f.name);
+            }
+        }
+
+        const r = await apiFetch(`/tickets/${currentAckThreadId}/send-reply`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ subject, body, mark_as_responded: true })
+            body: form
         });
         const t = await r.text();
         if (!r.ok) {

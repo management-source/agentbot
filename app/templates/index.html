@@ -603,10 +603,26 @@
                         <div class="label">Subject</div>
                         <input id="ackSubject" type="text" />
                     </div>
+                    <div class="row" style="gap:10px;margin-top:10px;flex-wrap:wrap">
+                        <div class="field" style="flex:1;min-width:240px">
+                            <div class="label">CC</div>
+                            <input id="ackCc" type="text" placeholder="Comma-separated (optional)" />
+                        </div>
+                        <div class="field" style="flex:1;min-width:240px">
+                            <div class="label">BCC</div>
+                            <input id="ackBcc" type="text" placeholder="Comma-separated (optional)" />
+                        </div>
+                    </div>
                     <div class="field" style="margin-top:10px">
                         <div class="label">Body</div>
                         <textarea id="ackBody"
                             style="width:100%;min-height:160px;padding:10px 12px;border:1px solid var(--border);border-radius:12px;font-size:13px"></textarea>
+                    </div>
+                    <div class="field" style="margin-top:10px">
+                        <div class="label">Attachments</div>
+                        <input id="ackAttachments" type="file" multiple />
+                        <div class="small muted" style="margin-top:6px">You can attach files and photos. They will be sent with the reply.</div>
+                        <div id="ackAttachList" class="small" style="margin-top:6px"></div>
                     </div>
                 </div>
                 <div class="modal-foot">

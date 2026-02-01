@@ -74,14 +74,22 @@ def fetch_signature_from_gmail(db: Session = Depends(get_db), user=Depends(get_c
         raise HTTPException(status_code=400, detail=str(e))
 
     try:
-        # Find a sensible SendAs identity.
+        # Pick the SendAs identity that matches our primary outbound mailbox,
+        # falling back to primary/default.
         sendas = service.users().settings().sendAs().list(userId=gmail_user_id()).execute()
         items = sendas.get("sendAs", []) or []
         chosen = None
-        for it in items:
-            if it.get("isPrimary"):
-                chosen = it
-                break
+        preferred = (settings.my_emails_list()[0] if settings.my_emails_list() else "").strip().lower()
+        if preferred:
+            for it in items:
+                if (it.get("sendAsEmail") or "").strip().lower() == preferred:
+                    chosen = it
+                    break
+        if not chosen:
+            for it in items:
+                if it.get("isPrimary"):
+                    chosen = it
+                    break
         if not chosen and items:
             chosen = items[0]
         if not chosen:
