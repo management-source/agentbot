@@ -9,6 +9,7 @@ from typing import Iterable, Optional
 from sqlalchemy.orm import Session
 
 from app.services.gmail_client import get_gmail_service, gmail_user_id
+from app.services.html_image_embed import embed_remote_images_as_cid
 
 
 @dataclass
@@ -52,6 +53,7 @@ def build_reply_message(
     from_email: str | None = None,
     attachments: Optional[Iterable[OutgoingAttachment]] = None,
     body_html: str | None = None,
+    db: Session | None = None,
 ) -> EmailMessage:
     """Build a Gmail-compatible MIME message.
 
@@ -79,8 +81,25 @@ def build_reply_message(
 
     # Body
     msg.set_content(body_text or "")
+
+    html_part = None
+    embedded_images = []
     if body_html:
+        # IMPORTANT: Many email clients (including Gmail) strip/ignore data: URIs.
+        # To reliably render signature logos etc., convert remote <img src=https://...>
+        # to cid: references and attach as related images.
+        if db is not None:
+            body_html, embedded_images, _warnings = embed_remote_images_as_cid(db=db, html=body_html)
+
         msg.add_alternative(body_html, subtype="html")
+        # html_part is the last payload after add_alternative
+        html_part = msg.get_payload()[-1]
+
+        # Attach embedded images as related parts to the HTML alternative.
+        for im in embedded_images:
+            mt, st = _guess_maintype_subtype(im.content_type, im.filename)
+            # cid must be enclosed in angle brackets per RFC
+            html_part.add_related(im.content, maintype=mt, subtype=st, cid=f"<{im.cid}>", filename=im.filename)
 
     # Attachments
     for a in attachments or []:
@@ -121,6 +140,7 @@ def send_reply_in_thread(
         bcc=bcc,
         from_email=from_email,
         attachments=attachments,
+        db=db,
     )
 
     raw = base64.urlsafe_b64encode(msg.as_bytes()).decode("utf-8")

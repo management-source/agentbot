@@ -9,7 +9,6 @@ from app.config import settings
 from app.db import get_db
 from app.services.state import get_state, set_state
 from app.services.gmail_client import get_gmail_service, gmail_user_id, GMAIL_SIGNATURE_SCOPE, GMAIL_SCOPES
-from app.services.signature_inliner import inline_signature_images
 
 import html
 import re
@@ -107,13 +106,13 @@ def fetch_signature_from_gmail(db: Session = Depends(get_db), user=Depends(get_c
             raise HTTPException(status_code=404, detail="No sendAsEmail found.")
 
         full = service.users().settings().sendAs().get(userId=gmail_user_id(), sendAsEmail=send_as_email).execute()
+        # Store the raw Gmail signature HTML. For *sending*, we convert remote
+        # <img src=https://...> into CID attachments at send-time, because many
+        # clients (including Gmail) strip/ignore data: URIs in email HTML.
         sig_html = (full.get("signature") or "").strip()
-        # Make signature self-contained by inlining remote images as data: URIs.
-        # This is the only reliable way to ensure signature images render everywhere.
-        sig_html_inlined, _warnings = inline_signature_images(sig_html)
-        sig_text = _html_to_text(sig_html_inlined)
+        sig_text = _html_to_text(sig_html)
 
-        set_state(db, "signature_html", sig_html_inlined)
+        set_state(db, "signature_html", sig_html)
         set_state(db, "signature_text", sig_text)
         db.commit()
         return SignatureOut(signature=sig_text)

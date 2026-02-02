@@ -9,11 +9,12 @@ from app.config import settings
 
 # OAuth (user flow)
 from google.oauth2.credentials import Credentials
-from google.auth.transport.requests import Request as GoogleRequest
 from app.models import OAuthToken
 
 # Service Account (Domain-Wide Delegation)
 from google.oauth2 import service_account
+
+from google.auth.transport.requests import Request as GoogleRequest
 
 
 GMAIL_SCOPES = [
@@ -88,6 +89,52 @@ def get_gmail_service(db: Session | None = None, scopes: list[str] | None = None
         db.commit()
 
     return build("gmail", "v1", credentials=creds, cache_discovery=False)
+
+
+def get_google_credentials(db: Session | None = None, scopes: list[str] | None = None):
+    """Return a google-auth Credentials object for non-Gmail HTTP fetches.
+
+    Used for fetching Google-hosted assets (e.g. signature logo URLs) with
+    an Authorization: Bearer token via AuthorizedSession.
+    """
+    scopes = scopes or GMAIL_SCOPES
+
+    if settings.GMAIL_AUTH_MODE == "service_account":
+        info = settings.service_account_info()
+        if not info:
+            raise RuntimeError("Service account JSON is not configured.")
+        subject = (settings.IMPERSONATE_USER or "").strip()
+        if not subject:
+            raise RuntimeError("IMPERSONATE_USER is not configured.")
+        return service_account.Credentials.from_service_account_info(info, scopes=scopes).with_subject(subject)
+
+    # OAuth mode
+    if db is None:
+        raise RuntimeError("Database session is required for OAuth mode.")
+
+    token = db.query(OAuthToken).filter(OAuthToken.provider == "google").first()
+    if not token:
+        raise RuntimeError("Google is not connected. Visit /auth/google/login first.")
+
+    token_scopes = [s for s in (token.scopes or "").split(",") if s]
+    scopes = token_scopes or scopes
+
+    creds = Credentials(
+        token=token.access_token,
+        refresh_token=token.refresh_token,
+        token_uri=token.token_uri or "https://oauth2.googleapis.com/token",
+        client_id=settings.GOOGLE_CLIENT_ID,
+        client_secret=settings.GOOGLE_CLIENT_SECRET,
+        scopes=scopes,
+    )
+
+    if creds.expired and creds.refresh_token:
+        creds.refresh(GoogleRequest())
+        token.access_token = creds.token
+        token.expiry = creds.expiry
+        db.commit()
+
+    return creds
 
 
 def parse_email_address(from_header: str | None) -> tuple[str | None, str | None]:
