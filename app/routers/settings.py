@@ -8,10 +8,7 @@ from app.authz import get_current_user
 from app.config import settings
 from app.db import get_db
 from app.services.state import get_state, set_state
-from app.services.gmail_client import get_gmail_service, gmail_user_id, GMAIL_SIGNATURE_SCOPE, GMAIL_SCOPES
-
 import html
-import re
 
 from app.services.signature_template import SignatureProfile, build_signature_html, build_signature_text
 import os
@@ -147,82 +144,7 @@ def upload_signature_asset(asset_name: str, file: UploadFile = File(...), user=D
     return {"ok": True, "path": f"/static/signature/{asset_name}.png"}
 
 
-def _html_to_text(s: str) -> str:
-    """Best-effort HTML signature -> plain text for use in replies.
-
-    Gmail signatures are stored as HTML. We keep this conservative to avoid
-    surprising formatting: strip tags, preserve line breaks, unescape.
-    """
-    if not s:
-        return ""
-    # Normalize common line breaks
-    s = re.sub(r"(?i)<br\s*/?>", "\n", s)
-    s = re.sub(r"(?i)</p\s*>", "\n", s)
-    s = re.sub(r"(?i)</div\s*>", "\n", s)
-    # Strip remaining tags
-    s = re.sub(r"<[^>]+>", "", s)
-    s = html.unescape(s)
-    # Collapse excessive blank lines
-    s = re.sub(r"\n{3,}", "\n\n", s)
-    return s.strip()
-
-
-@router.post("/signature/fetch-gmail", response_model=SignatureOut)
-def fetch_signature_from_gmail(db: Session = Depends(get_db), user=Depends(get_current_user)):
-    """Fetch the Gmail signature from the connected mailbox and store it.
-
-    Requires the Gmail settings scope (gmail.settings.basic).
-    """
-    try:
-        # Request the extra scope only for this endpoint.
-        service = get_gmail_service(db, scopes=list(GMAIL_SCOPES) + [GMAIL_SIGNATURE_SCOPE])
-    except RuntimeError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-    try:
-        # Prefer matching our primary outbound identity (e.g. admin@donspremier.com.au).
-        sendas = service.users().settings().sendAs().list(userId=gmail_user_id()).execute()
-        items = sendas.get("sendAs", []) or []
-        desired = (settings.my_emails_list()[0] if settings.my_emails_list() else "").strip().lower()
-
-        chosen = None
-        if desired:
-            for it in items:
-                if (it.get("sendAsEmail") or "").strip().lower() == desired:
-                    chosen = it
-                    break
-
-        if not chosen:
-            for it in items:
-                if it.get("isPrimary"):
-                    chosen = it
-                    break
-
-        if not chosen and items:
-            chosen = items[0]
-        if not chosen:
-            raise HTTPException(status_code=404, detail="No send-as identities found.")
-
-        send_as_email = chosen.get("sendAsEmail")
-        if not send_as_email:
-            raise HTTPException(status_code=404, detail="No sendAsEmail found.")
-
-        full = service.users().settings().sendAs().get(userId=gmail_user_id(), sendAsEmail=send_as_email).execute()
-        # Store the raw Gmail signature HTML. For *sending*, we convert remote
-        # <img src=https://...> into CID attachments at send-time, because many
-        # clients (including Gmail) strip/ignore data: URIs in email HTML.
-        sig_html = (full.get("signature") or "").strip()
-        sig_text = _html_to_text(sig_html)
-
-        set_state(db, "signature_html", sig_html)
-        set_state(db, "signature_text", sig_text)
-        db.commit()
-        return SignatureOut(signature=sig_text)
-    except HTTPException:
-        raise
-    except Exception as e:
-        # Google API can raise HttpError; surface as 502
-        raise HTTPException(status_code=502, detail=f"Failed to fetch signature from Gmail: {e}")
+## Gmail signature fetch removed: we use app-managed signature by default.
 
 
 @router.post("/signature/apply-template", response_model=SignatureOut)

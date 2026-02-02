@@ -266,6 +266,10 @@
       border:1px solid var(--border);
       box-shadow: 0 10px 25px rgba(16,24,40,.18);
       overflow:hidden;
+      /* Ensure Settings (and other) modals remain closable on smaller screens */
+      max-height: calc(100vh - 36px);
+      display:flex;
+      flex-direction:column;
     }
     .modal-head{
       padding:14px 16px;
@@ -276,7 +280,11 @@
       gap:10px;
     }
     .modal-head h3{margin:0; font-size:14px}
-    .modal-body{padding:16px}
+    .modal-body{
+      padding:16px;
+      overflow:auto;
+      flex: 1 1 auto;
+    }
     .modal-foot{
       padding:14px 16px;
       border-top:1px solid var(--border);
@@ -693,15 +701,12 @@
 
                     <div style="margin-top:14px;border-top:1px solid var(--border);padding-top:14px">
                         <div class="small" style="font-weight:800">Email signature</div>
-                        <div class="small muted" style="margin-top:6px">Used automatically in AI Draft and Quick Reply.</div>
-                        <textarea id="signatureText"
-                            placeholder="Plain-text fallback signature (optional)..."
-                            style="width:100%;min-height:120px;margin-top:10px;padding:10px 12px;border:1px solid var(--border);border-radius:12px;font-size:13px"></textarea>
+                        <div class="small muted" style="margin-top:6px">Used automatically in Quick Reply.</div>
 
                         <div style="margin-top:12px; padding:12px; border:1px solid var(--border); border-radius:12px;">
-                            <div class="small" style="font-weight:800">App-managed signature (recommended)</div>
+                            <div class="small" style="font-weight:800">App-managed signature (default)</div>
                             <div class="small muted" style="margin-top:6px">
-                                This signature is rendered using a fixed template and embedded images so it matches your branding in Gmail/Outlook.
+                                This signature is rendered using a fixed template with embedded images so it matches your branding in Gmail/Outlook.
                             </div>
 
                             <div style="margin-top:10px; display:flex; gap:10px; align-items:center; flex-wrap:wrap">
@@ -722,9 +727,7 @@
                             </div>
                         </div>
                         <div style="margin-top:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-                            <button class="btn" onclick="fetchSignatureFromGmail()">Fetch signature from Gmail</button>
                             <button class="btn" onclick="openBlacklistModal()">Manage Blacklist</button>
-                            <div class="small muted">Fetch uses the connected mailbox’s "Send mail as" signature.</div>
                         </div>
                     </div>
 
@@ -767,23 +770,6 @@
                         <div class="small muted">Emails in this list will be marked as blacklisted.</div>
                         <button class="btn" onclick="refreshBlacklist()">Refresh</button>
                     </div>
-                    <div id="blacklistList" style="margin-top:12px"></div>
-                </div>
-                <div class="modal-foot">
-                    <button class="btn" onclick="closeBlacklistModal()">Done</button>
-                </div>
-            </div>
-        </div>
-
-        <!-- Blacklist Modal -->
-        <div class="modal-backdrop hidden" id="blacklistModal">
-            <div class="modal">
-                <div class="modal-head">
-                    <h3>Blacklisted Senders</h3>
-                    <button class="btn ghost" onclick="closeBlacklistModal()">Close</button>
-                </div>
-                <div class="modal-body">
-                    <div class="small muted">Blacklisted senders are excluded from ticketing. You can remove any sender below.</div>
                     <div id="blacklistList" style="margin-top:12px"></div>
                 </div>
                 <div class="modal-foot">

@@ -331,41 +331,11 @@ function closeSettings() {
     m.classList.add("hidden");
 }
 
-async function fetchSignatureFromGmail() {
-    const sigBox = document.getElementById("signatureText");
-    if (!sigBox) return;
-    const prev = sigBox.value;
-    sigBox.value = "Fetching from Gmail...";
-    try {
-        const r = await apiFetch("/settings/signature/fetch-gmail", { method: "POST" });
-        const t = await r.text();
-        if (!r.ok) {
-            sigBox.value = prev || "";
-            alert(`Failed to fetch signature (${r.status}):\n\n${t}`);
-            return;
-        }
-        const j = JSON.parse(t);
-        sigBox.value = j.signature || "";
-    } catch (e) {
-        sigBox.value = prev || "";
-        alert("Failed to fetch signature: " + e);
-    }
-}
-
 function applySettingsFromModal() {
     settings.defaultHtmlView = document.getElementById("setDefaultHtml").checked;
     settings.proxyRemoteImages = document.getElementById("setBlockRemote").checked;
     settings.compactTickets = document.getElementById("setCompact").checked;
     saveSettings();
-
-    // Persist signature (best-effort)
-    const sigBox = document.getElementById("signatureText");
-    const signature = sigBox ? (sigBox.value || "").trim() : "";
-    apiFetch("/settings/signature", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ signature }),
-    }).catch(() => { });
 
     closeSettings();
     loadTickets();
