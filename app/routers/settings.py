@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.authz import get_current_user
+from app.authz import get_current_user, get_mailbox_id
 from app.config import settings
 from app.db import get_db
 from app.services.state import get_state, set_state
@@ -51,7 +51,7 @@ class SignatureTemplateIn(BaseModel):
 
 @router.get("/signature", response_model=SignatureOut)
 def get_signature(db: Session = Depends(get_db), user=Depends(get_current_user)):
-    sig = (get_state(db, "signature_text") or "").strip()
+    sig = (get_state(db, "signature_text", mailbox_id=mailbox_id) or "").strip()
     if not sig:
         sig = (settings.DEFAULT_SIGNATURE or "").strip()
     return SignatureOut(signature=sig)
@@ -72,7 +72,7 @@ def set_signature(payload: SignatureIn, db: Session = Depends(get_db), user=Depe
 @router.get("/signature/html")
 def get_signature_html(db: Session = Depends(get_db), user=Depends(get_current_user)):
     """Return the stored HTML signature (for preview in settings UI)."""
-    sig_html = (get_state(db, "signature_html") or "").strip()
+    sig_html = (get_state(db, "signature_html", mailbox_id=mailbox_id) or "").strip()
     return {"html": sig_html}
 
 
@@ -181,8 +181,8 @@ def apply_app_signature_template(payload: SignatureTemplateIn, db: Session = Dep
     html_sig = build_signature_html(profile)
     text_sig = build_signature_text(profile)
 
-    set_state(db, "signature_html", html_sig)
-    set_state(db, "signature_text", text_sig)
+    set_state(db, "signature_html", html_sig, mailbox_id=mailbox_id)
+    set_state(db, "signature_text", text_sig, mailbox_id=mailbox_id)
     db.commit()
     return SignatureOut(signature=text_sig)
 

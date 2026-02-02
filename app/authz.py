@@ -9,6 +9,22 @@ from app.models import User, UserRole
 from app.security import decode_access_token
 
 
+
+def get_mailbox_id(request: Request) -> str:
+    """Return selected mailbox_id from request headers.
+
+    This enforces strict isolation across mailboxes. The UI must send X-Mailbox-Id.
+    """
+    mailbox_id = (request.headers.get("X-Mailbox-Id") or "").strip().lower()
+    if not mailbox_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing X-Mailbox-Id")
+    # Accept only mailboxes configured for this deployment
+    allowed = {e.split("@", 1)[0].lower() for e in settings.allowed_mailboxes()}
+    if mailbox_id not in allowed:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid mailbox")
+    return mailbox_id
+
+
 def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
     auth = request.headers.get("Authorization") or ""
     token = None

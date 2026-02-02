@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from pydantic import BaseModel
 
 from app.db import get_db
-from app.authz import get_current_user, require_role
+from app.authz import get_current_user, require_role, get_mailbox_id
 from app.models import (
     ThreadTicket,
     TicketStatus,
@@ -43,6 +43,15 @@ from app.services.gmail_parse import extract_message_body
 from app.schemas import DraftAiIn
 
 router = APIRouter()
+
+
+def _ticket_q(db: Session, mailbox_id: str):
+    return _ticket_q(db, mailbox_id).filter(ThreadTicket.mailbox_id == mailbox_id)
+
+
+def _get_ticket(db: Session, mailbox_id: str, thread_id: str):
+    return _ticket_q(db, mailbox_id).filter(ThreadTicket.thread_id == thread_id).first()
+
 
 
 SLA_HOURS = {
@@ -107,7 +116,7 @@ def list_tickets(
     - start/end are expected as YYYY-MM-DD (from <input type="date">)
     - filtering is applied against ThreadTicket.last_message_at
     """
-    q = db.query(ThreadTicket)
+    q = _ticket_q(db, mailbox_id)
     q = _tab_filter(q, tab)
 
     # Always hide blacklisted senders.
@@ -168,7 +177,7 @@ def list_tickets(
 
     # Counters for top tiles / tabs
     # KPI counts (exclude blacklisted senders to match list behavior)
-    base = db.query(ThreadTicket).filter(
+    base = _ticket_q(db, mailbox_id).filter(
         ~exists().where(BlacklistedSender.email == func.lower(ThreadTicket.from_email))
     )
     counts = {
@@ -194,7 +203,7 @@ def update_status(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    t = db.get(ThreadTicket, thread_id)
+    t = _get_ticket(db, mailbox_id, thread_id)
     if not t:
         raise HTTPException(404, "Ticket not found")
 
@@ -215,7 +224,7 @@ def update_status(
 
 @router.post("/{thread_id}/draft-ack", response_model=DraftAckOut)
 def draft_ack(thread_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    t = db.get(ThreadTicket, thread_id)
+    t = _get_ticket(db, mailbox_id, thread_id)
     if not t:
         raise HTTPException(status_code=404, detail="Ticket not found")
 
@@ -236,7 +245,7 @@ def draft_reply(thread_id: str, db: Session = Depends(get_db), user: User = Depe
     IMPORTANT: To avoid OpenAI rate-limit failures and to keep "Fetch now" reliable,
     this endpoint NEVER calls OpenAI. Use /draft-ai-reply for AI drafting.
     """
-    t = db.get(ThreadTicket, thread_id)
+    t = _get_ticket(db, mailbox_id, thread_id)
     if not t:
         raise HTTPException(status_code=404, detail="Ticket not found")
 
@@ -332,12 +341,12 @@ def draft_ai_reply(
     if payload:
         additional_info = (payload.additional_info or payload.extra_context)
 
-    t = db.get(ThreadTicket, thread_id)
+    t = _get_ticket(db, mailbox_id, thread_id)
     if not t:
         raise HTTPException(status_code=404, detail="Ticket not found")
 
     # Fetch last message body (plain text) from Gmail.
-    service = get_gmail_service(db)
+    service = get_gmail_service(db, mailbox_id=mailbox_id)
     th = (
         service.users()
         .threads()
@@ -390,7 +399,7 @@ def draft_ai_reply(
 
 @router.post("/{thread_id}/send-ack")
 def send_ack(thread_id: str, payload: SendAckIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    t = db.get(ThreadTicket, thread_id)
+    t = _get_ticket(db, mailbox_id, thread_id)
     if not t:
         raise HTTPException(status_code=404, detail="Ticket not found")
 
@@ -416,6 +425,7 @@ def send_ack(thread_id: str, payload: SendAckIn, db: Session = Depends(get_db), 
 
     send_reply_in_thread(
         db=db,
+        mailbox_id=mailbox_id,
         thread_id=thread_id,
         to_email=t.from_email,
         subject=payload.subject,
@@ -455,7 +465,7 @@ async def send_reply_form(
     This endpoint is used by the Quick Reply modal. It avoids breaking the legacy
     JSON-based /send-ack endpoint.
     """
-    t = db.get(ThreadTicket, thread_id)
+    t = _get_ticket(db, mailbox_id, thread_id)
     if not t:
         raise HTTPException(status_code=404, detail="Ticket not found")
 
@@ -537,7 +547,7 @@ def set_category(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    t = db.get(ThreadTicket, thread_id)
+    t = _get_ticket(db, mailbox_id, thread_id)
     if not t:
         raise HTTPException(404, "Ticket not found")
 
@@ -649,7 +659,7 @@ def flush_database(
         raise HTTPException(status_code=400, detail="Confirmation required. Send confirm='FLUSH'.")
 
     # Delete tickets
-    db.query(ThreadTicket).delete(synchronize_session=False)
+    _ticket_q(db, mailbox_id).delete(synchronize_session=False)
 
     # Clear sync-related state (keep other state keys if you add them later)
     db.query(AppState).delete(synchronize_session=False)

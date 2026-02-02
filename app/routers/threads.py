@@ -15,6 +15,7 @@ import html2text
 from premailer import transform
 
 from fastapi import APIRouter, Depends, HTTPException
+from app.authz import get_mailbox_id
 from fastapi.responses import Response
 from googleapiclient.errors import HttpError
 from sqlalchemy.orm import Session
@@ -205,7 +206,7 @@ def get_thread(thread_id: str, db: Session = Depends(get_db)):
 
     Frontend can safely render HTML inside a sandboxed iframe.
     """
-    service = get_gmail_service(db)
+    service = get_gmail_service(db, mailbox_id=mailbox_id)
 
     try:
         thread = (

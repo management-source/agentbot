@@ -16,6 +16,10 @@ from app.services.state import get_state, set_state
 logger = logging.getLogger(__name__)
 
 
+def _state_key(mailbox_id: str, key: str) -> str:
+    return f"{mailbox_id}:{key}"
+
+
 def _get_header(headers: List[dict], name: str) -> str | None:
     for h in headers or []:
         if (h.get("name") or "").lower() == name.lower():
@@ -298,7 +302,7 @@ def _upsert_ticket_from_thread(db: Session, service, thread_id: str, *, awaiting
         return False
 
     if ticket is None:
-        ticket = ThreadTicket(thread_id=thread_id, status=TicketStatus.PENDING)
+        ticket = ThreadTicket(mailbox_id=mailbox_id, thread_id=thread_id, status=TicketStatus.PENDING)
         db.add(ticket)
 
     ticket.last_message_id = last_msg_id
@@ -364,6 +368,7 @@ def _upsert_ticket_from_thread(db: Session, service, thread_id: str, *, awaiting
 
 
 def sync_inbox_threads(
+    mailbox_id: str,
     max_threads: int = 500,
     start: str | None = None,
     end: str | None = None,
@@ -384,7 +389,7 @@ def sync_inbox_threads(
     db: Session = SessionLocal()
     try:
         try:
-            service = get_gmail_service(db)
+            service = get_gmail_service(db, mailbox_id=mailbox_id)
         except RuntimeError as e:
             logger.info("Gmail sync skipped: %s", e)
             return {"ok": False, "error": str(e)}
@@ -402,7 +407,7 @@ def sync_inbox_threads(
             thread_ids, hit_limit = _list_thread_ids_in_range(service, start=start, end=end, max_threads=max_threads, include_anywhere=include_anywhere)
         else:
             # Daily/ongoing sync: prefer historyId (accurate, doesn't miss messages).
-            last_history_id = get_state(db, "gmail_history_id")
+            last_history_id = get_state(db, _state_key(mailbox_id, "gmail_history_id"))
             if incremental and last_history_id and current_history_id:
                 try:
                     tids = _thread_ids_from_history(service, start_history_id=last_history_id)
@@ -441,7 +446,7 @@ def sync_inbox_threads(
 
         # Advance watermark only for the incremental (no-range) flow.
         if (not start and not end) and current_history_id:
-            set_state(db, "gmail_history_id", current_history_id)
+            set_state(db, _state_key(mailbox_id, "gmail_history_id"), current_history_id)
 
         db.commit()
         return {

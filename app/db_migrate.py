@@ -74,3 +74,21 @@ def migrate(engine: Engine) -> None:
     if stmts:
         logger.info("Applying DB migrations", extra={"count": len(stmts)})
         _add_columns(engine, table, stmts)
+
+
+    # --- Mailbox isolation columns (added 2026-02) ---
+    # Add mailbox_id to key tables for strict separation.
+    def ensure_table_column(table_name: str, col: str, ddl: str):
+        try:
+            insp = inspect(engine)
+            if table_name not in insp.get_table_names():
+                return
+        except Exception:
+            return
+        if not _column_exists(engine, table_name, col):
+            _add_columns(engine, table_name, [f"ALTER TABLE {table_name} ADD COLUMN {ddl}"])
+
+    ensure_table_column("thread_tickets", "mailbox_id", "mailbox_id VARCHAR DEFAULT 'admin' NOT NULL")
+    ensure_table_column("blacklisted_senders", "mailbox_id", "mailbox_id VARCHAR DEFAULT 'admin' NOT NULL")
+    ensure_table_column("thread_ticket_notes", "mailbox_id", "mailbox_id VARCHAR DEFAULT 'admin' NOT NULL")
+    ensure_table_column("thread_ticket_audit", "mailbox_id", "mailbox_id VARCHAR DEFAULT 'admin' NOT NULL")

@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
+from app.authz import get_mailbox_id
 from fastapi.responses import Response
 from googleapiclient.errors import HttpError
 from sqlalchemy.orm import Session
@@ -78,7 +79,7 @@ def _is_private_host(host: str) -> bool:
 
 
 @router.get("/proxy-image")
-def proxy_image(url: str):
+def proxy_image(url: str, mailbox_id: str = Depends(get_mailbox_id)):
     """Privacy-preserving remote image proxy.
 
     This allows email logos/icons to display without loading them directly in the browser.
@@ -107,7 +108,7 @@ def proxy_image(url: str):
 @router.get("/inline/{message_id}/{cid}")
 def get_inline_attachment(message_id: str, cid: str, db: Session = Depends(get_db)):
     """Serve inline (cid:) images used inside HTML emails."""
-    service = get_gmail_service(db)
+    service = get_gmail_service(db, mailbox_id=mailbox_id)
     try:
         msg = service.users().messages().get(userId=gmail_user_id(), id=message_id, format="full").execute()
     except HttpError as e:
@@ -144,7 +145,7 @@ def download_attachment(
     db: Session = Depends(get_db),
 ):
     """Download an attachment by attachmentId."""
-    service = get_gmail_service(db)
+    service = get_gmail_service(db, mailbox_id=mailbox_id)
     try:
         att = service.users().messages().attachments().get(
             userId=gmail_user_id(), messageId=message_id, id=attachment_id

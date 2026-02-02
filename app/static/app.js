@@ -1252,6 +1252,30 @@ async function doLogin() {
     await ensureAuthenticated();
     await refreshGoogleStatus();
     // Autopilot feature removed.
+
+    // Mailbox selector (strict isolation)
+    const mbSel = document.getElementById("mailboxSelect");
+    if (mbSel) {
+        mbSel.value = mailboxId;
+        mbSel.addEventListener("change", () => {
+            mailboxId = (mbSel.value || "admin").toLowerCase();
+            localStorage.setItem("agent_mailbox_id", mailboxId);
+            // Reset pagination/search per mailbox for clarity
+            currentPage = 1;
+            currentSearch = "";
+            const sb = document.getElementById("searchBox");
+            if (sb) sb.value = "";
+            // Reload current view for the newly selected mailbox
+            setTab(currentTab);
+            try {
+                const m = document.getElementById('blacklistModal');
+                if (m && !m.classList.contains('hidden')) {
+                    refreshBlacklist();
+                }
+            } catch (e) {}
+        });
+    }
+
     await loadTickets();
 }
 
@@ -1303,6 +1327,30 @@ window.addEventListener("load", async () => {
     }
 
     // Autopilot feature removed.
+
+    // Mailbox selector (strict isolation)
+    const mbSel = document.getElementById("mailboxSelect");
+    if (mbSel) {
+        mbSel.value = mailboxId;
+        mbSel.addEventListener("change", () => {
+            mailboxId = (mbSel.value || "admin").toLowerCase();
+            localStorage.setItem("agent_mailbox_id", mailboxId);
+            // Reset pagination/search per mailbox for clarity
+            currentPage = 1;
+            currentSearch = "";
+            const sb = document.getElementById("searchBox");
+            if (sb) sb.value = "";
+            // Reload current view for the newly selected mailbox
+            setTab(currentTab);
+            try {
+                const m = document.getElementById('blacklistModal');
+                if (m && !m.classList.contains('hidden')) {
+                    refreshBlacklist();
+                }
+            } catch (e) {}
+        });
+    }
+
 
     // Wire filters
     const seg = document.getElementById("statusSeg");

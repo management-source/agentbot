@@ -72,7 +72,7 @@ def _send_new_email(db: Session, to_email: str, subject: str, body: str):
     from email.message import EmailMessage
     from app.services.gmail_client import get_gmail_service, gmail_user_id
 
-    service = get_gmail_service(db)
+    service = get_gmail_service(db, mailbox_id=mailbox_id)
     msg = EmailMessage()
     msg["To"] = to_email
     msg["Subject"] = subject

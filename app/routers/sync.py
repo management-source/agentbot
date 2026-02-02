@@ -1,8 +1,8 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from typing import Optional
 
+from app.authz import get_mailbox_id
 from app.services.gmail_sync import sync_inbox_threads
-
 
 router = APIRouter()
 
@@ -15,20 +15,11 @@ def fetch_now(
     incremental: bool = True,
     include_anywhere: bool = False,
     awaiting_only: bool = True,
+    mailbox_id: str = Depends(get_mailbox_id),
 ):
-    """Manual sync endpoint.
-
-    This endpoint is the only supported way to pull tickets into the system.
-
-    - If start/end are provided: performs a date-range sync (up to max_threads).
-    - Otherwise: performs an incremental sync using Gmail historyId (when available),
-      falling back to a 30-day window for first-time bootstrap.
-
-    Notes:
-    - awaiting_only=True ensures we only create/update tickets that still require a reply.
-    - We intentionally do not invoke AI from sync.
-    """
+    """Manual sync endpoint (per selected mailbox)."""
     return sync_inbox_threads(
+        mailbox_id=mailbox_id,
         max_threads=max_threads,
         start=start,
         end=end,
@@ -40,13 +31,13 @@ def fetch_now(
 
 
 @router.post("/check-updates")
-def check_updates(max_threads: int = 200):
-    """Incremental sync.
-
-    Fetch only threads that have changed since the last successful sync. This is
-    intended to be used frequently.
-    """
+def check_updates(
+    max_threads: int = 200,
+    mailbox_id: str = Depends(get_mailbox_id),
+):
+    """Incremental sync for the selected mailbox."""
     return sync_inbox_threads(
+        mailbox_id=mailbox_id,
         max_threads=max_threads,
         start=None,
         end=None,
