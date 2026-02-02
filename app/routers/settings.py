@@ -9,6 +9,7 @@ from app.config import settings
 from app.db import get_db
 from app.services.state import get_state, set_state
 from app.services.gmail_client import get_gmail_service, gmail_user_id, GMAIL_SIGNATURE_SCOPE, GMAIL_SCOPES
+from app.services.signature_inliner import inline_signature_images
 
 import html
 import re
@@ -37,6 +38,10 @@ def get_signature(db: Session = Depends(get_db), user=Depends(get_current_user))
 def set_signature(payload: SignatureIn, db: Session = Depends(get_db), user=Depends(get_current_user)):
     sig = (payload.signature or "").strip()
     set_state(db, "signature_text", sig)
+    # If user sets a plain-text signature, also store a safe HTML variant.
+    # This ensures consistent behavior for outgoing HTML emails.
+    safe_html = html.escape(sig).replace("\n", "<br>")
+    set_state(db, "signature_html", safe_html)
     db.commit()
     return SignatureOut(signature=sig)
 
@@ -74,22 +79,24 @@ def fetch_signature_from_gmail(db: Session = Depends(get_db), user=Depends(get_c
         raise HTTPException(status_code=400, detail=str(e))
 
     try:
-        # Pick the SendAs identity that matches our primary outbound mailbox,
-        # falling back to primary/default.
+        # Prefer matching our primary outbound identity (e.g. admin@donspremier.com.au).
         sendas = service.users().settings().sendAs().list(userId=gmail_user_id()).execute()
         items = sendas.get("sendAs", []) or []
+        desired = (settings.my_emails_list()[0] if settings.my_emails_list() else "").strip().lower()
+
         chosen = None
-        preferred = (settings.my_emails_list()[0] if settings.my_emails_list() else "").strip().lower()
-        if preferred:
+        if desired:
             for it in items:
-                if (it.get("sendAsEmail") or "").strip().lower() == preferred:
+                if (it.get("sendAsEmail") or "").strip().lower() == desired:
                     chosen = it
                     break
+
         if not chosen:
             for it in items:
                 if it.get("isPrimary"):
                     chosen = it
                     break
+
         if not chosen and items:
             chosen = items[0]
         if not chosen:
@@ -101,8 +108,12 @@ def fetch_signature_from_gmail(db: Session = Depends(get_db), user=Depends(get_c
 
         full = service.users().settings().sendAs().get(userId=gmail_user_id(), sendAsEmail=send_as_email).execute()
         sig_html = (full.get("signature") or "").strip()
-        sig_text = _html_to_text(sig_html)
+        # Make signature self-contained by inlining remote images as data: URIs.
+        # This is the only reliable way to ensure signature images render everywhere.
+        sig_html_inlined, _warnings = inline_signature_images(sig_html)
+        sig_text = _html_to_text(sig_html_inlined)
 
+        set_state(db, "signature_html", sig_html_inlined)
         set_state(db, "signature_text", sig_text)
         db.commit()
         return SignatureOut(signature=sig_text)

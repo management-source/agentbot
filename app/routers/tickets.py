@@ -394,10 +394,25 @@ def send_ack(thread_id: str, payload: SendAckIn, db: Session = Depends(get_db), 
     if not t:
         raise HTTPException(status_code=404, detail="Ticket not found")
 
-    signature = (get_state(db, "signature_text") or settings.DEFAULT_SIGNATURE or "").strip()
+    # Signature support:
+    # - Text signature is appended for the plain-text part
+    # - HTML signature (if present) is appended for the HTML part so images render
+    signature_text = (get_state(db, "signature_text") or settings.DEFAULT_SIGNATURE or "").strip()
+    signature_html = (get_state(db, "signature_html") or "").strip()
+
     body_text = (payload.body or "").rstrip()
-    if signature and signature not in body_text:
-        body_text = (body_text + "\n\n" + signature).strip()
+    if signature_text and signature_text not in body_text:
+        body_text = (body_text + "\n\n" + signature_text).strip()
+
+    # Build a safe HTML variant from the user's text body, then append signature_html.
+    import html as _html
+    body_html = _html.escape((payload.body or "")).replace("\n", "<br>")
+    if signature_html:
+        body_html = (body_html + "<br><br>" + signature_html).strip()
+    else:
+        # Fallback: use the text signature converted to HTML.
+        if signature_text and signature_text not in (payload.body or ""):
+            body_html = (body_html + "<br><br>" + _html.escape(signature_text).replace("\n", "<br>")).strip()
 
     send_reply_in_thread(
         db=db,
@@ -405,6 +420,7 @@ def send_ack(thread_id: str, payload: SendAckIn, db: Session = Depends(get_db), 
         to_email=t.from_email,
         subject=payload.subject,
         body_text=body_text,
+        body_html=body_html,
     )
 
     # Update ticket bookkeeping
@@ -443,11 +459,23 @@ async def send_reply_form(
     if not t:
         raise HTTPException(status_code=404, detail="Ticket not found")
 
-    # Append stored signature (if any) unless it already exists in the body.
-    signature = (get_state(db, "signature_text") or settings.DEFAULT_SIGNATURE or "").strip()
+    # Signature support:
+    signature_text = (get_state(db, "signature_text") or settings.DEFAULT_SIGNATURE or "").strip()
+    signature_html = (get_state(db, "signature_html") or "").strip()
+
+    # Text part
     final_body = (body or "").rstrip()
-    if signature and signature not in final_body:
-        final_body = (final_body + "\n\n" + signature).strip()
+    if signature_text and signature_text not in final_body:
+        final_body = (final_body + "\n\n" + signature_text).strip()
+
+    # HTML part (so signature images render in outgoing mail)
+    import html as _html
+    body_html = _html.escape((body or "")).replace("\n", "<br>")
+    if signature_html:
+        body_html = (body_html + "<br><br>" + signature_html).strip()
+    else:
+        if signature_text and signature_text not in (body or ""):
+            body_html = (body_html + "<br><br>" + _html.escape(signature_text).replace("\n", "<br>")).strip()
 
     out_attachments: list[OutgoingAttachment] = []
     for f in attachments or []:
@@ -471,6 +499,7 @@ async def send_reply_form(
             to_email=t.from_email,
             subject=subject,
             body_text=final_body,
+            body_html=body_html,
             cc=cc or None,
             bcc=bcc or None,
             from_email=settings.my_emails_list()[0] if settings.my_emails_list() else None,
