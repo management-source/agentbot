@@ -287,9 +287,9 @@ def draft_reply(thread_id: str, db: Session = Depends(get_db), user: User = Depe
             "Kind regards,"
         )
 
-    signature = (get_state(db, "signature_text") or settings.DEFAULT_SIGNATURE or "").strip()
-    if signature:
-        body = body.rstrip() + "\n\n" + signature + "\n"
+    # IMPORTANT: Do NOT append the legacy plain-text signature here.
+    # The application uses an app-managed HTML signature (with embedded images)
+    # at send-time to avoid double signatures.
 
     return DraftAiReplyOut(subject=reply_subject, body=body, meta={
         "ai_category": t.ai_category,
@@ -460,22 +460,27 @@ async def send_reply_form(
         raise HTTPException(status_code=404, detail="Ticket not found")
 
     # Signature support:
-    signature_text = (get_state(db, "signature_text") or settings.DEFAULT_SIGNATURE or "").strip()
+    # We ONLY use the app-managed HTML signature. The legacy plain-text signature
+    # field is kept for backwards compatibility, but must NOT be appended automatically
+    # (otherwise users get double signatures).
     signature_html = (get_state(db, "signature_html") or "").strip()
 
-    # Text part
-    final_body = (body or "").rstrip()
-    if signature_text and signature_text not in final_body:
-        final_body = (final_body + "\n\n" + signature_text).strip()
-
-    # HTML part (so signature images render in outgoing mail)
+    # Build text + HTML bodies.
     import html as _html
+    final_body = (body or "").rstrip()
     body_html = _html.escape((body or "")).replace("\n", "<br>")
+
     if signature_html:
-        body_html = (body_html + "<br><br>" + signature_html).strip()
-    else:
-        if signature_text and signature_text not in (body or ""):
-            body_html = (body_html + "<br><br>" + _html.escape(signature_text).replace("\n", "<br>")).strip()
+        # Derive a plain-text signature from the HTML so text-only clients still look ok.
+        try:
+            from app.services.gmail_parse import _strip_html as _strip
+            sig_text = _strip(signature_html)
+        except Exception:
+            sig_text = ""
+
+        if sig_text:
+            final_body = (final_body + "\n\n" + sig_text).strip() if final_body else sig_text
+        body_html = (body_html + "<br><br>" + signature_html).strip() if body_html else signature_html
 
     out_attachments: list[OutgoingAttachment] = []
     for f in attachments or []:

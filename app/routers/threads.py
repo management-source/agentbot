@@ -40,6 +40,31 @@ def _walk_parts(payload: Dict[str, Any]):
         yield from _walk_parts(part)
 
 
+def _find_text_part_any(payload: Dict[str, Any], mime_type: str) -> Optional[Dict[str, Any]]:
+    """Find the first part with a given mime type, regardless of whether body.data exists.
+
+    Gmail sometimes stores large text/html bodies behind an attachmentId even for the main body.
+    """
+    if payload.get("mimeType") == mime_type:
+        return payload
+    for part in payload.get("parts", []) or []:
+        found = _find_text_part_any(part, mime_type)
+        if found:
+            return found
+    return None
+
+
+def _fetch_part_body_data(service, message_id: str, attachment_id: str) -> Optional[str]:
+    """Fetch a body part stored behind attachmentId and return its base64url 'data' string."""
+    try:
+        att = service.users().messages().attachments().get(
+            userId=gmail_user_id(), messageId=message_id, id=attachment_id
+        ).execute()
+        return att.get("data")
+    except Exception:
+        return None
+
+
 def _part_headers(part: Dict[str, Any]) -> Dict[str, str]:
     headers = {}
     for h in part.get("headers", []) or []:
@@ -200,7 +225,38 @@ def get_thread(thread_id: str, db: Session = Depends(get_db)):
             if "name" in h and "value" in h
         }
 
+        # Primary body extraction (handles most normal multipart/alternative structures)
         body_info = extract_message_body(payload)
+
+        # Gmail edge-case: sometimes the main text/plain or text/html body is stored
+        # behind an attachmentId (no body.data) even though it's not a "file".
+        # If so, fetch the body bytes via the attachments API and decode.
+        if not (body_info.get("body_text") or body_info.get("body_html")):
+            for mt in ("text/html", "text/plain"):
+                p = _find_text_part_any(payload, mt)
+                if not p:
+                    continue
+                b = (p.get("body") or {})
+                data = b.get("data")
+                if not data and b.get("attachmentId"):
+                    data = _fetch_part_body_data(service, m.get("id"), b.get("attachmentId"))
+                if not data:
+                    continue
+                try:
+                    decoded = _gmail_b64url_decode(data).decode("utf-8", errors="replace")
+                except Exception:
+                    decoded = ""
+                if not decoded:
+                    continue
+                if mt == "text/html":
+                    body_info["body_html"] = decoded
+                    if not body_info.get("body_text"):
+                        # crude text fallback
+                        body_info["body_text"] = re.sub(r"(?is)<.*?>", "", decoded).strip()
+                else:
+                    body_info["body_text"] = decoded.strip()
+                body_info["used_mime"] = mt
+                break
         body_html = body_info.get("body_html")
         if body_html:
             # Inline CSS <style> into elements to improve rendering consistency.
