@@ -198,6 +198,62 @@ def _sanitize_html(html: str) -> str:
     return cleaned
 
 
+
+
+
+
+
+
+
+def _is_private_host(host: str) -> bool:
+    host = (host or "").strip().lower()
+    if not host:
+        return True
+    if host in {"localhost", "127.0.0.1", "::1"}:
+        return True
+    # IP literal
+    try:
+        ip = ipaddress.ip_address(host)
+        return ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast
+    except ValueError:
+        pass
+    # Basic hostname blocks
+    if host.endswith('.local') or host.endswith('.internal'):
+        return True
+    return False
+
+
+@router.get('/proxy-image')
+def proxy_image(url: str, db: Session = Depends(get_db)):
+    """Privacy-preserving remote image proxy.
+
+    This allows email logos/icons to display without loading them directly in the browser.
+    Security notes:
+    - http/https only
+    - blocks localhost/private IP literals
+    - enforces size cap
+    - images only
+    """
+    parsed = urlparse(url)
+    if parsed.scheme not in {'http', 'https'}:
+        raise HTTPException(status_code=400, detail='Invalid URL scheme')
+    if _is_private_host(parsed.hostname or ''):
+        raise HTTPException(status_code=400, detail='Blocked host')
+
+    timeout = httpx.Timeout(10.0, connect=5.0)
+    with httpx.Client(timeout=timeout, follow_redirects=True) as client:
+        r = client.get(url, headers={'User-Agent': 'AgentBotImageProxy/1.0'})
+        if r.status_code >= 400:
+            raise HTTPException(status_code=502, detail=f'Upstream error {r.status_code}')
+        ctype = (r.headers.get('content-type') or '').split(';')[0].strip().lower()
+        if not ctype.startswith('image/'):
+            raise HTTPException(status_code=400, detail='Not an image')
+        content = r.content
+        if len(content) > 5_000_000:
+            raise HTTPException(status_code=413, detail='Image too large')
+
+    return Response(content=content, media_type=ctype)
+
 @router.get("/{thread_id}")
 def get_thread(thread_id: str, db: Session = Depends(get_db)):
     """Return a Gmail thread with both text and (when available) HTML bodies.
@@ -347,55 +403,6 @@ def get_inline_attachment(
     raw = _gmail_b64url_decode(data)
     return Response(content=raw, media_type=mime_type)
 
-
-def _is_private_host(host: str) -> bool:
-    host = (host or "").strip().lower()
-    if not host:
-        return True
-    if host in {"localhost", "127.0.0.1", "::1"}:
-        return True
-    # IP literal
-    try:
-        ip = ipaddress.ip_address(host)
-        return ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast
-    except ValueError:
-        pass
-    # Basic hostname blocks
-    if host.endswith('.local') or host.endswith('.internal'):
-        return True
-    return False
-
-
-@router.get('/proxy-image')
-def proxy_image(url: str, db: Session = Depends(get_db)):
-    """Privacy-preserving remote image proxy.
-
-    This allows email logos/icons to display without loading them directly in the browser.
-    Security notes:
-    - http/https only
-    - blocks localhost/private IP literals
-    - enforces size cap
-    - images only
-    """
-    parsed = urlparse(url)
-    if parsed.scheme not in {'http', 'https'}:
-        raise HTTPException(status_code=400, detail='Invalid URL scheme')
-    if _is_private_host(parsed.hostname or ''):
-        raise HTTPException(status_code=400, detail='Blocked host')
-
-    timeout = httpx.Timeout(10.0, connect=5.0)
-    with httpx.Client(timeout=timeout, follow_redirects=True) as client:
-        r = client.get(url, headers={'User-Agent': 'AgentBotImageProxy/1.0'})
-        if r.status_code >= 400:
-            raise HTTPException(status_code=502, detail=f'Upstream error {r.status_code}')
-        ctype = (r.headers.get('content-type') or '').split(';')[0].strip().lower()
-        if not ctype.startswith('image/'):
-            raise HTTPException(status_code=400, detail='Not an image')
-        content = r.content
-        if len(content) > 5_000_000:
-            raise HTTPException(status_code=413, detail='Image too large')
-
-    return Response(content=content, media_type=ctype)
 
 
 @router.get('/{thread_id}/messages/{message_id}/attachments/{attachment_id}')
