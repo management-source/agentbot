@@ -9,7 +9,9 @@ from typing import Iterable, Optional
 from sqlalchemy.orm import Session
 
 from app.services.gmail_client import get_gmail_service, gmail_user_id
-from app.services.html_image_embed import embed_remote_images_as_cid
+import os
+
+from app.services.html_image_embed import embed_images_as_cid
 
 
 @dataclass
@@ -89,7 +91,10 @@ def build_reply_message(
         # To reliably render signature logos etc., convert remote <img src=https://...>
         # to cid: references and attach as related images.
         if db is not None:
-            body_html, embedded_images, _warnings = embed_remote_images_as_cid(db=db, html=body_html)
+            # Embed both app-managed local signature assets (served under /static/signature)
+            # and best-effort remote images.
+            static_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
+            body_html, embedded_images, _warnings = embed_images_as_cid(db=db, html=body_html, static_dir=static_dir)
 
         msg.add_alternative(body_html, subtype="html")
         # html_part is the last payload after add_alternative

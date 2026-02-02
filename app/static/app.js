@@ -261,6 +261,68 @@ function openSettings() {
         }).catch(() => { sigBox.value = ""; });
     }
     m.classList.remove("hidden");
+    // HTML signature preview (best-effort)
+    refreshSignaturePreview().catch(() => { /* ignore */ });
+}
+
+
+async function refreshSignaturePreview() {
+    const iframe = document.getElementById("signaturePreview");
+    if (!iframe) return;
+    try {
+        const r = await apiFetch("/settings/signature/html");
+        if (!r.ok) return;
+        const j = await r.json();
+        const html = (j && j.html) ? j.html : "";
+        iframe.srcdoc = html || "<div style='font-family:Arial; padding:10px; color:#666'>No HTML signature set yet. Click “Use signature template”.</div>";
+    } catch {
+        // ignore
+    }
+}
+
+
+async function applyAppSignatureTemplate() {
+    // Endpoint has sensible defaults (matches your screenshot). You can extend later with editable fields.
+    try {
+        const r = await apiFetch("/settings/signature/apply-template", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({})
+        });
+        const t = await r.text();
+        if (!r.ok) {
+            alert(`Failed to apply signature template (${r.status}):\n\n${t}`);
+            return;
+        }
+        const j = JSON.parse(t);
+        const sigBox = document.getElementById("signatureText");
+        if (sigBox) sigBox.value = j.signature || "";
+        await refreshSignaturePreview();
+        alert("Signature template applied. Upload profile/banner images to match your branding.");
+    } catch (e) {
+        alert("Failed to apply signature template: " + e);
+    }
+}
+
+
+async function uploadSignatureAsset(name, file) {
+    if (!file) return;
+    const form = new FormData();
+    form.append("file", file);
+    try {
+        const r = await apiFetch(`/settings/signature/assets/${encodeURIComponent(name)}`, {
+            method: "POST",
+            body: form
+        });
+        const t = await r.text();
+        if (!r.ok) {
+            alert(`Upload failed (${r.status}):\n\n${t}`);
+            return;
+        }
+        await refreshSignaturePreview();
+    } catch (e) {
+        alert("Upload failed: " + e);
+    }
 }
 
 function closeSettings() {

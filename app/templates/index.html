@@ -695,8 +695,32 @@
                         <div class="small" style="font-weight:800">Email signature</div>
                         <div class="small muted" style="margin-top:6px">Used automatically in AI Draft and Quick Reply.</div>
                         <textarea id="signatureText"
-                            placeholder="Paste your email signature here..."
+                            placeholder="Plain-text fallback signature (optional)..."
                             style="width:100%;min-height:120px;margin-top:10px;padding:10px 12px;border:1px solid var(--border);border-radius:12px;font-size:13px"></textarea>
+
+                        <div style="margin-top:12px; padding:12px; border:1px solid var(--border); border-radius:12px;">
+                            <div class="small" style="font-weight:800">App-managed signature (recommended)</div>
+                            <div class="small muted" style="margin-top:6px">
+                                This signature is rendered using a fixed template and embedded images so it matches your branding in Gmail/Outlook.
+                            </div>
+
+                            <div style="margin-top:10px; display:flex; gap:10px; align-items:center; flex-wrap:wrap">
+                                <button class="btn" onclick="applyAppSignatureTemplate()">Use signature template</button>
+                                <label class="btn" style="cursor:pointer">
+                                    Upload profile photo
+                                    <input id="sigProfileFile" type="file" accept="image/*" style="display:none" onchange="uploadSignatureAsset('profile', this.files[0])" />
+                                </label>
+                                <label class="btn" style="cursor:pointer">
+                                    Upload banner
+                                    <input id="sigBannerFile" type="file" accept="image/*" style="display:none" onchange="uploadSignatureAsset('banner', this.files[0])" />
+                                </label>
+                                <button class="btn" onclick="refreshSignaturePreview()">Refresh preview</button>
+                            </div>
+
+                            <div style="margin-top:12px; background:#fff; border:1px solid var(--border); border-radius:12px; overflow:hidden">
+                                <iframe id="signaturePreview" title="Signature preview" style="width:100%; height:260px; border:0;"></iframe>
+                            </div>
+                        </div>
                         <div style="margin-top:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
                             <button class="btn" onclick="fetchSignatureFromGmail()">Fetch signature from Gmail</button>
                             <button class="btn" onclick="openBlacklistModal()">Manage Blacklist</button>
