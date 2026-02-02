@@ -4,6 +4,7 @@ import base64
 import re
 import ipaddress
 from urllib.parse import urlparse
+import html as _html
 
 import bleach
 from bleach.css_sanitizer import CSSSanitizer
@@ -258,6 +259,20 @@ def get_thread(thread_id: str, db: Session = Depends(get_db)):
                 body_info["used_mime"] = mt
                 break
         body_html = body_info.get("body_html")
+
+        # If Gmail doesn't provide HTML (plain-text emails), build a minimal HTML wrapper
+        # so the UI can render a single consistent HTML view.
+        if not body_html:
+            if body_info.get("body_text"):
+                body_html = (
+                    "<div style=\"font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; "
+                    "font-size:14px; color:#0f172a; white-space:pre-wrap\">"
+                    + _html.escape(body_info.get("body_text") or "")
+                    + "</div>"
+                )
+            else:
+                body_html = "<div style=\"font-size:13px;color:#64748b\">No message body (attachments only).</div>"
+
         if body_html:
             # Inline CSS <style> into elements to improve rendering consistency.
             try:
@@ -287,7 +302,7 @@ def get_thread(thread_id: str, db: Session = Depends(get_db)):
                 "snippet": m.get("snippet"),
                 "body_text": body_text,
                 "body_text_preview": (body_text[:800] + "…") if len(body_text) > 800 else body_text,
-                "body_html": body_html,  # may be None
+                "body_html": body_html,
                 "used_mime": body_info.get("used_mime"),
                 "attachments": _extract_attachments(payload),
             }

@@ -845,34 +845,25 @@ async function openThread(threadId) {
     };
 
     const renderMessage = (m, idx) => {
-        const hasHtml = !!m.body_html;
+        // We render HTML only (backend always provides body_html, even for plain-text emails).
         const msgId = m.id;
-        const safeText = escapeHtmlLocal(m.body_text || m.snippet || "");
         const iframeId = `msg_iframe_${idx}`;
-        const btnId = `msg_toggle_${idx}`;
 
-        let html = hasHtml ? rewriteCid(m.body_html, msgId) : "";
-        if (hasHtml && settings.proxyRemoteImages) {
+        let html = rewriteCid(m.body_html || "", msgId);
+        if (settings.proxyRemoteImages) {
             html = rewriteRemoteImagesToProxy(html);
         }
 
         const atts = (m.attachments || []).map(a => ({ ...a, message_id: msgId })).filter(a => !a.is_inline);
         const attachmentsHtml = atts.length ? `<div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:8px">${atts.map(a => attachmentBadge(a, threadId, msgId)).join("")}</div>` : "";
 
-        const textBlock = safeText
-            ? `<div style="font-size:13px;color:#334155;white-space:pre-wrap" data-mode="text">${safeText}</div>`
-            : `<div style="font-size:13px;color:#64748b" data-mode="text">No message body (attachments only).</div>`;
-
-        const canHtml = (hasHtml && (html || "").trim());
-
-        const htmlBlock = canHtml
-            ? `
-              <div style="margin-top:12px;display:none" data-mode="html">
-                <iframe id="${iframeId}" style="width:100%;height:520px;border:1px solid #e5e7eb;border-radius:12px;background:#fff"
-                  sandbox="allow-popups allow-forms allow-same-origin" referrerpolicy="no-referrer"></iframe>
-              </div>
-            `
-            : ``;
+        const canHtml = (html || "").trim();
+        const htmlBlock = `
+          <div style="margin-top:12px" data-mode="html">
+            <iframe id="${iframeId}" style="width:100%;height:520px;border:1px solid #e5e7eb;border-radius:12px;background:#fff"
+              sandbox="allow-popups allow-forms allow-same-origin" referrerpolicy="no-referrer"></iframe>
+          </div>
+        `;
 
         return `
         <div data-msg-card="1" style="border:1px solid #e5e7eb;border-radius:14px;padding:14px;background:#f8fafc;margin-top:12px">
@@ -885,13 +876,10 @@ async function openThread(threadId) {
               ${attachmentsHtml}
             </div>
 
-            ${canHtml ? `
-              <button id="${btnId}" class="btn" data-mode="html">View HTML</button>
-            ` : ``}
+            
           </div>
 
           <div style="margin-top:12px">
-            ${textBlock}
             ${htmlBlock}
           </div>
         </div>
@@ -906,61 +894,29 @@ async function openThread(threadId) {
     `;
 
     if (useViewer) {
-        // Ensure toggles wire up after the viewer iframe loads its srcdoc.
+        // Populate message iframes after the viewer frame loads its srcdoc.
         viewerFrame.onload = () => {
-            try { attachTogglesInDocument(viewerFrame.contentDocument); } catch (e) {}
+            try { populateIframes(viewerFrame.contentDocument); } catch (e) {}
         };
         viewerFrame.srcdoc = threadHtml;
     } else {
         content.innerHTML = (j.messages || []).map((m, idx) => renderMessage(m, idx)).join("");
     }
 
-    // Attach toggles and populate iframes AFTER insertion (in document for modal, in iframe for viewer)
-    const attachTogglesInDocument = (rootDoc) => {
+    // Populate iframes AFTER insertion (in document for modal, in iframe for viewer)
+    const populateIframes = (rootDoc) => {
         (j.messages || []).forEach((m, idx) => {
-            if (!m.body_html) return;
-            const btn = rootDoc.getElementById(`msg_toggle_${idx}`);
             const iframe = rootDoc.getElementById(`msg_iframe_${idx}`);
-            if (!btn || !iframe) return;
-
-            let html = rewriteCid(m.body_html, m.id);
+            if (!iframe) return;
+            let html = rewriteCid(m.body_html || "", m.id);
             if (settings.proxyRemoteImages) {
                 html = rewriteRemoteImagesToProxy(html);
             }
             iframe.srcdoc = html;
-
-            // Default view preference
-            if (settings.defaultHtmlView) {
-                const card = btn.closest('[data-msg-card="1"]');
-                const textEl = card ? card.querySelector('[data-mode="text"]') : null;
-                const htmlWrap = card ? card.querySelector('[data-mode="html"]') : null;
-                if (textEl) textEl.style.display = "none";
-                if (htmlWrap) htmlWrap.style.display = "block";
-                btn.textContent = "View Text";
-            }
-
-            btn.addEventListener("click", () => {
-                const card = btn.closest('[data-msg-card="1"]');
-                if (!card) return;
-                const textEl = card.querySelector('[data-mode="text"]');
-                const htmlWrap = card.querySelector('[data-mode="html"]');
-                const showing = htmlWrap && htmlWrap.style.display !== "none";
-                if (showing) {
-                    if (htmlWrap) htmlWrap.style.display = "none";
-                    if (textEl) textEl.style.display = "block";
-                    btn.textContent = "View HTML";
-                } else {
-                    if (textEl) textEl.style.display = "none";
-                    if (htmlWrap) htmlWrap.style.display = "block";
-                    btn.textContent = "View Text";
-                }
-            });
         });
     };
 
-    if (!useViewer) {
-        attachTogglesInDocument(document);
-    }
+    if (!useViewer) populateIframes(document);
 }
 
 function clearDateFilter() {
