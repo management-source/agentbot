@@ -55,7 +55,6 @@ class BlacklistedSender(Base):
     __tablename__ = "blacklisted_senders"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    mailbox_id: Mapped[str] = mapped_column(String, default='admin', index=True)
     email: Mapped[str] = mapped_column(String, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
@@ -99,7 +98,6 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    mailbox_id: Mapped[str] = mapped_column(String, default='admin', index=True)
     email: Mapped[str] = mapped_column(String, index=True)
     name: Mapped[str] = mapped_column(String)
     role: Mapped[UserRole] = mapped_column(SAEnum(UserRole), default=UserRole.PM, index=True)
@@ -121,7 +119,6 @@ class ThreadTicketNote(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     thread_id: Mapped[str] = mapped_column(String, index=True)
-    mailbox_id: Mapped[str] = mapped_column(String, default='admin', index=True)
     author_user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), index=True)
 
     body: Mapped[str] = mapped_column(Text)
@@ -135,7 +132,6 @@ class ThreadTicketAudit(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     thread_id: Mapped[str] = mapped_column(String, index=True)
-    mailbox_id: Mapped[str] = mapped_column(String, default='admin', index=True)
     action: Mapped[AuditAction] = mapped_column(SAEnum(AuditAction), index=True)
     actor_user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True, index=True)
 
@@ -150,7 +146,6 @@ class ThreadTicket(Base):
     __tablename__ = "thread_tickets"
 
     thread_id: Mapped[str] = mapped_column(String, primary_key=True)
-    mailbox_id: Mapped[str] = mapped_column(String, default='admin', index=True)
     last_message_id: Mapped[str | None] = mapped_column(String, nullable=True)
 
     subject: Mapped[str | None] = mapped_column(String, nullable=True)
