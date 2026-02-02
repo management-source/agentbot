@@ -399,8 +399,22 @@ def proxy_image(url: str, db: Session = Depends(get_db)):
 
 
 @router.get('/{thread_id}/messages/{message_id}/attachments/{attachment_id}')
-def download_attachment(thread_id: str, message_id: str, attachment_id: str, filename: str | None = None, db: Session = Depends(get_db)):
-    """Download an attachment by attachmentId."""
+def download_attachment(
+    thread_id: str,
+    message_id: str,
+    attachment_id: str,
+    filename: str | None = None,
+    mime: str | None = None,
+    db: Session = Depends(get_db),
+):
+    """Download an attachment by attachmentId.
+
+    Notes:
+    - We accept an optional `mime` query param from the UI so the browser can
+      correctly render/download PDFs/images instead of showing a blank page.
+    - We always set Content-Disposition so clicking an attachment reliably
+      downloads it.
+    """
     service = get_gmail_service(db)
     try:
         att = (
@@ -418,9 +432,20 @@ def download_attachment(thread_id: str, message_id: str, attachment_id: str, fil
         raise HTTPException(status_code=404, detail='Attachment data missing')
 
     raw = _gmail_b64url_decode(data)
-    headers = {}
+
+    safe_headers = {}
+    safe_name = None
     if filename:
-        safe = filename.replace('\n', ' ').replace('\r', ' ')
-        headers['Content-Disposition'] = f'attachment; filename="{safe}"'
-    # Gmail doesn't always provide content-type here; let browser sniff. Security headers prevent abuse.
-    return Response(content=raw, media_type='application/octet-stream', headers=headers)
+        safe_name = filename.replace('\n', ' ').replace('\r', ' ').strip() or None
+
+    # Force download so the user never sees "empty" tabs.
+    # (Browsers often render octet-stream as blank.)
+    dispo_name = safe_name or 'attachment'
+    safe_headers['Content-Disposition'] = f'attachment; filename="{dispo_name}"'
+
+    # Prefer explicit mime from UI, else fall back to octet-stream.
+    ctype = (mime or '').split(';')[0].strip().lower()
+    if not ctype:
+        ctype = 'application/octet-stream'
+
+    return Response(content=raw, media_type=ctype, headers=safe_headers)

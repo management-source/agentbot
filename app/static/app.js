@@ -836,7 +836,8 @@ async function openThread(threadId) {
         else if (mime == "application/pdf") label = "PDF";
         else if (mime.startsWith("text/")) label = "TEXT";
         else if (mime.startsWith("application/vnd")) label = "DOC";
-        const url = `/threads/${encodeURIComponent(threadIdArg)}/messages/${encodeURIComponent(messageIdArg || "")}/attachments/${encodeURIComponent(a.attachment_id)}?filename=${encodeURIComponent(name)}`;
+        const mimeQ = encodeURIComponent(a.mime_type || "");
+        const url = `/threads/${encodeURIComponent(threadIdArg)}/messages/${encodeURIComponent(messageIdArg || "")}/attachments/${encodeURIComponent(a.attachment_id)}?filename=${encodeURIComponent(name)}&mime=${mimeQ}`;
         return `<a style="display:inline-flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid #e5e7eb;border-radius:999px;text-decoration:none;color:#334155;background:#fff" href="${url}" target="_blank" rel="noreferrer">
           <span style="font-size:12px;padding:2px 8px;border-radius:999px;background:#f1f5f9;color:#475569;border:1px solid #e5e7eb">${label}</span>
           <span style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtmlLocal(name)}</span>
@@ -858,6 +859,21 @@ async function openThread(threadId) {
         const atts = (m.attachments || []).map(a => ({ ...a, message_id: msgId })).filter(a => !a.is_inline);
         const attachmentsHtml = atts.length ? `<div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:8px">${atts.map(a => attachmentBadge(a, threadId, msgId)).join("")}</div>` : "";
 
+        const textBlock = safeText
+            ? `<div style="font-size:13px;color:#334155;white-space:pre-wrap" data-mode="text">${safeText}</div>`
+            : `<div style="font-size:13px;color:#64748b" data-mode="text">No message body (attachments only).</div>`;
+
+        const canHtml = (hasHtml && (html || "").trim());
+
+        const htmlBlock = canHtml
+            ? `
+              <div style="margin-top:12px;display:none" data-mode="html">
+                <iframe id="${iframeId}" style="width:100%;height:520px;border:1px solid #e5e7eb;border-radius:12px;background:#fff"
+                  sandbox="allow-popups allow-forms allow-same-origin" referrerpolicy="no-referrer"></iframe>
+              </div>
+            `
+            : ``;
+
         return `
         <div data-msg-card="1" style="border:1px solid #e5e7eb;border-radius:14px;padding:14px;background:#f8fafc;margin-top:12px">
           <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
@@ -869,19 +885,14 @@ async function openThread(threadId) {
               ${attachmentsHtml}
             </div>
 
-            ${hasHtml ? `
+            ${canHtml ? `
               <button id="${btnId}" class="btn" data-mode="html">View HTML</button>
             ` : ``}
           </div>
 
           <div style="margin-top:12px">
-            <div style="font-size:13px;color:#334155;white-space:pre-wrap" data-mode="text">${safeText}</div>
-            ${hasHtml ? `
-              <div style="margin-top:12px;display:none" data-mode="html">
-                <iframe id="${iframeId}" style="width:100%;height:520px;border:1px solid #e5e7eb;border-radius:12px;background:#fff"
-                  sandbox="allow-popups allow-forms allow-same-origin" referrerpolicy="no-referrer"></iframe>
-              </div>
-            ` : ``}
+            ${textBlock}
+            ${htmlBlock}
           </div>
         </div>
       `;
