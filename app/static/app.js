@@ -815,7 +815,7 @@ async function openThread(threadId) {
     const rewriteCid = (html, messageId) => {
         if (!html) return "";
         return html.replace(/src\s*=\s*(["'])cid:([^"'>\s]+)\1/gi, (m, q, cid) => {
-            const url = `/threads/${encodeURIComponent(threadId)}/messages/${encodeURIComponent(messageId)}/inline/${encodeURIComponent(cid)}`;
+            const url = `/assets/inline/${encodeURIComponent(messageId)}/${encodeURIComponent(cid)}`;
             return `src=${q}${url}${q}`;
         });
     };
@@ -823,7 +823,7 @@ async function openThread(threadId) {
     const rewriteRemoteImagesToProxy = (html) => {
         if (!html) return "";
         return html.replace(/(<img\b[^>]*\bsrc\s*=\s*)(["'])(https?:\/\/[^"'>\s]+)\2/gi, (m, pre, q, url) => {
-            const proxied = `${window.location.origin}/threads/proxy-image?url=${encodeURIComponent(url)}`;
+            const proxied = `${window.location.origin}/assets/proxy-image?url=${encodeURIComponent(url)}`;
             return `${pre}${q}${proxied}${q}`;
         });
     };
@@ -837,7 +837,7 @@ async function openThread(threadId) {
         else if (mime.startsWith("text/")) label = "TEXT";
         else if (mime.startsWith("application/vnd")) label = "DOC";
         const mimeQ = encodeURIComponent(a.mime_type || "");
-        const url = `/threads/${encodeURIComponent(threadIdArg)}/messages/${encodeURIComponent(messageIdArg || "")}/attachments/${encodeURIComponent(a.attachment_id)}?filename=${encodeURIComponent(name)}&mime=${mimeQ}`;
+        const url = `/assets/attachment/${encodeURIComponent(messageIdArg || "")}/${encodeURIComponent(a.attachment_id)}?filename=${encodeURIComponent(name)}&mime=${mimeQ}`;
         return `<a style="display:inline-flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid #e5e7eb;border-radius:999px;text-decoration:none;color:#334155;background:#fff" href="${url}" target="_blank" rel="noreferrer">
           <span style="font-size:12px;padding:2px 8px;border-radius:999px;background:#f1f5f9;color:#475569;border:1px solid #e5e7eb">${label}</span>
           <span style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtmlLocal(name)}</span>

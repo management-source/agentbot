@@ -26,6 +26,7 @@ from app.routers import tasks
 from app.routers import auth, tickets, ui, threads
 from app.routers import sync
 from app.routers import blacklist
+from app.routers import assets
 from app.routers import settings as app_settings
 from app.routers import user_auth
 from app.models import User, UserRole
@@ -202,6 +203,7 @@ app.include_router(user_auth.router)
 app.include_router(tickets.router, prefix="/tickets", tags=["tickets"])
 app.include_router(sync.router, prefix="/sync", tags=["sync"])
 app.include_router(threads.router, prefix="/threads", tags=["threads"])
+app.include_router(assets.router, prefix="/assets", tags=["assets"])
 app.include_router(tasks.router, prefix="/tasks", tags=["tasks"])
 app.include_router(app_settings.router, prefix="/settings", tags=["settings"])
 app.include_router(blacklist.router, prefix="/blacklist", tags=["blacklist"])
