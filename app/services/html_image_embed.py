@@ -45,6 +45,7 @@ def embed_remote_images_as_cid(
     *,
     db,
     html: str,
+    mailbox_id: str | None = None,
     cid_prefix: str = "sigimg",
     max_bytes: int = 2_500_000,
     timeout_sec: float = 10.0,
@@ -65,7 +66,7 @@ def embed_remote_images_as_cid(
     warnings: List[str] = []
     embedded: List[EmbeddedImage] = []
 
-    creds = get_google_credentials(db)
+    creds = get_google_credentials(db, mailbox_id=mailbox_id)
     authed = AuthorizedSession(creds)
 
     # Keep stable CID assignment per distinct URL within this message.
@@ -183,6 +184,7 @@ def embed_images_as_cid(
     db,
     html: str,
     static_dir: str,
+    mailbox_id: str | None = None,
 ) -> Tuple[str, List[EmbeddedImage], List[str]]:
     """Embed both local signature assets and remote images.
 
@@ -196,5 +198,5 @@ def embed_images_as_cid(
         return "", [], []
 
     html2, local_imgs, w1 = embed_local_signature_images_as_cid(html=html, static_dir=static_dir)
-    html3, remote_imgs, w2 = embed_remote_images_as_cid(db=db, html=html2)
+    html3, remote_imgs, w2 = embed_remote_images_as_cid(db=db, html=html2, mailbox_id=mailbox_id)
     return html3, [*local_imgs, *remote_imgs], [*w1, *w2]

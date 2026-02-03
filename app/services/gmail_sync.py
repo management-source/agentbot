@@ -388,15 +388,22 @@ def sync_inbox_threads(
     """
     db: Session = SessionLocal()
     try:
+        # Building / refreshing Google credentials can raise RuntimeError (our own)
+        # or google-auth RefreshError / ValueError. We never want that to crash the API.
         try:
             service = get_gmail_service(db, mailbox_id=mailbox_id)
-        except RuntimeError as e:
+        except Exception as e:
             logger.info("Gmail sync skipped: %s", e)
             return {"ok": False, "error": str(e)}
 
-        # Always read current historyId so we can advance the watermark at the end.
-        profile = service.users().getProfile(userId=gmail_user_id()).execute()
-        current_history_id = str(profile.get("historyId") or "").strip() or None
+        try:
+            # Always read current historyId so we can advance the watermark at the end.
+            profile = service.users().getProfile(userId=gmail_user_id()).execute()
+            current_history_id = str(profile.get("historyId") or "").strip() or None
+        except Exception as e:
+            # Never hard-fail the API on transient Google issues.
+            logger.exception("Gmail getProfile failed")
+            return {"ok": False, "error": str(e)}
 
         thread_ids: List[str]
         used_history = False
@@ -417,8 +424,10 @@ def sync_inbox_threads(
                         hit_limit = True
                     used_history = True
                 except HttpError as he:
-                    # If startHistoryId is too old, Gmail returns 404. Fall back to a small recent pull.
-                    if he.resp is not None and getattr(he.resp, "status", None) == 404:
+                    # If startHistoryId is too old/invalid, Gmail commonly returns 404 or 400.
+                    # Fall back to a recent pull and reset the watermark.
+                    status = he.resp is not None and getattr(he.resp, "status", None)
+                    if status in (400, 404):
                         logger.warning("HistoryId too old; falling back to recent sync and resetting watermark.")
                         # Pull last 30 days to rebuild state. This matches the product requirement
                         # ("check emails up to a month") and avoids missing active unreplied threads.
@@ -462,5 +471,13 @@ def sync_inbox_threads(
             "awaiting_only": bool(awaiting_only),
             "auto_triage": bool(auto_triage),
         }
+    except Exception as e:
+        # Defensive catch-all: the sync endpoints must never 500.
+        logger.exception("Unexpected Gmail sync failure")
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return {"ok": False, "error": str(e)}
     finally:
         db.close()
