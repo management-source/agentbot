@@ -201,7 +201,11 @@ def _sanitize_html(html: str) -> str:
 
 
 @router.get("/{thread_id}")
-def get_thread(thread_id: str, db: Session = Depends(get_db)):
+def get_thread(
+    thread_id: str,
+    mailbox_id: str = Depends(get_mailbox_id),
+    db: Session = Depends(get_db),
+):
     """Return a Gmail thread with both text and (when available) HTML bodies.
 
     Frontend can safely render HTML inside a sandboxed iframe.
