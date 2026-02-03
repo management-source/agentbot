@@ -58,11 +58,6 @@ class Settings(BaseSettings):
     # Comma-separated list of mailbox addresses that should count as "our" outbound replies.
     # Defaulted to your primary operations inbox to make unreplied detection work out-of-the-box.
     MY_EMAILS: str = "admin@donspremier.com.au"
-
-    # Comma-separated list of Gmail mailboxes this app can operate on (strict isolation by mailbox_id).
-    # Example: "admin@donspremier.com.au,lushan@donspremier.com.au"
-    ALLOWED_MAILBOXES: str = "admin@donspremier.com.au,lushan@donspremier.com.au"
-
     POLL_INTERVAL_SECONDS: int = 300
     REMINDER_INTERVAL_SECONDS: int = 900
     REMINDER_COOLDOWN_SECONDS: int = 3600
@@ -77,19 +72,6 @@ class Settings(BaseSettings):
 
     # Observability
     SENTRY_DSN: Optional[str] = None
-
-    
-    def allowed_mailboxes(self) -> List[str]:
-        return [e.strip().lower() for e in self.ALLOWED_MAILBOXES.split(",") if e.strip()]
-
-    def mailbox_email(self, mailbox_id: str) -> str:
-        # Stable mapping: use local-part as mailbox_id
-        mid = (mailbox_id or "").strip().lower()
-        for email in self.allowed_mailboxes():
-            local = email.split("@", 1)[0].lower()
-            if local == mid:
-                return email
-        raise ValueError(f"Unknown mailbox_id: {mailbox_id}")
 
     def my_emails_list(self) -> List[str]:
         return [e.strip().lower() for e in self.MY_EMAILS.split(",") if e.strip()]

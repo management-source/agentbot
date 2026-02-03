@@ -53,7 +53,6 @@ def build_reply_message(
     cc: str | None = None,
     bcc: str | None = None,
     from_email: str | None = None,
-    mailbox_id: str | None = None,
     attachments: Optional[Iterable[OutgoingAttachment]] = None,
     body_html: str | None = None,
     db: Session | None = None,
@@ -127,7 +126,6 @@ def send_reply_in_thread(
     cc: str | None = None,
     bcc: str | None = None,
     from_email: str | None = None,
-    mailbox_id: str | None = None,
     attachments: Optional[Iterable[OutgoingAttachment]] = None,
     body_html: str | None = None,
 ):
@@ -136,7 +134,7 @@ def send_reply_in_thread(
     if not to_email:
         raise ValueError("Missing recipient email")
 
-    service = get_gmail_service(db, mailbox_id=mailbox_id)
+    service = get_gmail_service(db)
 
     msg = build_reply_message(
         to_email=to_email,

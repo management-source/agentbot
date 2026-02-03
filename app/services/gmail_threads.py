@@ -32,8 +32,8 @@ def _decode_body(payload: dict) -> str:
 def gmail_thread_link(thread_id: str) -> str:
     return f"https://mail.google.com/mail/u/0/#all/{thread_id}"
 
-def get_thread_details(db: Session, thread_id: str, mailbox_id: str) -> dict:
-    service = get_gmail_service(db, mailbox_id=mailbox_id)
+def get_thread_details(db: Session, thread_id: str) -> dict:
+    service = get_gmail_service(db)
     th = service.users().threads().get(userId=gmail_user_id(), id=thread_id, format="full").execute()
 
     messages_out = []

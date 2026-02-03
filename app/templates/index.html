@@ -3,24 +3,20 @@
     <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width,initial-scale=1" />
-        <title>Email Manager</title>
+        <title>Email Reply Manager</title>
         <style>
     :root{
-      /* Brand: Dons Premier Estate Agents — Email Manager */
-      --bg:#070707;
+      --bg:#f6f7fb;
       --card:#ffffff;
       --text:#0b1220;
-      --muted:#6b7280;
-      --border:rgba(212,175,55,.55);
-      --shadow:0 6px 20px rgba(0,0,0,.28);
+      --muted:#667085;
+      --border:#e5e7eb;
+      --shadow:0 1px 2px rgba(16,24,40,.06);
       --radius:14px;
       --gap:16px;
 
-      --gold:#d4af37;
-      --gold-600:#b48b2f;
-
-      --primary:var(--gold);
-      --primary-600:var(--gold-600);
+      --primary:#4f46e5;
+      --primary-600:#4338ca;
       --success:#16a34a;
       --danger:#dc2626;
       --warn:#f59e0b;
@@ -45,55 +41,6 @@
       background:var(--bg);
     }
 
-    .app-banner{
-      border:1px solid var(--border);
-      border-radius:18px;
-      overflow:hidden;
-      background:#000;
-      box-shadow:var(--shadow);
-      position:relative;
-      /* Visual separation from the main dashboard cards */
-      margin-bottom:16px;
-    }
-    .app-banner img{
-      width:100%;
-      height:96px;
-      /* Prevent wide banners from looking "zoomed"/stretched. */
-      object-fit:contain;
-      object-position:center;
-      display:block;
-      background:#000;
-    }
-@media (max-width: 700px){
-      .app-banner img{height:76px}
-    }
-    .app-banner .overlay{
-      position:absolute;
-      inset:0;
-      background: linear-gradient(90deg, rgba(0,0,0,.78), rgba(0,0,0,.20));
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      padding:10px 14px;
-      gap:12px;
-    }
-    .banner-title{color:#fff; font-weight:900; letter-spacing:-.02em; font-size:16px; margin:0}
-    .banner-sub{color:rgba(255,255,255,.82); font-size:11px; margin:3px 0 0 0}
-    .user-chip{display:flex; align-items:center; gap:10px; color:#fff; font-size:12px; font-weight:700; white-space:nowrap}
-    .avatar{
-      width:36px !important;
-      height:36px !important;
-      max-width:36px;
-      max-height:36px;
-      border-radius:999px;
-      object-fit:cover;
-      border:1px solid rgba(212,175,55,.75);
-      background:#fff;
-      flex:0 0 36px;
-    }
-    .avatar.sm{width:28px;height:28px}
-    .avatar.hidden{display:none}
-
     .page{
       max-width: 1200px;
       margin: 0 auto;
@@ -107,9 +54,6 @@
       box-shadow:var(--shadow);
       padding:16px;
     }
-
-    /* Subtle gold frame on key cards */
-    .card.frame{box-shadow: 0 10px 30px rgba(0,0,0,.30), inset 0 0 0 1px rgba(212,175,55,.35)}
 
     .top-grid{
       display:grid;
@@ -142,7 +86,7 @@
       padding:8px 10px;
       border:1px solid var(--border);
       border-radius:999px;
-      background:var(--card);
+      background:#fff;
       font-size:12px;
       color:var(--muted);
     }
@@ -167,7 +111,7 @@
     .btn.primary{
       background:var(--primary);
       border-color:var(--primary);
-      color:#111827;
+      color:#fff;
     }
     .btn.primary:hover{background:var(--primary-600)}
     .btn.success{background:var(--success); border-color:var(--success); color:#fff}
@@ -258,7 +202,7 @@
       padding:16px;
       border:1px solid var(--border);
       border-radius:var(--radius);
-      background:var(--card);
+      background:#fff;
       box-shadow:var(--shadow);
       display:grid;
       grid-template-columns: 1fr 340px;
@@ -283,7 +227,7 @@
       padding:6px 10px;
       border-radius:999px;
       border:1px solid var(--border);
-      background:var(--card);
+      background:#fff;
       font-size:12px;
       color:var(--muted);
       font-weight:700;
@@ -317,7 +261,7 @@
     .modal-backdrop.show{display:flex}
     .modal{
       width: min(720px, 100%);
-      background:var(--card);
+      background:#fff;
       border-radius:18px;
       border:1px solid var(--border);
       box-shadow: 0 10px 25px rgba(16,24,40,.18);
@@ -369,18 +313,19 @@
       border:1px solid var(--border);
       border-radius:16px;
       padding:16px;
-      background: linear-gradient(180deg, #fff7e0, #ffffff);
+      background: linear-gradient(180deg, #fafbff, #ffffff);
     }
-    .login-banner{
-      width:100%;
-      height:78px;
-      border-radius:14px;
+    .login-logo{
+      width:54px;
+      height:54px;
+      border-radius:16px;
       border:1px solid var(--border);
-      /* Keep uploaded banners/logos crisp without cropping/zooming */
-      object-fit:contain;
-      display:block;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      background:#fff;
       margin-bottom:12px;
-      background:#000;
+      box-shadow: 0 4px 12px rgba(16,24,40,.06);
     }
     .login-brand{font-size:18px; font-weight:800; margin:0}
     .login-sub{margin:6px 0 0 0; color:var(--muted); font-size:13px; line-height:1.35}
@@ -419,25 +364,10 @@
 
     <body>
         <div class="page">
-            <div class="app-banner" aria-label="Dons Premier Estate Agents banner">
-                <img src="/static/signature/banner.png" alt="Dons Premier Estate Agents" />
-                <div class="overlay">
-                    <div>
-                        <p class="banner-title">Email Manager</p>
-                        <p class="banner-sub">Dons Premier Estate Agents</p>
-                    </div>
-                    <div class="user-chip">
-                        <img id="userAvatar" class="avatar hidden" src="/static/signature/profile.png" alt="User profile" />
-                        <span id="headerUserText">Not signed in</span>
-                    </div>
-                </div>
-            </div>
-
             <div class="top-grid">
-                <div class="card brand frame">
-                    <h1>Email Manager</h1>
-                    <p>Track emails awaiting your reply, update ticket status,
-                        and respond faster.</p>
+                <div class="card brand">
+                    <h1>Email Reply Manager</h1>
+                    <p>Track emails awaiting your reply, update ticket status, and respond faster.</p>
 
                     <div style="margin-top:14px" class="row space">
                         <div class="pill"><span class="dot"
@@ -457,30 +387,22 @@
                         <button class="btn" id="btnManageUsers"
                             style="display:none"
                             onclick="openUsersModal()">Manage Users</button>
-                        <button class="btn" id="btnBlacklist"
-                            onclick="openBlacklistModal()">Blacklist</button>
+                        <button class="btn" id="btnBlacklist" onclick="openBlacklistModal()">Blacklist</button>
                     </div>
 
                     <p class="small muted" style="margin-top:10px">Mailbox:
-                        <select id="mailboxSelect" class="input"
-                            style="width:auto;display:inline-block;padding:6px 10px;margin-left:6px">
-                            <option
-                                value="admin">admin@donspremier.com.au</option>
-                            <option
-                                value="lushan">lushan@donspremier.com.au</option>
-                        </select></p>
+                        <span id="mailboxLabel">—</span></p>
                     <p class="small muted" style="margin-top:0">Status: <span
                             id="statusLine">—</span></p>
                     <p class="small muted" style="margin-top:0">Last sync: <span
                             id="lastSync">—</span></p>
                 </div>
 
-                <div class="card frame">
+                <div class="card">
                     <div class="row space">
                         <div>
                             <p class="panel-title">Email Sync</p>
-                            <p class="panel-sub" id="syncInfo">Fetch unreplied
-                                emails and keep tickets current.</p>
+                            <p class="panel-sub" id="syncInfo">Fetch unreplied emails and keep tickets current.</p>
                         </div>
                         <div class="pill" id="googlePill"
                             style="display:none"><span
@@ -513,9 +435,9 @@
                     </div>
 
                     <div class="controls-actions">
-                        <button type="button" class="btn primary" id="btnFetch"
+                        <button class="btn primary" id="btnFetch"
                             onclick="fetchNow()">Fetch Now</button>
-                        <button type="button" class="btn" id="btnCheckUpdates"
+                        <button class="btn" id="btnCheckUpdates"
                             onclick="checkUpdates()">Check Updates</button>
                         <button class="btn" id="btnClearFilter"
                             onclick="clearDateFilter()">Clear Dates</button>
@@ -525,18 +447,10 @@
 
             <div class="filters-row">
                 <div class="seg" id="statusSeg">
-                    <button data-tab="awaiting_reply" class="active">Awaiting
-                        Reply <span class="pill" style="margin-left:8px"
-                            id="tabAwaitingCount">0</span></button>
-                    <button data-tab="in_progress">In Progress <span
-                            class="pill" style="margin-left:8px"
-                            id="tabInProgressCount">0</span></button>
-                    <button data-tab="responded">Responded <span class="pill"
-                            style="margin-left:8px"
-                            id="tabRespondedCount">0</span></button>
-                    <button data-tab="no_reply_needed">Reply not Needed <span
-                            class="pill" style="margin-left:8px"
-                            id="tabNoReplyNeededCount">0</span></button>
+                    <button data-tab="awaiting_reply" class="active">Awaiting Reply <span class="pill" style="margin-left:8px" id="tabAwaitingCount">0</span></button>
+                    <button data-tab="in_progress">In Progress <span class="pill" style="margin-left:8px" id="tabInProgressCount">0</span></button>
+                    <button data-tab="responded">Responded <span class="pill" style="margin-left:8px" id="tabRespondedCount">0</span></button>
+                    <button data-tab="no_reply_needed">Reply not Needed <span class="pill" style="margin-left:8px" id="tabNoReplyNeededCount">0</span></button>
                 </div>
 
                 <div class="field" style="min-width:220px">
@@ -549,17 +463,10 @@
             </div>
 
             <div id="ticketList" style="margin-top:10px"></div>
-            <div id="pagination" class="row space"
-                style="margin-top:12px; display:none">
-                <button class="btn" id="btnPrev"
-                    onclick="prevPage()">Prev</button>
+            <div id="pagination" class="row space" style="margin-top:12px; display:none">
+                <button class="btn" id="btnPrev" onclick="prevPage()">Prev</button>
                 <div class="small muted" id="pageInfo">Page 1</div>
-                <button class="btn" id="btnNext"
-                    onclick="nextPage()">Next</button>
-            </div>
-
-            <div class="small" style="margin-top:18px; text-align:center; color:rgba(255,255,255,.75)">
-                © <span id="copyrightYear"></span> Dons Premier Estate Agents — Email Manager. Developed by Kusal Wickremasingha.
+                <button class="btn" id="btnNext" onclick="nextPage()">Next</button>
             </div>
         </div>
 
@@ -574,29 +481,23 @@
                 <div class="modal-body">
                     <div class="login-split">
                         <div class="login-left">
-                            <div style="border:1px solid var(--border); border-radius:14px; overflow:hidden; background:#000">
-                                <img src="/static/signature/banner.png" alt="Dons Premier Estate Agents"
-                                    style="width:100%; height:110px; object-fit:contain; display:block; background:#000" />
+                            <div class="login-logo" aria-hidden="true">
+                                <img src="/static/logo.png" alt="Logo" style="width:44px;height:44px;object-fit:contain" />
                             </div>
-                            <div class="login-brand" style="margin-top:12px">Email Manager</div>
-                            <div class="login-sub">Dons Premier Estate Agents</div>
-                            <div class="small muted"
-                                style="margin-top:12px">Sign in to access
-                                tickets, drafts, and Gmail sync controls.</div>
+                            <div class="login-brand">AgentBot</div>
+                            <div class="login-sub">Email-to-ticket workflow for your team.</div>
+                            <div class="small muted" style="margin-top:12px">Sign in to access tickets, drafts, and Gmail sync controls.</div>
                         </div>
                         <div class="login-right">
                             <div class="field">
                                 <div class="label">Email</div>
-                                <input type="text" id="loginEmail"
-                                    autocomplete="username" />
+                                <input type="text" id="loginEmail" autocomplete="username" />
                             </div>
                             <div class="field" style="margin-top:10px">
                                 <div class="label">Password</div>
-                                <input type="password" id="loginPassword"
-                                    autocomplete="current-password" />
+                                <input type="password" id="loginPassword" autocomplete="current-password" />
                             </div>
-                            <div class="error" id="loginError"
-                                style="display:none"></div>
+                            <div class="error" id="loginError" style="display:none"></div>
                         </div>
                     </div>
                 </div>
@@ -710,17 +611,14 @@
                         <div class="label">Subject</div>
                         <input id="ackSubject" type="text" />
                     </div>
-                    <div class="row"
-                        style="gap:10px;margin-top:10px;flex-wrap:wrap">
+                    <div class="row" style="gap:10px;margin-top:10px;flex-wrap:wrap">
                         <div class="field" style="flex:1;min-width:240px">
                             <div class="label">CC</div>
-                            <input id="ackCc" type="text"
-                                placeholder="Comma-separated (optional)" />
+                            <input id="ackCc" type="text" placeholder="Comma-separated (optional)" />
                         </div>
                         <div class="field" style="flex:1;min-width:240px">
                             <div class="label">BCC</div>
-                            <input id="ackBcc" type="text"
-                                placeholder="Comma-separated (optional)" />
+                            <input id="ackBcc" type="text" placeholder="Comma-separated (optional)" />
                         </div>
                     </div>
                     <div class="field" style="margin-top:10px">
@@ -731,11 +629,8 @@
                     <div class="field" style="margin-top:10px">
                         <div class="label">Attachments</div>
                         <input id="ackAttachments" type="file" multiple />
-                        <div class="small muted" style="margin-top:6px">You can
-                            attach files and photos. They will be sent with the
-                            reply.</div>
-                        <div id="ackAttachList" class="small"
-                            style="margin-top:6px"></div>
+                        <div class="small muted" style="margin-top:6px">You can attach files and photos. They will be sent with the reply.</div>
+                        <div id="ackAttachList" class="small" style="margin-top:6px"></div>
                     </div>
                 </div>
                 <div class="modal-foot">
@@ -752,8 +647,7 @@
             <div class="modal">
                 <div class="modal-head">
                     <h3>AI Draft Reply</h3>
-                    <button class="btn ghost"
-                        onclick="closeAiReplyModal()">Close</button>
+                    <button class="btn ghost" onclick="closeAiReplyModal()">Close</button>
                 </div>
                 <div class="modal-body">
                     <div class="field">
@@ -766,22 +660,17 @@
                             style="width:100%;min-height:180px;padding:10px 12px;border:1px solid var(--border);border-radius:12px;font-size:13px"></textarea>
                     </div>
                     <div class="field" style="margin-top:10px">
-                        <div class="label">Additional info (optional) — used for
-                            Regenerate</div>
+                        <div class="label">Additional info (optional) — used for Regenerate</div>
                         <textarea id="aiReplyExtra"
                             placeholder="e.g., confirm access window, quote requested, landlord approved, attach invoice number..."
                             style="width:100%;min-height:90px;padding:10px 12px;border:1px solid var(--border);border-radius:12px;font-size:13px"></textarea>
                     </div>
-                    <div class="small muted" id="aiReplyMeta"
-                        style="margin-top:10px"></div>
+                    <div class="small muted" id="aiReplyMeta" style="margin-top:10px"></div>
                 </div>
                 <div class="modal-foot">
-                    <button class="btn"
-                        onclick="closeAiReplyModal()">Cancel</button>
-                    <button class="btn" id="aiReplyRegenerateBtn"
-                        onclick="regenerateAiDraft()">Regenerate</button>
-                    <button class="btn" onclick="useAiDraftInQuickReply()">Use
-                        in Quick Reply</button>
+                    <button class="btn" onclick="closeAiReplyModal()">Cancel</button>
+                    <button class="btn" id="aiReplyRegenerateBtn" onclick="regenerateAiDraft()">Regenerate</button>
+                    <button class="btn" onclick="useAiDraftInQuickReply()">Use in Quick Reply</button>
                 </div>
             </div>
         </div>
@@ -802,7 +691,7 @@
                     <div style="height:10px"></div>
                     <label class="checkbox">
                         <input id="setBlockRemote" type="checkbox" />
-                        Proxy remote images (privacy mode — may break some signatures)
+                        Proxy remote images (recommended)
                     </label>
                     <div style="height:10px"></div>
                     <label class="checkbox">
@@ -810,58 +699,35 @@
                         Compact ticket cards
                     </label>
 
-                    <div
-                        style="margin-top:14px;border-top:1px solid var(--border);padding-top:14px">
-                        <div class="small" style="font-weight:800">Email
-                            signature</div>
-                        <div class="small muted" style="margin-top:6px">Used
-                            automatically in Quick Reply.</div>
+                    <div style="margin-top:14px;border-top:1px solid var(--border);padding-top:14px">
+                        <div class="small" style="font-weight:800">Email signature</div>
+                        <div class="small muted" style="margin-top:6px">Used automatically in Quick Reply.</div>
 
-                        <div
-                            style="margin-top:12px; padding:12px; border:1px solid var(--border); border-radius:12px;">
-                            <div class="small"
-                                style="font-weight:800">App-managed signature
-                                (default)</div>
+                        <div style="margin-top:12px; padding:12px; border:1px solid var(--border); border-radius:12px;">
+                            <div class="small" style="font-weight:800">App-managed signature (default)</div>
                             <div class="small muted" style="margin-top:6px">
-                                This signature is rendered using a fixed
-                                template with embedded images so it matches your
-                                branding in Gmail/Outlook.
+                                This signature is rendered using a fixed template with embedded images so it matches your branding in Gmail/Outlook.
                             </div>
 
-                            <div
-                                style="margin-top:10px; display:flex; gap:10px; align-items:center; flex-wrap:wrap">
-                                <button class="btn"
-                                    onclick="applyAppSignatureTemplate()">Use
-                                    signature template</button>
+                            <div style="margin-top:10px; display:flex; gap:10px; align-items:center; flex-wrap:wrap">
+                                <button class="btn" onclick="applyAppSignatureTemplate()">Use signature template</button>
                                 <label class="btn" style="cursor:pointer">
                                     Upload profile photo
-                                    <input id="sigProfileFile" type="file"
-                                        accept="image/*" style="display:none"
-                                        onchange="uploadSignatureAsset('profile', this.files[0])" />
+                                    <input id="sigProfileFile" type="file" accept="image/*" style="display:none" onchange="uploadSignatureAsset('profile', this.files[0])" />
                                 </label>
                                 <label class="btn" style="cursor:pointer">
                                     Upload banner
-                                    <input id="sigBannerFile" type="file"
-                                        accept="image/*" style="display:none"
-                                        onchange="uploadSignatureAsset('banner', this.files[0])" />
+                                    <input id="sigBannerFile" type="file" accept="image/*" style="display:none" onchange="uploadSignatureAsset('banner', this.files[0])" />
                                 </label>
-                                <button class="btn"
-                                    onclick="refreshSignaturePreview()">Refresh
-                                    preview</button>
+                                <button class="btn" onclick="refreshSignaturePreview()">Refresh preview</button>
                             </div>
 
-                            <div
-                                style="margin-top:12px; background:#fff; border:1px solid var(--border); border-radius:12px; overflow:hidden">
-                                <iframe id="signaturePreview"
-                                    title="Signature preview"
-                                    style="width:100%; height:260px; border:0;"></iframe>
+                            <div style="margin-top:12px; background:#fff; border:1px solid var(--border); border-radius:12px; overflow:hidden">
+                                <iframe id="signaturePreview" title="Signature preview" style="width:100%; height:260px; border:0;"></iframe>
                             </div>
                         </div>
-                        <div
-                            style="margin-top:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-                            <button class="btn"
-                                onclick="openBlacklistModal()">Manage
-                                Blacklist</button>
+                        <div style="margin-top:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+                            <button class="btn" onclick="openBlacklistModal()">Manage Blacklist</button>
                         </div>
                     </div>
 
@@ -897,21 +763,17 @@
             <div class="modal">
                 <div class="modal-head">
                     <h3>Blacklisted Senders</h3>
-                    <button class="btn ghost"
-                        onclick="closeBlacklistModal()">Close</button>
+                    <button class="btn ghost" onclick="closeBlacklistModal()">Close</button>
                 </div>
                 <div class="modal-body">
                     <div class="row space">
-                        <div class="small muted">Emails in this list will be
-                            marked as blacklisted.</div>
-                        <button class="btn"
-                            onclick="refreshBlacklist()">Refresh</button>
+                        <div class="small muted">Emails in this list will be marked as blacklisted.</div>
+                        <button class="btn" onclick="refreshBlacklist()">Refresh</button>
                     </div>
                     <div id="blacklistList" style="margin-top:12px"></div>
                 </div>
                 <div class="modal-foot">
-                    <button class="btn"
-                        onclick="closeBlacklistModal()">Done</button>
+                    <button class="btn" onclick="closeBlacklistModal()">Done</button>
                 </div>
             </div>
         </div>

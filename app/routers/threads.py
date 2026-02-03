@@ -15,7 +15,6 @@ import html2text
 from premailer import transform
 
 from fastapi import APIRouter, Depends, HTTPException
-from app.authz import get_mailbox_id
 from fastapi.responses import Response
 from googleapiclient.errors import HttpError
 from sqlalchemy.orm import Session
@@ -201,16 +200,12 @@ def _sanitize_html(html: str) -> str:
 
 
 @router.get("/{thread_id}")
-def get_thread(
-    thread_id: str,
-    mailbox_id: str = Depends(get_mailbox_id),
-    db: Session = Depends(get_db),
-):
+def get_thread(thread_id: str, db: Session = Depends(get_db)):
     """Return a Gmail thread with both text and (when available) HTML bodies.
 
     Frontend can safely render HTML inside a sandboxed iframe.
     """
-    service = get_gmail_service(db, mailbox_id=mailbox_id)
+    service = get_gmail_service(db)
 
     try:
         thread = (

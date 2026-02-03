@@ -4,48 +4,14 @@ let currentAiThreadId = null;
 
 // Local user auth (JWT)
 let authToken = localStorage.getItem("agent_auth_token") || "";
-
-// Mailbox selection (strict isolation)
-// Stored in localStorage so all API calls include X-Mailbox-Id.
-const MAILBOX_STORAGE_KEY = "agent_mailbox_id";
-const ALLOWED_MAILBOX_IDS = ["admin", "lushan"];
-
-let mailboxId = localStorage.getItem(MAILBOX_STORAGE_KEY) || "admin";
-if (!ALLOWED_MAILBOX_IDS.includes(mailboxId)) {
-    mailboxId = "admin";
-}
-localStorage.setItem(MAILBOX_STORAGE_KEY, mailboxId);
-
-function getMailboxId() {
-    const v = localStorage.getItem(MAILBOX_STORAGE_KEY) || "admin";
-    return (v === "admin" || v === "lushan") ? v : "admin";
-}
-
-function setMailboxId(v) {
-    if (v !== "admin" && v !== "lushan") return;
-    localStorage.setItem(MAILBOX_STORAGE_KEY, v);
-}
-
 let currentUser = null;
 let usersCache = [];
 
-/**
- * API wrapper:
- * - ALWAYS attaches X-Mailbox-Id for strict isolation
- * - Attaches Authorization only when authToken exists
- */
 async function apiFetch(url, options = {}) {
-    const opts = { ...options };
-
-    // Always build a Headers object
-    const headers = new Headers(options.headers || {});
-    headers.set("X-Mailbox-Id", getMailboxId());
-
+    const opts = { ...options, headers: { ...(options.headers || {}) } };
     if (authToken) {
-        headers.set("Authorization", `Bearer ${authToken}`);
+        opts.headers["Authorization"] = `Bearer ${authToken}`;
     }
-
-    opts.headers = headers;
     return fetch(url, opts);
 }
 
@@ -162,9 +128,7 @@ async function googleConnectOrManage() {
 const SETTINGS_KEY = "agent_settings_v1";
 let settings = {
     defaultHtmlView: false,
-    // Proxying remote images is privacy-friendly, but some CDNs block/alter responses
-    // and images won't render. Default OFF so signatures/logos behave like Gmail.
-    proxyRemoteImages: false,
+    proxyRemoteImages: true,
     compactTickets: false,
 };
 
@@ -187,6 +151,7 @@ function loadSettings() {
 function saveSettings() {
     try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch { }
 }
+
 
 function openUsersModal() {
     const modal = document.getElementById("usersModal");
@@ -300,6 +265,7 @@ function openSettings() {
     refreshSignaturePreview().catch(() => { /* ignore */ });
 }
 
+
 async function refreshSignaturePreview() {
     const iframe = document.getElementById("signaturePreview");
     if (!iframe) return;
@@ -313,6 +279,7 @@ async function refreshSignaturePreview() {
         // ignore
     }
 }
+
 
 async function applyAppSignatureTemplate() {
     // Endpoint has sensible defaults (matches your screenshot). You can extend later with editable fields.
@@ -337,6 +304,7 @@ async function applyAppSignatureTemplate() {
     }
 }
 
+
 async function uploadSignatureAsset(name, file) {
     if (!file) return;
     const form = new FormData();
@@ -352,22 +320,9 @@ async function uploadSignatureAsset(name, file) {
             return;
         }
         await refreshSignaturePreview();
-        try {
-            // Keep the app UI avatar/banner in sync with signature assets.
-            refreshHeaderBranding();
-        } catch (e) { }
     } catch (e) {
         alert("Upload failed: " + e);
     }
-}
-
-function refreshHeaderBranding() {
-    // Banner + avatar are static assets that may be replaced; bust caches.
-    const v = String(Date.now());
-    const banner = document.querySelector('.app-banner img');
-    if (banner) banner.src = `/static/signature/banner.png?v=${v}`;
-    const avatar = document.getElementById('userAvatar');
-    if (avatar) avatar.src = `/static/signature/profile.png?v=${v}`;
 }
 
 function closeSettings() {
@@ -474,7 +429,7 @@ async function fetchNow() {
         if (!start && !end) url.searchParams.set("incremental", incremental ? "true" : "false");
         if (start || end) url.searchParams.set("include_anywhere", includeAnywhere ? "true" : "false");
 
-        const r = await apiFetch(url.toString(), { method: "POST" });
+        const r = await fetch(url.toString(), { method: "POST" });
         const text = await r.text();
         if (!r.ok) {
             alert(`Fetch failed (${r.status}):\n\n${text}`);
@@ -519,7 +474,7 @@ async function checkUpdates() {
         // Safety cap; frequent use should stay light.
         url.searchParams.set("max_threads", "200");
 
-        const r = await apiFetch(url.toString(), { method: "POST" });
+        const r = await fetch(url.toString(), { method: "POST" });
         const text = await r.text();
         if (!r.ok) {
             alert(`Check Updates failed (${r.status}):\n\n${text}`);
@@ -563,18 +518,6 @@ function priorityBadge(p) {
 // "AI Draft" modal.)
 function aiBadges(_t) {
     return "";
-}
-
-// Assignment and manual category selection removed.
-
-function statusOptions(selected) {
-    const opts = [
-        ["PENDING", "Pending"],
-        ["IN_PROGRESS", "In Progress"],
-        ["RESPONDED", "Responded"],
-        ["NO_REPLY_NEEDED", "Reply Not Needed"]
-    ];
-    return opts.map(([v, label]) => `<option value="${v}" ${v === selected ? "selected" : ""}>${label}</option>`).join("");
 }
 
 
@@ -953,7 +896,7 @@ async function openThread(threadId) {
     if (useViewer) {
         // Populate message iframes after the viewer frame loads its srcdoc.
         viewerFrame.onload = () => {
-            try { populateIframes(viewerFrame.contentDocument); } catch (e) { }
+            try { populateIframes(viewerFrame.contentDocument); } catch (e) {}
         };
         viewerFrame.srcdoc = threadHtml;
     } else {
@@ -1031,7 +974,7 @@ async function openAckModal(threadId) {
                 listEl.innerHTML = "";
                 return;
             }
-            listEl.innerHTML = files.map(f => `${escapeHtml(f.name)} <span class="muted">(${Math.round(f.size / 1024)} KB)</span>`).join("<br/>");
+            listEl.innerHTML = files.map(f => `${escapeHtml(f.name)} <span class="muted">(${Math.round(f.size/1024)} KB)</span>`).join("<br/>");
         };
     }
 }
@@ -1256,17 +1199,6 @@ async function ensureAuthenticated() {
     // Good UI pill
     const authText = document.getElementById("authText");
     if (authText) authText.textContent = `Signed in as ${currentUser.name} (${currentUser.role})`;
-
-    // Header banner user chip
-    const headerUserText = document.getElementById("headerUserText");
-    if (headerUserText) headerUserText.textContent = `${currentUser.name} (${currentUser.role})`;
-    const avatar = document.getElementById("userAvatar");
-    if (avatar) {
-        avatar.classList.remove("hidden");
-        // Bust cache so newly uploaded profile images appear immediately.
-        avatar.src = `/static/signature/profile.png?v=${Date.now()}`;
-    }
-
     const authDot = document.getElementById("authDot");
     if (authDot) {
         authDot.classList.add("green");
@@ -1320,30 +1252,6 @@ async function doLogin() {
     await ensureAuthenticated();
     await refreshGoogleStatus();
     // Autopilot feature removed.
-
-    // Mailbox selector (strict isolation)
-    const mbSel = document.getElementById("mailboxSelect");
-    if (mbSel) {
-        mbSel.value = mailboxId;
-        mbSel.addEventListener("change", () => {
-            mailboxId = (mbSel.value || "admin").toLowerCase();
-            localStorage.setItem("agent_mailbox_id", mailboxId);
-            // Reset pagination/search per mailbox for clarity
-            currentPage = 1;
-            currentSearch = "";
-            const sb = document.getElementById("searchBox");
-            if (sb) sb.value = "";
-            // Reload current view for the newly selected mailbox
-            setTab(currentTab);
-            try {
-                const m = document.getElementById('blacklistModal');
-                if (m && !m.classList.contains('hidden')) {
-                    refreshBlacklist();
-                }
-            } catch (e) { }
-        });
-    }
-
     await loadTickets();
 }
 
@@ -1357,11 +1265,6 @@ function logout() {
 
     const authText = document.getElementById("authText");
     if (authText) authText.textContent = "Not signed in";
-
-    const headerUserText = document.getElementById("headerUserText");
-    if (headerUserText) headerUserText.textContent = "Not signed in";
-    const avatar = document.getElementById('userAvatar');
-    if (avatar) avatar.classList.add('hidden');
     const authDot = document.getElementById("authDot");
     if (authDot) {
         authDot.classList.remove("green");
@@ -1378,11 +1281,6 @@ function logout() {
 }
 
 window.addEventListener("load", async () => {
-    try {
-        const y = document.getElementById('copyrightYear');
-        if (y) y.textContent = String(new Date().getFullYear());
-        refreshHeaderBranding();
-    } catch (e) { }
     loadSettings();
     document.getElementById("lastSync").textContent = new Date().toLocaleString();
     const ok = await ensureAuthenticated();
@@ -1405,30 +1303,6 @@ window.addEventListener("load", async () => {
     }
 
     // Autopilot feature removed.
-
-    // Mailbox selector (strict isolation)
-    const mbSel = document.getElementById("mailboxSelect");
-    if (mbSel) {
-        mbSel.value = mailboxId;
-        mbSel.addEventListener("change", () => {
-            mailboxId = (mbSel.value || "admin").toLowerCase();
-            localStorage.setItem("agent_mailbox_id", mailboxId);
-            // Reset pagination/search per mailbox for clarity
-            currentPage = 1;
-            currentSearch = "";
-            const sb = document.getElementById("searchBox");
-            if (sb) sb.value = "";
-            // Reload current view for the newly selected mailbox
-            setTab(currentTab);
-            try {
-                const m = document.getElementById('blacklistModal');
-                if (m && !m.classList.contains('hidden')) {
-                    refreshBlacklist();
-                }
-            } catch (e) { }
-        });
-    }
-
 
     // Wire filters
     const seg = document.getElementById("statusSeg");

@@ -16,10 +16,6 @@ from app.services.state import get_state, set_state
 logger = logging.getLogger(__name__)
 
 
-def _state_key(mailbox_id: str, key: str) -> str:
-    return f"{mailbox_id}:{key}"
-
-
 def _get_header(headers: List[dict], name: str) -> str | None:
     for h in headers or []:
         if (h.get("name") or "").lower() == name.lower():
@@ -219,15 +215,7 @@ def _list_thread_ids_in_range(service, start: str | None, end: str | None, max_t
     return thread_ids, hit_limit
 
 
-def _upsert_ticket_from_thread(
-    db: Session,
-    service,
-    mailbox_id: str,
-    thread_id: str,
-    *,
-    awaiting_only: bool = True,
-    auto_triage: bool = True,
-) -> bool:
+def _upsert_ticket_from_thread(db: Session, service, thread_id: str, *, awaiting_only: bool = True, auto_triage: bool = True) -> bool:
     """Fetch thread metadata and upsert a ThreadTicket row.
 
     Returns True if ticket was updated/created, False if skipped (e.g., blacklisted, or not awaiting reply when awaiting_only=True).
@@ -303,20 +291,14 @@ def _upsert_ticket_from_thread(
         if is_blacklisted:
             return False
 
-    # Tickets are isolated per mailbox. Thread IDs are practically unique across
-    # accounts, but we still scope all DB operations to mailbox_id.
-    ticket = (
-        db.query(ThreadTicket)
-        .filter(ThreadTicket.thread_id == thread_id, ThreadTicket.mailbox_id == mailbox_id)
-        .one_or_none()
-    )
+    ticket = db.get(ThreadTicket, thread_id)
 
     # If we only want awaiting-reply threads, do not create new tickets for threads that do not need a reply.
     if ticket is None and awaiting_only and not awaiting_reply:
         return False
 
     if ticket is None:
-        ticket = ThreadTicket(mailbox_id=mailbox_id, thread_id=thread_id, status=TicketStatus.PENDING)
+        ticket = ThreadTicket(thread_id=thread_id, status=TicketStatus.PENDING)
         db.add(ticket)
 
     ticket.last_message_id = last_msg_id
@@ -382,7 +364,6 @@ def _upsert_ticket_from_thread(
 
 
 def sync_inbox_threads(
-    mailbox_id: str,
     max_threads: int = 500,
     start: str | None = None,
     end: str | None = None,
@@ -403,7 +384,7 @@ def sync_inbox_threads(
     db: Session = SessionLocal()
     try:
         try:
-            service = get_gmail_service(db, mailbox_id=mailbox_id)
+            service = get_gmail_service(db)
         except RuntimeError as e:
             logger.info("Gmail sync skipped: %s", e)
             return {"ok": False, "error": str(e)}
@@ -421,7 +402,7 @@ def sync_inbox_threads(
             thread_ids, hit_limit = _list_thread_ids_in_range(service, start=start, end=end, max_threads=max_threads, include_anywhere=include_anywhere)
         else:
             # Daily/ongoing sync: prefer historyId (accurate, doesn't miss messages).
-            last_history_id = get_state(db, _state_key(mailbox_id, "gmail_history_id"))
+            last_history_id = get_state(db, "gmail_history_id")
             if incremental and last_history_id and current_history_id:
                 try:
                     tids = _thread_ids_from_history(service, start_history_id=last_history_id)
@@ -449,7 +430,7 @@ def sync_inbox_threads(
         skipped = 0
         for tid in thread_ids:
             try:
-                if _upsert_ticket_from_thread(db, service, mailbox_id, tid, awaiting_only=awaiting_only, auto_triage=auto_triage):
+                if _upsert_ticket_from_thread(db, service, tid, awaiting_only=awaiting_only, auto_triage=auto_triage):
                     upserted += 1
                 else:
                     skipped += 1
@@ -460,7 +441,7 @@ def sync_inbox_threads(
 
         # Advance watermark only for the incremental (no-range) flow.
         if (not start and not end) and current_history_id:
-            set_state(db, _state_key(mailbox_id, "gmail_history_id"), current_history_id)
+            set_state(db, "gmail_history_id", current_history_id)
 
         db.commit()
         return {
