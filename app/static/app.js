@@ -4,6 +4,26 @@ let currentAiThreadId = null;
 
 // Local user auth (JWT)
 let authToken = localStorage.getItem("agent_auth_token") || "";
+
+
+// Mailbox selection (strict isolation)
+// Stored in localStorage so all API calls include X-Mailbox-Id.
+const ALLOWED_MAILBOX_IDS = ["admin", "lushan"];
+let mailboxId = localStorage.getItem("agent_mailbox_id") || "admin";
+if (!ALLOWED_MAILBOX_IDS.includes(mailboxId)) {
+    mailboxId = "admin";
+}
+localStorage.setItem("agent_mailbox_id", mailboxId);
+
+function getMailboxId() {
+    return mailboxId;
+}
+
+function setMailboxId(next) {
+    if (!ALLOWED_MAILBOX_IDS.includes(next)) return;
+    mailboxId = next;
+    localStorage.setItem("agent_mailbox_id", mailboxId);
+}
 let currentUser = null;
 let usersCache = [];
 
@@ -429,7 +449,7 @@ async function fetchNow() {
         if (!start && !end) url.searchParams.set("incremental", incremental ? "true" : "false");
         if (start || end) url.searchParams.set("include_anywhere", includeAnywhere ? "true" : "false");
 
-        const r = await fetch(url.toString(), { method: "POST" });
+        const r = await apiFetch(url.toString(), { method: "POST" });
         const text = await r.text();
         if (!r.ok) {
             alert(`Fetch failed (${r.status}):\n\n${text}`);
@@ -474,7 +494,7 @@ async function checkUpdates() {
         // Safety cap; frequent use should stay light.
         url.searchParams.set("max_threads", "200");
 
-        const r = await fetch(url.toString(), { method: "POST" });
+        const r = await apiFetch(url.toString(), { method: "POST" });
         const text = await r.text();
         if (!r.ok) {
             alert(`Check Updates failed (${r.status}):\n\n${text}`);
