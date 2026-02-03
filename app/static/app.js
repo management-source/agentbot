@@ -16,14 +16,16 @@ if (!ALLOWED_MAILBOX_IDS.includes(mailboxId)) {
 localStorage.setItem("agent_mailbox_id", mailboxId);
 
 function getMailboxId() {
-    return mailboxId;
+    // Default to admin if nothing set yet
+    const v = localStorage.getItem(MAILBOX_STORAGE_KEY);
+    return (v === "admin" || v === "lushan") ? v : "admin";
 }
 
-function setMailboxId(next) {
-    if (!ALLOWED_MAILBOX_IDS.includes(next)) return;
-    mailboxId = next;
-    localStorage.setItem("agent_mailbox_id", mailboxId);
+function setMailboxId(v) {
+    if (v !== "admin" && v !== "lushan") return;
+    localStorage.setItem(MAILBOX_STORAGE_KEY, v);
 }
+
 let currentUser = null;
 let usersCache = [];
 
@@ -31,6 +33,8 @@ async function apiFetch(url, options = {}) {
     const opts = { ...options, headers: { ...(options.headers || {}) } };
     if (authToken) {
         opts.headers["Authorization"] = `Bearer ${authToken}`;
+        opts.headers = new Headers(opts.headers || {});
+        opts.headers.set("X-Mailbox-Id", getMailboxId());
     }
     return fetch(url, opts);
 }
@@ -418,101 +422,38 @@ function setTab(tab) {
 }
 
 async function fetchNow() {
-    const btn = document.getElementById("fetchBtn") || document.getElementById("btnFetch");
-    if (btn) {
-        btn.disabled = true;
-        btn.textContent = "Fetching...";
+    const start = document.getElementById("dateStart").value;
+    const end = document.getElementById("dateEnd").value;
+
+    const params = new URLSearchParams({
+        start,
+        end,
+        max_threads: "500",
+        include_anywhere: "false",
+    });
+
+    const res = await apiFetch(`/sync/fetch-now?${params.toString()}`, {
+        method: "POST",
+    });
+
+    if (!res.ok) {
+        const txt = await res.text();
+        alert(`Fetch failed (${res.status}):\n\n${txt}`);
+        return;
     }
 
-    try {
-        const startEl = document.getElementById("startDate") || document.getElementById("fromDate");
-        const endEl = document.getElementById("endDate") || document.getElementById("toDate");
-        const maxEl = document.getElementById("maxThreads") || document.getElementById("limit");
-
-        const incEl = document.getElementById("incrementalSync") || document.getElementById("incremental");
-        const allEl = document.getElementById("includeAnywhere") || document.getElementById("allMail");
-
-        const start = startEl ? (startEl.value || "") : "";
-        const end = endEl ? (endEl.value || "") : "";
-        const maxThreads = parseInt((maxEl && maxEl.value) ? maxEl.value : "500", 10);
-        const incremental = !!(incEl && incEl.checked);
-        const includeAnywhere = !!(allEl && allEl.checked);
-
-        // Persist the selected date filter for the ticket list.
-        currentDateFilter = { start: start || "", end: end || "" };
-
-        const url = new URL("/sync/fetch-now", window.location.origin);
-        if (start) url.searchParams.set("start", start);
-        if (end) url.searchParams.set("end", end);
-        if (!Number.isNaN(maxThreads) && maxThreads > 0) url.searchParams.set("max_threads", String(maxThreads));
-        // incremental applies only when no date range
-        if (!start && !end) url.searchParams.set("incremental", incremental ? "true" : "false");
-        if (start || end) url.searchParams.set("include_anywhere", includeAnywhere ? "true" : "false");
-
-        const r = await apiFetch(url.toString(), { method: "POST" });
-        const text = await r.text();
-        if (!r.ok) {
-            alert(`Fetch failed (${r.status}):\n\n${text}`);
-            return;
-        }
-        const j = JSON.parse(text);
-
-        if (j && j.hit_limit) {
-            alert("Fetch completed, but hit the configured limit. Increase Max and fetch again to capture more emails for the selected range.");
-        }
-        if (j && j.target_mailbox) {
-            const mb1 = document.getElementById("mailboxBadge");
-            const mb2 = document.getElementById("mailboxLabel");
-            if (mb1) mb1.textContent = `Mailbox: ${j.target_mailbox}`;
-            if (mb2) mb2.textContent = j.target_mailbox;
-        }
-
-        const last1 = document.getElementById("lastSync");
-        if (last1) last1.textContent = new Date().toLocaleString();
-
-        await loadTickets();
-        console.log(j);
-    } catch (e) {
-        alert("Fetch failed: " + e);
-    } finally {
-        if (btn) {
-            btn.disabled = false;
-            btn.textContent = "Fetch Now";
-        }
-    }
+    // whatever you already do after fetch (reload tickets etc.)
+    await loadTickets();
 }
 
 async function checkUpdates() {
-    const btn = document.getElementById("btnCheckUpdates");
-    if (btn) {
-        btn.disabled = true;
-        btn.textContent = "Checking...";
+    const res = await apiFetch(`/sync/check-updates`, { method: "POST" });
+    if (!res.ok) {
+        const txt = await res.text();
+        alert(`Check Updates failed (${res.status}):\n\n${txt}`);
+        return;
     }
-
-    try {
-        const url = new URL("/sync/check-updates", window.location.origin);
-        // Safety cap; frequent use should stay light.
-        url.searchParams.set("max_threads", "200");
-
-        const r = await apiFetch(url.toString(), { method: "POST" });
-        const text = await r.text();
-        if (!r.ok) {
-            alert(`Check Updates failed (${r.status}):\n\n${text}`);
-            return;
-        }
-
-        const last1 = document.getElementById("lastSync");
-        if (last1) last1.textContent = new Date().toLocaleString();
-
-        await loadTickets();
-    } catch (e) {
-        alert("Check Updates failed: " + e);
-    } finally {
-        if (btn) {
-            btn.disabled = false;
-            btn.textContent = "Check Updates";
-        }
-    }
+    await loadTickets();
 }
 
 function clearDateFilter() {
@@ -916,7 +857,7 @@ async function openThread(threadId) {
     if (useViewer) {
         // Populate message iframes after the viewer frame loads its srcdoc.
         viewerFrame.onload = () => {
-            try { populateIframes(viewerFrame.contentDocument); } catch (e) {}
+            try { populateIframes(viewerFrame.contentDocument); } catch (e) { }
         };
         viewerFrame.srcdoc = threadHtml;
     } else {
@@ -994,7 +935,7 @@ async function openAckModal(threadId) {
                 listEl.innerHTML = "";
                 return;
             }
-            listEl.innerHTML = files.map(f => `${escapeHtml(f.name)} <span class="muted">(${Math.round(f.size/1024)} KB)</span>`).join("<br/>");
+            listEl.innerHTML = files.map(f => `${escapeHtml(f.name)} <span class="muted">(${Math.round(f.size / 1024)} KB)</span>`).join("<br/>");
         };
     }
 }
@@ -1292,7 +1233,7 @@ async function doLogin() {
                 if (m && !m.classList.contains('hidden')) {
                     refreshBlacklist();
                 }
-            } catch (e) {}
+            } catch (e) { }
         });
     }
 
@@ -1367,7 +1308,7 @@ window.addEventListener("load", async () => {
                 if (m && !m.classList.contains('hidden')) {
                     refreshBlacklist();
                 }
-            } catch (e) {}
+            } catch (e) { }
         });
     }
 
