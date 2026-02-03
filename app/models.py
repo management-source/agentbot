@@ -118,6 +118,8 @@ class ThreadTicketNote(Base):
     __tablename__ = "thread_ticket_notes"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    # Mailbox isolation (admin/lushan/etc.).
+    mailbox_id: Mapped[str] = mapped_column(String, default="admin", index=True)
     thread_id: Mapped[str] = mapped_column(String, index=True)
     author_user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), index=True)
 
@@ -131,6 +133,8 @@ class ThreadTicketAudit(Base):
     __tablename__ = "thread_ticket_audit"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    # Mailbox isolation (admin/lushan/etc.).
+    mailbox_id: Mapped[str] = mapped_column(String, default="admin", index=True)
     thread_id: Mapped[str] = mapped_column(String, index=True)
     action: Mapped[AuditAction] = mapped_column(SAEnum(AuditAction), index=True)
     actor_user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True, index=True)
@@ -145,6 +149,11 @@ class ThreadTicketAudit(Base):
 class ThreadTicket(Base):
     __tablename__ = "thread_tickets"
 
+    # Mailbox isolation (admin/lushan/etc.).
+    # We keep thread_id as the primary key for backwards compatibility.
+    # All queries additionally filter by mailbox_id, and migrations ensure
+    # the column exists with a safe default.
+    mailbox_id: Mapped[str] = mapped_column(String, default="admin", index=True)
     thread_id: Mapped[str] = mapped_column(String, primary_key=True)
     last_message_id: Mapped[str | None] = mapped_column(String, nullable=True)
 

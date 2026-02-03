@@ -95,12 +95,7 @@ def build_reply_message(
             # Embed both app-managed local signature assets (served under /static/signature)
             # and best-effort remote images.
             static_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
-            body_html, embedded_images, _warnings = embed_images_as_cid(
-                db=db,
-                html=body_html,
-                static_dir=static_dir,
-                mailbox_id=mailbox_id,
-            )
+            body_html, embedded_images, _warnings = embed_images_as_cid(db=db, html=body_html, static_dir=static_dir)
 
         msg.add_alternative(body_html, subtype="html")
         # html_part is the last payload after add_alternative
@@ -152,7 +147,6 @@ def send_reply_in_thread(
         bcc=bcc,
         from_email=from_email,
         attachments=attachments,
-        mailbox_id=mailbox_id,
         db=db,
     )
 

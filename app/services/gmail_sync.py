@@ -219,7 +219,15 @@ def _list_thread_ids_in_range(service, start: str | None, end: str | None, max_t
     return thread_ids, hit_limit
 
 
-def _upsert_ticket_from_thread(db: Session, service, thread_id: str, *, awaiting_only: bool = True, auto_triage: bool = True) -> bool:
+def _upsert_ticket_from_thread(
+    db: Session,
+    service,
+    mailbox_id: str,
+    thread_id: str,
+    *,
+    awaiting_only: bool = True,
+    auto_triage: bool = True,
+) -> bool:
     """Fetch thread metadata and upsert a ThreadTicket row.
 
     Returns True if ticket was updated/created, False if skipped (e.g., blacklisted, or not awaiting reply when awaiting_only=True).
@@ -295,7 +303,13 @@ def _upsert_ticket_from_thread(db: Session, service, thread_id: str, *, awaiting
         if is_blacklisted:
             return False
 
-    ticket = db.get(ThreadTicket, thread_id)
+    # Tickets are isolated per mailbox. Thread IDs are practically unique across
+    # accounts, but we still scope all DB operations to mailbox_id.
+    ticket = (
+        db.query(ThreadTicket)
+        .filter(ThreadTicket.thread_id == thread_id, ThreadTicket.mailbox_id == mailbox_id)
+        .one_or_none()
+    )
 
     # If we only want awaiting-reply threads, do not create new tickets for threads that do not need a reply.
     if ticket is None and awaiting_only and not awaiting_reply:
@@ -388,22 +402,15 @@ def sync_inbox_threads(
     """
     db: Session = SessionLocal()
     try:
-        # Building / refreshing Google credentials can raise RuntimeError (our own)
-        # or google-auth RefreshError / ValueError. We never want that to crash the API.
         try:
             service = get_gmail_service(db, mailbox_id=mailbox_id)
-        except Exception as e:
+        except RuntimeError as e:
             logger.info("Gmail sync skipped: %s", e)
             return {"ok": False, "error": str(e)}
 
-        try:
-            # Always read current historyId so we can advance the watermark at the end.
-            profile = service.users().getProfile(userId=gmail_user_id()).execute()
-            current_history_id = str(profile.get("historyId") or "").strip() or None
-        except Exception as e:
-            # Never hard-fail the API on transient Google issues.
-            logger.exception("Gmail getProfile failed")
-            return {"ok": False, "error": str(e)}
+        # Always read current historyId so we can advance the watermark at the end.
+        profile = service.users().getProfile(userId=gmail_user_id()).execute()
+        current_history_id = str(profile.get("historyId") or "").strip() or None
 
         thread_ids: List[str]
         used_history = False
@@ -424,10 +431,8 @@ def sync_inbox_threads(
                         hit_limit = True
                     used_history = True
                 except HttpError as he:
-                    # If startHistoryId is too old/invalid, Gmail commonly returns 404 or 400.
-                    # Fall back to a recent pull and reset the watermark.
-                    status = he.resp is not None and getattr(he.resp, "status", None)
-                    if status in (400, 404):
+                    # If startHistoryId is too old, Gmail returns 404. Fall back to a small recent pull.
+                    if he.resp is not None and getattr(he.resp, "status", None) == 404:
                         logger.warning("HistoryId too old; falling back to recent sync and resetting watermark.")
                         # Pull last 30 days to rebuild state. This matches the product requirement
                         # ("check emails up to a month") and avoids missing active unreplied threads.
@@ -444,7 +449,7 @@ def sync_inbox_threads(
         skipped = 0
         for tid in thread_ids:
             try:
-                if _upsert_ticket_from_thread(db, service, tid, awaiting_only=awaiting_only, auto_triage=auto_triage):
+                if _upsert_ticket_from_thread(db, service, mailbox_id, tid, awaiting_only=awaiting_only, auto_triage=auto_triage):
                     upserted += 1
                 else:
                     skipped += 1
@@ -471,13 +476,5 @@ def sync_inbox_threads(
             "awaiting_only": bool(awaiting_only),
             "auto_triage": bool(auto_triage),
         }
-    except Exception as e:
-        # Defensive catch-all: the sync endpoints must never 500.
-        logger.exception("Unexpected Gmail sync failure")
-        try:
-            db.rollback()
-        except Exception:
-            pass
-        return {"ok": False, "error": str(e)}
     finally:
         db.close()

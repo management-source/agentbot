@@ -91,11 +91,7 @@ def get_gmail_service(db: Session | None = None, scopes: list[str] | None = None
     return build("gmail", "v1", credentials=creds, cache_discovery=False)
 
 
-def get_google_credentials(
-    db: Session | None = None,
-    scopes: list[str] | None = None,
-    mailbox_id: str | None = None,
-):
+def get_google_credentials(db: Session | None = None, scopes: list[str] | None = None):
     """Return a google-auth Credentials object for non-Gmail HTTP fetches.
 
     Used for fetching Google-hosted assets (e.g. signature logo URLs) with
