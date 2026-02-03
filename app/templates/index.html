@@ -52,13 +52,17 @@
       background:#000;
       box-shadow:var(--shadow);
       position:relative;
+      /* Visual separation from the main dashboard cards */
+      margin-bottom:16px;
     }
     .app-banner img{
       width:100%;
       height:96px;
-      object-fit:cover;
+      /* Prevent wide banners from looking "zoomed"/stretched. */
+      object-fit:contain;
       object-position:center;
       display:block;
+      background:#000;
     }
 @media (max-width: 700px){
       .app-banner img{height:76px}
@@ -372,9 +376,11 @@
       height:78px;
       border-radius:14px;
       border:1px solid var(--border);
-      object-fit:cover;
+      /* Keep uploaded banners/logos crisp without cropping/zooming */
+      object-fit:contain;
       display:block;
       margin-bottom:12px;
+      background:#000;
     }
     .login-brand{font-size:18px; font-weight:800; margin:0}
     .login-sub{margin:6px 0 0 0; color:var(--muted); font-size:13px; line-height:1.35}
@@ -570,7 +576,7 @@
                         <div class="login-left">
                             <div style="border:1px solid var(--border); border-radius:14px; overflow:hidden; background:#000">
                                 <img src="/static/signature/banner.png" alt="Dons Premier Estate Agents"
-                                    style="width:100%; height:110px; object-fit:cover; display:block" />
+                                    style="width:100%; height:110px; object-fit:contain; display:block; background:#000" />
                             </div>
                             <div class="login-brand" style="margin-top:12px">Email Manager</div>
                             <div class="login-sub">Dons Premier Estate Agents</div>
