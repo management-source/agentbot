@@ -3,20 +3,24 @@
     <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width,initial-scale=1" />
-        <title>Email Reply Manager</title>
+        <title>Email Manager</title>
         <style>
     :root{
-      --bg:#f6f7fb;
+      /* Brand: Dons Premier Estate Agents — Email Manager */
+      --bg:#070707;
       --card:#ffffff;
       --text:#0b1220;
-      --muted:#667085;
-      --border:#e5e7eb;
-      --shadow:0 1px 2px rgba(16,24,40,.06);
+      --muted:#6b7280;
+      --border:rgba(212,175,55,.55);
+      --shadow:0 6px 20px rgba(0,0,0,.28);
       --radius:14px;
       --gap:16px;
 
-      --primary:#4f46e5;
-      --primary-600:#4338ca;
+      --gold:#d4af37;
+      --gold-600:#b48b2f;
+
+      --primary:var(--gold);
+      --primary-600:var(--gold-600);
       --success:#16a34a;
       --danger:#dc2626;
       --warn:#f59e0b;
@@ -41,6 +45,44 @@
       background:var(--bg);
     }
 
+    .app-banner{
+      border:1px solid var(--border);
+      border-radius:18px;
+      overflow:hidden;
+      background:#000;
+      box-shadow:var(--shadow);
+      position:relative;
+    }
+    .app-banner img{
+      width:100%;
+      height:132px;
+      object-fit:cover;
+      display:block;
+    }
+    .app-banner .overlay{
+      position:absolute;
+      inset:0;
+      background: linear-gradient(90deg, rgba(0,0,0,.75), rgba(0,0,0,.15));
+      display:flex;
+      align-items:flex-end;
+      justify-content:space-between;
+      padding:14px 16px;
+      gap:12px;
+    }
+    .banner-title{color:#fff; font-weight:900; letter-spacing:-.02em; font-size:18px; margin:0}
+    .banner-sub{color:rgba(255,255,255,.8); font-size:12px; margin:4px 0 0 0}
+    .user-chip{display:flex; align-items:center; gap:10px; color:#fff; font-size:12px; font-weight:700}
+    .avatar{
+      width:36px;
+      height:36px;
+      border-radius:999px;
+      object-fit:cover;
+      border:1px solid rgba(212,175,55,.75);
+      background:#fff;
+    }
+    .avatar.sm{width:28px;height:28px}
+    .avatar.hidden{display:none}
+
     .page{
       max-width: 1200px;
       margin: 0 auto;
@@ -54,6 +96,9 @@
       box-shadow:var(--shadow);
       padding:16px;
     }
+
+    /* Subtle gold frame on key cards */
+    .card.frame{box-shadow: 0 10px 30px rgba(0,0,0,.30), inset 0 0 0 1px rgba(212,175,55,.35)}
 
     .top-grid{
       display:grid;
@@ -86,7 +131,7 @@
       padding:8px 10px;
       border:1px solid var(--border);
       border-radius:999px;
-      background:#fff;
+      background:var(--card);
       font-size:12px;
       color:var(--muted);
     }
@@ -111,7 +156,7 @@
     .btn.primary{
       background:var(--primary);
       border-color:var(--primary);
-      color:#fff;
+      color:#111827;
     }
     .btn.primary:hover{background:var(--primary-600)}
     .btn.success{background:var(--success); border-color:var(--success); color:#fff}
@@ -202,7 +247,7 @@
       padding:16px;
       border:1px solid var(--border);
       border-radius:var(--radius);
-      background:#fff;
+      background:var(--card);
       box-shadow:var(--shadow);
       display:grid;
       grid-template-columns: 1fr 340px;
@@ -227,7 +272,7 @@
       padding:6px 10px;
       border-radius:999px;
       border:1px solid var(--border);
-      background:#fff;
+      background:var(--card);
       font-size:12px;
       color:var(--muted);
       font-weight:700;
@@ -261,7 +306,7 @@
     .modal-backdrop.show{display:flex}
     .modal{
       width: min(720px, 100%);
-      background:#fff;
+      background:var(--card);
       border-radius:18px;
       border:1px solid var(--border);
       box-shadow: 0 10px 25px rgba(16,24,40,.18);
@@ -313,19 +358,16 @@
       border:1px solid var(--border);
       border-radius:16px;
       padding:16px;
-      background: linear-gradient(180deg, #fafbff, #ffffff);
+      background: linear-gradient(180deg, #fff7e0, #ffffff);
     }
-    .login-logo{
-      width:54px;
-      height:54px;
-      border-radius:16px;
+    .login-banner{
+      width:100%;
+      height:78px;
+      border-radius:14px;
       border:1px solid var(--border);
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      background:#fff;
+      object-fit:cover;
+      display:block;
       margin-bottom:12px;
-      box-shadow: 0 4px 12px rgba(16,24,40,.06);
     }
     .login-brand{font-size:18px; font-weight:800; margin:0}
     .login-sub{margin:6px 0 0 0; color:var(--muted); font-size:13px; line-height:1.35}
@@ -364,9 +406,23 @@
 
     <body>
         <div class="page">
+            <div class="app-banner" aria-label="Dons Premier Estate Agents banner">
+                <img src="/static/signature/banner.png" alt="Dons Premier Estate Agents" />
+                <div class="overlay">
+                    <div>
+                        <p class="banner-title">Email Manager</p>
+                        <p class="banner-sub">Dons Premier Estate Agents</p>
+                    </div>
+                    <div class="user-chip">
+                        <img id="userAvatar" class="avatar hidden" src="/static/signature/profile.png" alt="User profile" />
+                        <span id="headerUserText">Not signed in</span>
+                    </div>
+                </div>
+            </div>
+
             <div class="top-grid">
-                <div class="card brand">
-                    <h1>Email Reply Manager</h1>
+                <div class="card brand frame">
+                    <h1>Email Manager</h1>
                     <p>Track emails awaiting your reply, update ticket status,
                         and respond faster.</p>
 
@@ -406,7 +462,7 @@
                             id="lastSync">—</span></p>
                 </div>
 
-                <div class="card">
+                <div class="card frame">
                     <div class="row space">
                         <div>
                             <p class="panel-title">Email Sync</p>
@@ -488,6 +544,10 @@
                 <button class="btn" id="btnNext"
                     onclick="nextPage()">Next</button>
             </div>
+
+            <div class="small" style="margin-top:18px; text-align:center; color:rgba(255,255,255,.75)">
+                © <span id="copyrightYear"></span> Dons Premier Estate Agents — Email Manager. Developed by Kusal Wickremasingha.
+            </div>
         </div>
 
         <!-- Login Modal -->
@@ -501,13 +561,12 @@
                 <div class="modal-body">
                     <div class="login-split">
                         <div class="login-left">
-                            <div class="login-logo" aria-hidden="true">
-                                <img src="/static/logo.png" alt="Logo"
-                                    style="width:44px;height:44px;object-fit:contain" />
+                            <div style="border:1px solid var(--border); border-radius:14px; overflow:hidden; background:#000">
+                                <img src="/static/signature/banner.png" alt="Dons Premier Estate Agents"
+                                    style="width:100%; height:110px; object-fit:cover; display:block" />
                             </div>
-                            <div class="login-brand">AgentBot</div>
-                            <div class="login-sub">Email-to-ticket workflow for
-                                your team.</div>
+                            <div class="login-brand" style="margin-top:12px">Email Manager</div>
+                            <div class="login-sub">Dons Premier Estate Agents</div>
                             <div class="small muted"
                                 style="margin-top:12px">Sign in to access
                                 tickets, drafts, and Gmail sync controls.</div>

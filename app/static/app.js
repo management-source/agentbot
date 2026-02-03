@@ -350,9 +350,22 @@ async function uploadSignatureAsset(name, file) {
             return;
         }
         await refreshSignaturePreview();
+        try {
+            // Keep the app UI avatar/banner in sync with signature assets.
+            refreshHeaderBranding();
+        } catch (e) { }
     } catch (e) {
         alert("Upload failed: " + e);
     }
+}
+
+function refreshHeaderBranding() {
+    // Banner + avatar are static assets that may be replaced; bust caches.
+    const v = String(Date.now());
+    const banner = document.querySelector('.app-banner img');
+    if (banner) banner.src = `/static/signature/banner.png?v=${v}`;
+    const avatar = document.getElementById('userAvatar');
+    if (avatar) avatar.src = `/static/signature/profile.png?v=${v}`;
 }
 
 function closeSettings() {
@@ -1241,6 +1254,17 @@ async function ensureAuthenticated() {
     // Good UI pill
     const authText = document.getElementById("authText");
     if (authText) authText.textContent = `Signed in as ${currentUser.name} (${currentUser.role})`;
+
+    // Header banner user chip
+    const headerUserText = document.getElementById("headerUserText");
+    if (headerUserText) headerUserText.textContent = `${currentUser.name} (${currentUser.role})`;
+    const avatar = document.getElementById("userAvatar");
+    if (avatar) {
+        avatar.classList.remove("hidden");
+        // Bust cache so newly uploaded profile images appear immediately.
+        avatar.src = `/static/signature/profile.png?v=${Date.now()}`;
+    }
+
     const authDot = document.getElementById("authDot");
     if (authDot) {
         authDot.classList.add("green");
@@ -1331,6 +1355,11 @@ function logout() {
 
     const authText = document.getElementById("authText");
     if (authText) authText.textContent = "Not signed in";
+
+    const headerUserText = document.getElementById("headerUserText");
+    if (headerUserText) headerUserText.textContent = "Not signed in";
+    const avatar = document.getElementById('userAvatar');
+    if (avatar) avatar.classList.add('hidden');
     const authDot = document.getElementById("authDot");
     if (authDot) {
         authDot.classList.remove("green");
@@ -1347,6 +1376,11 @@ function logout() {
 }
 
 window.addEventListener("load", async () => {
+    try {
+        const y = document.getElementById('copyrightYear');
+        if (y) y.textContent = String(new Date().getFullYear());
+        refreshHeaderBranding();
+    } catch (e) { }
     loadSettings();
     document.getElementById("lastSync").textContent = new Date().toLocaleString();
     const ok = await ensureAuthenticated();

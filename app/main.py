@@ -161,7 +161,7 @@ class BasicAuthMiddleware(BaseHTTPMiddleware):
         return Response(
             content='Authentication required',
             status_code=401,
-            headers={'WWW-Authenticate': 'Basic realm="AgentBot"'},
+            headers={'WWW-Authenticate': 'Basic realm="Email Manager"'},
         )
 
 
