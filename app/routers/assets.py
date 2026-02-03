@@ -173,6 +173,7 @@ def download_attachment(
     filename: str | None = None,
     mime: str | None = None,
     db: Session = Depends(get_db),
+    mailbox_id: str = Depends(get_mailbox_id),
 ):
     """Download an attachment by attachmentId."""
     service = get_gmail_service(db, mailbox_id=mailbox_id)

@@ -162,7 +162,9 @@ async function googleConnectOrManage() {
 const SETTINGS_KEY = "agent_settings_v1";
 let settings = {
     defaultHtmlView: false,
-    proxyRemoteImages: true,
+    // Proxying remote images is privacy-friendly, but some CDNs block/alter responses
+    // and images won't render. Default OFF so signatures/logos behave like Gmail.
+    proxyRemoteImages: false,
     compactTickets: false,
 };
 
