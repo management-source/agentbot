@@ -90,15 +90,40 @@ def proxy_image(url: str, mailbox_id: str = Depends(get_mailbox_id)):
     if _is_private_host(parsed.hostname or ""):
         raise HTTPException(status_code=400, detail="Blocked host")
 
-    timeout = httpx.Timeout(10.0, connect=5.0)
+    timeout = httpx.Timeout(12.0, connect=6.0)
     with httpx.Client(timeout=timeout, follow_redirects=True) as client:
-        r = client.get(url, headers={"User-Agent": "AgentBotImageProxy/1.0"})
+        r = client.get(url, headers={"User-Agent": "Mozilla/5.0 (compatible; AgentBotImageProxy/1.0)"})
         if r.status_code >= 400:
             raise HTTPException(status_code=502, detail=f"Upstream error {r.status_code}")
         ctype = (r.headers.get("content-type") or "").split(";")[0].strip().lower()
+        content = r.content or b""
+
+        # Some CDNs (and a few government/enterprise sites) return images with missing or incorrect
+        # content-types. We do a very small amount of sniffing to avoid breaking legitimate
+        # logos/icons used in email signatures.
+        def _sniff_image_type(buf: bytes) -> Optional[str]:
+            head = (buf[:512] or b"").lstrip()
+            if head.startswith(b"\x89PNG\r\n\x1a\n"):
+                return "image/png"
+            if head.startswith(b"\xff\xd8\xff"):
+                return "image/jpeg"
+            if head.startswith(b"GIF87a") or head.startswith(b"GIF89a"):
+                return "image/gif"
+            if head.startswith(b"RIFF") and b"WEBP" in head[:32]:
+                return "image/webp"
+            # SVG is often served as text/plain or application/xml
+            if b"<svg" in head[:256].lower():
+                return "image/svg+xml"
+            return None
+
         if not ctype.startswith("image/"):
-            raise HTTPException(status_code=400, detail="Not an image")
-        content = r.content
+            sniffed = _sniff_image_type(content)
+            if sniffed:
+                ctype = sniffed
+            else:
+                # If the URL looks like an image and the server responded with a generic type,
+                # allow it only if it sniffs correctly (handled above). Otherwise block.
+                raise HTTPException(status_code=400, detail="Not an image")
         if len(content) > 5_000_000:
             raise HTTPException(status_code=413, detail="Image too large")
 
@@ -106,7 +131,12 @@ def proxy_image(url: str, mailbox_id: str = Depends(get_mailbox_id)):
 
 
 @router.get("/inline/{message_id}/{cid}")
-def get_inline_attachment(message_id: str, cid: str, db: Session = Depends(get_db)):
+def get_inline_attachment(
+    message_id: str,
+    cid: str,
+    db: Session = Depends(get_db),
+    mailbox_id: str = Depends(get_mailbox_id),
+):
     """Serve inline (cid:) images used inside HTML emails."""
     service = get_gmail_service(db, mailbox_id=mailbox_id)
     try:

@@ -50,7 +50,11 @@ class SignatureTemplateIn(BaseModel):
 
 
 @router.get("/signature", response_model=SignatureOut)
-def get_signature(db: Session = Depends(get_db), user=Depends(get_current_user)):
+def get_signature(
+    db: Session = Depends(get_db),
+    mailbox_id: str = Depends(get_mailbox_id),
+    user=Depends(get_current_user),
+):
     sig = (get_state(db, "signature_text", mailbox_id=mailbox_id) or "").strip()
     if not sig:
         sig = (settings.DEFAULT_SIGNATURE or "").strip()
@@ -58,26 +62,40 @@ def get_signature(db: Session = Depends(get_db), user=Depends(get_current_user))
 
 
 @router.put("/signature", response_model=SignatureOut)
-def set_signature(payload: SignatureIn, db: Session = Depends(get_db), user=Depends(get_current_user)):
+def set_signature(
+    payload: SignatureIn,
+    db: Session = Depends(get_db),
+    mailbox_id: str = Depends(get_mailbox_id),
+    user=Depends(get_current_user),
+):
     sig = (payload.signature or "").strip()
-    set_state(db, "signature_text", sig)
+    set_state(db, "signature_text", sig, mailbox_id=mailbox_id)
     # If user sets a plain-text signature, also store a safe HTML variant.
     # This ensures consistent behavior for outgoing HTML emails.
     safe_html = html.escape(sig).replace("\n", "<br>")
-    set_state(db, "signature_html", safe_html)
+    set_state(db, "signature_html", safe_html, mailbox_id=mailbox_id)
     db.commit()
     return SignatureOut(signature=sig)
 
 
 @router.get("/signature/html")
-def get_signature_html(db: Session = Depends(get_db), user=Depends(get_current_user)):
+def get_signature_html(
+    db: Session = Depends(get_db),
+    mailbox_id: str = Depends(get_mailbox_id),
+    user=Depends(get_current_user),
+):
     """Return the stored HTML signature (for preview in settings UI)."""
     sig_html = (get_state(db, "signature_html", mailbox_id=mailbox_id) or "").strip()
     return {"html": sig_html}
 
 
 @router.post("/signature/apply-template", response_model=SignatureOut)
-def apply_app_signature_template(payload: SignatureTemplateIn, db: Session = Depends(get_db), user=Depends(get_current_user)):
+def apply_app_signature_template(
+    payload: SignatureTemplateIn,
+    db: Session = Depends(get_db),
+    mailbox_id: str = Depends(get_mailbox_id),
+    user=Depends(get_current_user),
+):
     """Apply the app-managed signature template.
 
     This stores both signature_html and signature_text. Images reference local /static/signature/... paths and are later embedded as CID when sending.
@@ -107,8 +125,8 @@ def apply_app_signature_template(payload: SignatureTemplateIn, db: Session = Dep
     sig_html = build_signature_html(prof)
     sig_text = build_signature_text(prof)
 
-    set_state(db, "signature_html", sig_html)
-    set_state(db, "signature_text", sig_text)
+    set_state(db, "signature_html", sig_html, mailbox_id=mailbox_id)
+    set_state(db, "signature_text", sig_text, mailbox_id=mailbox_id)
     db.commit()
     return SignatureOut(signature=sig_text)
 
@@ -145,73 +163,3 @@ def upload_signature_asset(asset_name: str, file: UploadFile = File(...), user=D
 
 
 ## Gmail signature fetch removed: we use app-managed signature by default.
-
-
-@router.post("/signature/apply-template", response_model=SignatureOut)
-def apply_app_signature_template(payload: SignatureTemplateIn, db: Session = Depends(get_db), user=Depends(get_current_user)):
-    """Use an app-managed signature template (recommended).
-
-    This produces a robust, email-client-safe HTML signature that closely matches the user's target design.
-    Images are referenced via /static/signature/... and are embedded as CID images at send time.
-    """
-    offices = []
-    for o in payload.offices or []:
-        label = (o.get("label") or "").strip()
-        addr = (o.get("address") or "").strip()
-        if label and addr:
-            offices.append((label, addr))
-    if not offices:
-        offices = [("OFFICE", "")]
-
-    profile = SignatureProfile(
-        name=payload.name.strip(),
-        title_line=payload.title_line.strip(),
-        phone=payload.phone.strip(),
-        email=payload.email.strip(),
-        company=payload.company.strip(),
-        offices=offices,
-        facebook=(payload.facebook or "").strip(),
-        youtube=(payload.youtube or "").strip(),
-        linkedin=(payload.linkedin or "").strip(),
-        instagram=(payload.instagram or "").strip(),
-        whatsapp=(payload.whatsapp or "").strip(),
-        discord=(payload.discord or "").strip(),
-    )
-
-    html_sig = build_signature_html(profile)
-    text_sig = build_signature_text(profile)
-
-    set_state(db, "signature_html", html_sig, mailbox_id=mailbox_id)
-    set_state(db, "signature_text", text_sig, mailbox_id=mailbox_id)
-    db.commit()
-    return SignatureOut(signature=text_sig)
-
-
-@router.post("/signature/upload/{asset_name}")
-def upload_signature_asset(
-    asset_name: str,
-    file: UploadFile = File(...),
-    db: Session = Depends(get_db),
-    user=Depends(get_current_user),
-):
-    """Upload signature assets used by the app-managed signature template.
-
-    asset_name: profile | banner | icon-facebook | etc.
-    For now we support: profile, banner.
-    """
-    allowed = {"profile": "profile.png", "banner": "banner.png"}
-    if asset_name not in allowed:
-        raise HTTPException(status_code=400, detail="Unsupported asset. Use profile or banner")
-
-    content = file.file.read()
-    if not content:
-        raise HTTPException(status_code=400, detail="Empty file")
-
-    static_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
-    out_path = os.path.join(static_dir, "signature", allowed[asset_name])
-    os.makedirs(os.path.dirname(out_path), exist_ok=True)
-
-    with open(out_path, "wb") as f:
-        f.write(content)
-
-    return {"ok": True, "path": f"/static/signature/{allowed[asset_name]}"}
