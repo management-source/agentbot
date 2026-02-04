@@ -1,20 +1,19 @@
 from __future__ import annotations
 
-import html
-import os
-from typing import Any, List, Optional
-
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.authz import get_current_user
 from app.config import settings
 from app.db import get_db
-from app.services.gmail_client import GMAIL_SCOPES, GMAIL_SIGNATURE_SCOPE, get_gmail_service, gmail_user_id
-from app.services.gmail_parse import _strip_html
-from app.services.signature_template import SignatureProfile, build_signature_html, build_signature_text
 from app.services.state import get_state, set_state
+import html
+
+from app.services.signature_template import SignatureProfile, build_signature_html, build_signature_text
+import os
+
+
 
 router = APIRouter()
 
@@ -27,30 +26,21 @@ class SignatureIn(BaseModel):
     signature: str
 
 
-class OfficeIn(BaseModel):
-    label: str
-    address: str
-
-
 class SignatureTemplateIn(BaseModel):
-    # Defaults to match your current desired template.
+    # Defaults are set to match the user's screenshot as closely as possible.
     name: str = "Jessica Gale"
-    title_line: str = (
-        "Co-Founder | Principal Officer in Effective Control | Senior Property Manager | Licensed Estate Agent"
-    )
+    title_line: str = "Co-Founder | Principal Officer in Effective Control | Senior Property Manager | Licensed Estate Agent"
     phone: str = "0422 643 451"
     email: str = "admin@donspremier.com.au"
     company: str = "DONS PREMIER ESTATE AGENTS"
 
-    offices: List[OfficeIn] = Field(
-        default_factory=lambda: [
-            OfficeIn(label="CRANBOURNE", address="24 Coral-Pea Way, Cranbourne West Vic, 3977"),
-            OfficeIn(label="CHADSTONE", address="Suite 797, Level 2 UL40, 1341 Dandenong Road, Chadstone, VIC 3148"),
-            OfficeIn(label="BUNDOORA", address="Suite 279, Tenancy 202, Level 2, 1–3 Janefield Drive, Bundoora, VIC 3083"),
-        ]
-    )
+    office1_label: str = "CRANBOURNE"
+    office1_addr: str = "24 Coral-Pea Way, Cranbourne West Vic, 3977"
+    office2_label: str = "CHADSTONE"
+    office2_addr: str = "Suite 797, Level 2 UL40, 1341 Dandenong Road, Chadstone, VIC 3148"
+    office3_label: str = "BUNDOORA"
+    office3_addr: str = "Suite 279, Tenancy 202, Level 2, 1–3 Janefield Drive, Bundoora, VIC 3083"
 
-    # Social links (optional)
     facebook: str = ""
     youtube: str = ""
     linkedin: str = ""
@@ -71,11 +61,10 @@ def get_signature(db: Session = Depends(get_db), user=Depends(get_current_user))
 def set_signature(payload: SignatureIn, db: Session = Depends(get_db), user=Depends(get_current_user)):
     sig = (payload.signature or "").strip()
     set_state(db, "signature_text", sig)
-
-    # Store a safe HTML variant for consistent sending.
+    # If user sets a plain-text signature, also store a safe HTML variant.
+    # This ensures consistent behavior for outgoing HTML emails.
     safe_html = html.escape(sig).replace("\n", "<br>")
     set_state(db, "signature_html", safe_html)
-
     db.commit()
     return SignatureOut(signature=sig)
 
@@ -91,30 +80,28 @@ def get_signature_html(db: Session = Depends(get_db), user=Depends(get_current_u
 def apply_app_signature_template(payload: SignatureTemplateIn, db: Session = Depends(get_db), user=Depends(get_current_user)):
     """Apply the app-managed signature template.
 
-    Images reference local /static/signature/... paths and are embedded as CID when sending.
+    This stores both signature_html and signature_text. Images reference local /static/signature/... paths and are later embedded as CID when sending.
     """
-    offices: list[tuple[str, str]] = []
-    for o in payload.offices or []:
-        label = (o.label or "").strip()
-        addr = (o.address or "").strip()
-        if label and addr:
-            offices.append((label, addr))
-    if not offices:
-        offices = [("OFFICE", "")]
+
+    offices = [
+        (payload.office1_label, payload.office1_addr),
+        (payload.office2_label, payload.office2_addr),
+        (payload.office3_label, payload.office3_addr),
+    ]
 
     prof = SignatureProfile(
-        name=payload.name.strip(),
-        title_line=payload.title_line.strip(),
-        phone=payload.phone.strip(),
-        email=payload.email.strip(),
-        company=payload.company.strip(),
+        name=payload.name,
+        title_line=payload.title_line,
+        phone=payload.phone,
+        email=payload.email,
+        company=payload.company,
         offices=offices,
-        facebook=(payload.facebook or "").strip(),
-        youtube=(payload.youtube or "").strip(),
-        linkedin=(payload.linkedin or "").strip(),
-        instagram=(payload.instagram or "").strip(),
-        whatsapp=(payload.whatsapp or "").strip(),
-        discord=(payload.discord or "").strip(),
+        facebook=payload.facebook,
+        youtube=payload.youtube,
+        linkedin=payload.linkedin,
+        instagram=payload.instagram,
+        whatsapp=payload.whatsapp,
+        discord=payload.discord,
     )
 
     sig_html = build_signature_html(prof)
@@ -126,91 +113,102 @@ def apply_app_signature_template(payload: SignatureTemplateIn, db: Session = Dep
     return SignatureOut(signature=sig_text)
 
 
-@router.post("/signature/upload/{asset_name}")
-def upload_signature_asset(
-    asset_name: str,
-    file: UploadFile = File(...),
-    user=Depends(get_current_user),
-):
-    """Upload signature assets used by the app-managed signature template.
+@router.post("/signature/assets/{asset_name}")
+def upload_signature_asset(asset_name: str, file: UploadFile = File(...), user=Depends(get_current_user)):
+    """Upload an app-managed signature asset.
 
-    Supported: profile | banner
-    Saved with stable filenames under app/static/signature/.
+    Supported assets:
+      - profile (profile.png)
+      - banner (banner.png)
+      - icon files under icons/ (facebook.png, ...)
+
+    Note: we keep filenames stable so the signature template always works.
     """
-    allowed = {"profile": "profile.png", "banner": "banner.png"}
+
+    allowed = {"profile", "banner"}
     if asset_name not in allowed:
-        raise HTTPException(status_code=400, detail="Unsupported asset. Use profile or banner")
+        raise HTTPException(status_code=400, detail="Invalid asset name. Use 'profile' or 'banner'.")
 
     content = file.file.read()
     if not content:
         raise HTTPException(status_code=400, detail="Empty file")
 
-    static_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static", "signature")
-    os.makedirs(static_dir, exist_ok=True)
-    out_path = os.path.join(static_dir, allowed[asset_name])
-
-    with open(out_path, "wb") as f:
+    # Always store as .png to keep URLs stable; user can upload PNG/JPG; we do not convert here.
+    # If user uploads JPG, it will still be served with application/octet-stream but embedded as CID during send.
+    static_base = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static", "signature")
+    os.makedirs(static_base, exist_ok=True)
+    path = os.path.join(static_base, f"{asset_name}.png")
+    with open(path, "wb") as f:
         f.write(content)
 
-    return {"ok": True, "path": f"/static/signature/{allowed[asset_name]}"}
+    return {"ok": True, "path": f"/static/signature/{asset_name}.png"}
 
 
-class GmailSignatureOut(BaseModel):
-    send_as: str
-    html: str
-    text: str
+
+# --- Gmail signature fetch ---
+# Fetches the exact signature HTML stored in Gmail settings for a chosen "Send mail as" identity.
+# Stores into state keys: signature_html, signature_text
+
+from app.services.gmail_client import get_gmail_service, GMAIL_SIGNATURE_SCOPE, GMAIL_SCOPES  # type: ignore
+import html2text
 
 
-@router.post("/signature/fetch-gmail", response_model=GmailSignatureOut)
-def fetch_gmail_signature(
-    db: Session = Depends(get_db),
-    user=Depends(get_current_user),
-):
-    """Fetch the Gmail 'Send mail as' signature and store it as the app's signature_html.
+class GmailSignatureIn(BaseModel):
+    # If provided, fetch signature for this specific "Send mail as" address (e.g. admin@donspremier.com.au)
+    send_as_email: str | None = None
+
+
+@router.post("/signature/fetch-gmail", response_model=SignatureOut)
+def fetch_gmail_signature(payload: GmailSignatureIn, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    """Fetch the Gmail signature HTML from Google and store it for use in outgoing emails.
 
     Notes:
-    - Requires Gmail scope: https://www.googleapis.com/auth/gmail.settings.basic
-    - For OAuth mode: user must (re)connect Google with that scope granted.
-    - For service_account mode: DWD must include that scope in Admin Console.
+    - Requires OAuth scope gmail.settings.basic (or DWD authorized scope for service-account mode).
+    - The stored HTML is later processed by embed_images_as_cid() during sending.
     """
-    service = get_gmail_service(db, scopes=[*GMAIL_SCOPES, GMAIL_SIGNATURE_SCOPE])
-    uid = gmail_user_id()
+    # Request signature scope in addition to normal Gmail scopes
+    svc = get_gmail_service(db=db, scopes=list(dict.fromkeys(GMAIL_SCOPES + [GMAIL_SIGNATURE_SCOPE])))
 
-    # Pick a sensible send-as identity
-    sendas_list = service.users().settings().sendAs().list(userId=uid).execute().get("sendAs", []) or []
-    target = None
+    user_id = "me"
+    send_as_list = svc.users().settings().sendAs().list(userId=user_id).execute()
+    send_as = send_as_list.get("sendAs", []) or []
 
-    preferred = None
-    if settings.GMAIL_AUTH_MODE == "service_account":
-        preferred = (settings.IMPERSONATE_USER or "").strip().lower() or None
-    else:
-        preferred = (settings.DELEGATED_MAILBOX or "").strip().lower() or None
-    if not preferred and settings.my_emails_list():
-        preferred = settings.my_emails_list()[0].lower()
+    if not send_as:
+        raise HTTPException(status_code=404, detail="No 'Send mail as' identities found in Gmail settings.")
 
-    for s in sendas_list:
-        if preferred and (s.get("sendAsEmail") or "").lower() == preferred:
-            target = s
-            break
-    if not target:
-        for s in sendas_list:
-            if s.get("isPrimary"):
-                target = s
+    requested = (payload.send_as_email or "").strip().lower()
+    chosen = None
+
+    if requested:
+        for item in send_as:
+            if (item.get("sendAsEmail") or "").strip().lower() == requested:
+                chosen = item
                 break
-    if not target and sendas_list:
-        target = sendas_list[0]
+        if not chosen:
+            raise HTTPException(status_code=404, detail=f"Send-as identity not found: {payload.send_as_email}")
 
-    if not target:
-        raise HTTPException(status_code=404, detail="No Gmail send-as identities found.")
+    if not chosen:
+        # Prefer the primary identity; otherwise the first one returned
+        for item in send_as:
+            if item.get("isPrimary"):
+                chosen = item
+                break
+        chosen = chosen or send_as[0]
 
-    send_as = target.get("sendAsEmail") or "me"
-    sendas = service.users().settings().sendAs().get(userId=uid, sendAsEmail=send_as).execute()
-    sig_html = (sendas.get("signature") or "").strip()
+    send_as_email = chosen.get("sendAsEmail")
+    if not send_as_email:
+        raise HTTPException(status_code=500, detail="Chosen send-as identity is missing sendAsEmail.")
 
-    # Store
+    details = svc.users().settings().sendAs().get(userId=user_id, sendAsEmail=send_as_email).execute()
+    sig_html = (details.get("signature") or "").strip()
+
+    if not sig_html:
+        raise HTTPException(status_code=404, detail=f"No Gmail signature found for {send_as_email}.")
+
+    sig_text = html2text.html2text(sig_html).strip()
+
     set_state(db, "signature_html", sig_html)
-    sig_text = _strip_html(sig_html) if sig_html else ""
     set_state(db, "signature_text", sig_text)
     db.commit()
+    return SignatureOut(signature=sig_text)
 
-    return GmailSignatureOut(send_as=send_as, html=sig_html, text=sig_text)
