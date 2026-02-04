@@ -274,35 +274,40 @@ async function refreshSignaturePreview() {
         if (!r.ok) return;
         const j = await r.json();
         const html = (j && j.html) ? j.html : "";
-        iframe.srcdoc = html || "<div style='font-family:Arial; padding:10px; color:#666'>No HTML signature set yet. Click “Use signature template”.</div>";
+        const meta = document.getElementById("sigSourceMeta");
+        if (meta) {
+            const src = (j && j.source) ? j.source : "";
+            const sa = (j && j.send_as) ? j.send_as : "";
+            meta.textContent = src === "gmail" ? `Source: Gmail (${sa || ""})` : (src ? `Source: ${src}` : "");
+        }
+        iframe.srcdoc = html || "<div style='font-family:Arial; padding:10px; color:#666'>No HTML signature set yet. Click “Fetch from Gmail”.</div>";
     } catch {
         // ignore
     }
 }
 
 
-async function applyAppSignatureTemplate() {
-    // Endpoint has sensible defaults (matches your screenshot). You can extend later with editable fields.
+async function fetchGmailSignature() {
+    const input = document.getElementById("sigSendAsEmail");
+    const sendAsEmail = input ? (input.value || "").trim() : "";
     try {
-        const r = await apiFetch("/settings/signature/apply-template", {
+        const r = await apiFetch("/settings/signature/fetch-gmail", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({})
+            body: JSON.stringify({ send_as_email: sendAsEmail || null })
         });
         const t = await r.text();
         if (!r.ok) {
-            alert(`Failed to apply signature template (${r.status}):\n\n${t}`);
+            alert(`Failed to fetch Gmail signature (${r.status}):\n\n${t}`);
             return;
         }
-        const j = JSON.parse(t);
-        const sigBox = document.getElementById("signatureText");
-        if (sigBox) sigBox.value = j.signature || "";
         await refreshSignaturePreview();
-        alert("Signature template applied. Upload profile/banner images to match your branding.");
+        alert("Fetched Gmail signature successfully.");
     } catch (e) {
-        alert("Failed to apply signature template: " + e);
+        alert("Failed to fetch Gmail signature: " + e);
     }
 }
+
 
 
 async function uploadSignatureAsset(name, file) {
