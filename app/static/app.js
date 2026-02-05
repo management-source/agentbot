@@ -1286,6 +1286,10 @@ function logout() {
 }
 
 window.addEventListener("load", async () => {
+    // Footer year
+    const yearEl = document.getElementById("year");
+    if (yearEl) yearEl.textContent = String(new Date().getFullYear());
+
     loadSettings();
     document.getElementById("lastSync").textContent = new Date().toLocaleString();
     const ok = await ensureAuthenticated();
