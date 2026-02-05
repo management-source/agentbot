@@ -63,14 +63,18 @@
       overflow:hidden;
       background:#000;
       box-shadow:var(--shadow);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:10px 12px;
     }
     .banner img{
       display:block;
-      width:100%;
-      height:auto;
-      max-height: 120px;
+      width:auto;
+      height:68px;           /* reduced height */
+      max-width:100%;
       object-fit: contain;
-      background:#fff;
+      background:#000;       /* match banner */
     }
 
     .card{
@@ -351,9 +355,9 @@
     }
     .login-logo{
       width:100%;
-      height:72px;
-      border-radius:14px;
-      border:1px solid rgba(255,255,255,.12);
+      height:58px;           /* tighter */
+      border-radius:12px;
+      border:none;           /* cleaner */
       display:flex;
       align-items:center;
       justify-content:center;
@@ -526,7 +530,7 @@
                     <div class="login-split">
                         <div class="login-left">
                             <div class="login-logo" aria-hidden="true">
-                                <img src="https://ik.imagekit.io/donspremier/Banner%20-%20Logo.png?updatedAt=1767844482007" alt="Dons Premier Estate Agents" style="width:100%;height:56px;object-fit:contain;display:block;background:#000" />
+                                <img src="https://ik.imagekit.io/donspremier/Banner%20-%20Logo.png?updatedAt=1767844482007" alt="Dons Premier Estate Agents" style="width:100%;height:58px;object-fit:contain;display:block;background:#000" />
                             </div>
                             <div class="login-brand">Dons Premier Estate Agents</div>
                             <div class="login-sub">Email Agent</div>
