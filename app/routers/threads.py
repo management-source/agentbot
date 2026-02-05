@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import os
 import base64
 import re
 import ipaddress
-from urllib.parse import urlparse
+from urllib.parse import urlparse, quote
 import html as _html
 
 import bleach
@@ -25,6 +26,13 @@ from app.services.gmail_parse import extract_message_body
 
 
 router = APIRouter()
+
+GMAIL_AUTHUSER = os.getenv("GMAIL_AUTHUSER", "admin@donspremier.com.au")
+
+def _gmail_thread_url(thread_id: str, authuser: str = GMAIL_AUTHUSER) -> str:
+    # Ensure Gmail opens the correct mailbox regardless of the current session account.
+    return f"https://mail.google.com/mail/u/0/?authuser={quote(authuser)}#inbox/{thread_id}"
+
 
 
 def _normalize_cid(cid: str) -> str:

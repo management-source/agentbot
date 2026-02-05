@@ -779,7 +779,7 @@ async function updateStatus(threadId, status) {
 async function openThread(threadId) {
     const modal = document.getElementById("threadModal");
     const content = document.getElementById("threadContent");
-    const gmailLink = document.getElementById("gmailLinkBtn") || document.getElementById("gmailLink");
+    const gmailLink = document.getElementById("gmailLink");
 
     const viewerBackdrop = document.getElementById("viewerBackdrop");
     const viewerFrame = document.getElementById("viewerFrame");
@@ -808,12 +808,7 @@ async function openThread(threadId) {
     }
 
     const j = JSON.parse(t);
-    if (gmailLink) {
-        const url = j.gmail_url || j.gmail_thread_url || "#";
-        gmailLink.href = url;
-        gmailLink.style.pointerEvents = (url && url !== "#") ? "auto" : "none";
-        gmailLink.style.opacity = (url && url !== "#") ? "1" : "0.5";
-    }
+    if (gmailLink) gmailLink.href = j.gmail_url || j.gmail_thread_url || "#";
 
     const escapeHtmlLocal = (s) => (s || "")
         .replaceAll("&", "&amp;")
