@@ -5,6 +5,7 @@
         <meta name="viewport" content="width=device-width,initial-scale=1" />
         <title>Dons Premier Estate Agents · Email Reply Manager</title>
         <style>
+
     :root{
       --bg:#f6f7fb;
       --card:#ffffff;
@@ -60,7 +61,7 @@
       border:1px solid var(--border);
       border-radius: var(--radius);
       overflow:hidden;
-      background:#fff;
+      background:#000;
       box-shadow:var(--shadow);
     }
     .banner img{
@@ -342,25 +343,26 @@
       .login-split{grid-template-columns:1fr}
     }
     .login-left{
-      border:1px solid var(--border);
+      border:1px solid #111827;
       border-radius:16px;
-      padding:16px;
-      background: linear-gradient(180deg, #fafbff, #ffffff);
+      padding:18px;
+      background:#000;
+      color:#fff;
     }
     .login-logo{
-      width:54px;
-      height:54px;
-      border-radius:16px;
-      border:1px solid var(--border);
+      width:100%;
+      height:72px;
+      border-radius:14px;
+      border:1px solid rgba(255,255,255,.12);
       display:flex;
       align-items:center;
       justify-content:center;
-      background:#fff;
-      margin-bottom:12px;
-      box-shadow: 0 4px 12px rgba(16,24,40,.06);
+      background:#000;
+      margin-bottom:14px;
+      overflow:hidden;
     }
-    .login-brand{font-size:18px; font-weight:800; margin:0}
-    .login-sub{margin:6px 0 0 0; color:var(--muted); font-size:13px; line-height:1.35}
+    .login-brand{font-size:18px; font-weight:800; margin:0; color:#fff}
+    .login-sub{margin:6px 0 0 0; color:rgba(255,255,255,.78); font-size:13px; line-height:1.35}
 
     /* iframe email viewer */
     .viewer-backdrop{
@@ -391,7 +393,8 @@
     .viewer-head .title{font-weight:800; font-size:13px}
     .viewer-body{flex:1; background:#fff}
     .viewer-body iframe{width:100%; height:100%; border:none}
-  </style>
+  
+</style>
     </head>
 
     <body>
@@ -405,8 +408,8 @@
             <div class="top-grid">
                 <div class="card brand">
                     <h1>Email Reply Manager</h1>
-                    <p><strong>Dons Premier Estate Agents</strong> · Project: <span class="muted">AgentBot</span></p>
-                    <p>Track emails awaiting your reply, update ticket status, and respond faster.</p>
+                    <p><strong>Dons Premier Estate Agents</strong> · Project: <span class="muted">Email Agent</span></p>
+                    <p>The Knights of Real Estate</p>
 
                     <div style="margin-top:14px" class="row space">
                         <div class="pill"><span class="dot"
@@ -523,20 +526,20 @@
                     <div class="login-split">
                         <div class="login-left">
                             <div class="login-logo" aria-hidden="true">
-                                <img src="/static/logo.png" alt="Logo" style="width:44px;height:44px;object-fit:contain" />
+                                <img src="https://ik.imagekit.io/donspremier/Banner%20-%20Logo.png?updatedAt=1767844482007" alt="Dons Premier Estate Agents" style="width:100%;height:56px;object-fit:contain;display:block;background:#000" />
                             </div>
-                            <div class="login-brand">AgentBot</div>
-                            <div class="login-sub">Email-to-ticket workflow for your team.</div>
+                            <div class="login-brand">Dons Premier Estate Agents</div>
+                            <div class="login-sub">Email Agent</div>
                             <div class="small muted" style="margin-top:12px">Sign in to access tickets, drafts, and Gmail sync controls.</div>
                         </div>
                         <div class="login-right">
                             <div class="field">
                                 <div class="label">Email</div>
-                                <input type="text" id="loginEmail" autocomplete="username" />
+                                <input type="email" id="loginEmail" autocomplete="username" placeholder="Email address" />
                             </div>
                             <div class="field" style="margin-top:10px">
                                 <div class="label">Password</div>
-                                <input type="password" id="loginPassword" autocomplete="current-password" />
+                                <input type="password" id="loginPassword" autocomplete="current-password" placeholder="Password" />
                             </div>
                             <div class="error" id="loginError" style="display:none"></div>
                         </div>
