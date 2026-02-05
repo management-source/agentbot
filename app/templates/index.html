@@ -615,8 +615,11 @@
             <div class="viewer">
                 <div class="viewer-head">
                     <div class="title" id="viewerTitle">Thread</div>
-                    <button class="btn" id="btnViewerClose"
+                    <div style="display:flex; gap:8px; align-items:center;">
+                        <a class="btn" id="gmailLinkBtn" href="#" target="_blank" rel="noopener">Open in Gmail</a>
+                        <button class="btn" id="btnViewerClose"
                         onclick="closeThreadModal()">Close</button>
+                    </div>
                 </div>
                 <div class="viewer-body">
                     <iframe id="viewerFrame"

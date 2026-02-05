@@ -311,5 +311,5 @@ def get_thread(thread_id: str, db: Session = Depends(get_db)):
     return {
         "thread_id": thread_id,
         "messages": messages_out,
-        "gmail_url": f"https://mail.google.com/mail/u/0/#inbox/{thread_id}",
+        "gmail_url": _gmail_thread_url(thread_id),
     }
