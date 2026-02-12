@@ -119,6 +119,7 @@ def build_reply_message(
 def send_reply_in_thread(
     *,
     db: Session,
+    mailbox: str,
     thread_id: str,
     to_email: str | None,
     subject: str,
@@ -134,7 +135,7 @@ def send_reply_in_thread(
     if not to_email:
         raise ValueError("Missing recipient email")
 
-    service = get_gmail_service(db)
+    service = get_gmail_service(db, impersonate_user=mailbox)
 
     msg = build_reply_message(
         to_email=to_email,

@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Header, HTTPException
 from app.config import settings
 from app.services.gmail_sync import sync_inbox_threads
+from app.config import settings
 from app.services.reminders import run_reminders
 
 router = APIRouter()
@@ -14,7 +15,7 @@ def _require_scheduler_key(x_scheduler_key: str | None):
 @router.post("/poll")
 def poll(x_scheduler_key: str | None = Header(default=None)):
     _require_scheduler_key(x_scheduler_key)
-    return sync_inbox_threads(max_threads=100)
+    return {"ok": True, "results": [sync_inbox_threads(mailbox=mb, max_threads=100) for mb in settings.monitored_mailboxes_list()]}
 
 @router.post("/remind")
 def remind(x_scheduler_key: str | None = Header(default=None)):

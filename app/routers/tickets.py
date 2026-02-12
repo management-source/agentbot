@@ -206,7 +206,7 @@ def update_status(
         t.is_not_replied = False
 
     t.updated_at = datetime.utcnow()
-    add_audit(db, thread_id=thread_id, action=AuditAction.STATUS_CHANGED, actor_user_id=user.id, detail={
+    add_audit(db, thread_id=ticket.gmail_thread_id, action=AuditAction.STATUS_CHANGED, actor_user_id=user.id, detail={
         "from": old.value,
         "to": t.status.value,
     })
@@ -337,11 +337,11 @@ def draft_ai_reply(
         raise HTTPException(status_code=404, detail="Ticket not found")
 
     # Fetch last message body (plain text) from Gmail.
-    service = get_gmail_service(db)
+    service = get_gmail_service(db, impersonate_user=mailbox)
     th = (
         service.users()
         .threads()
-        .get(userId=gmail_user_id(), id=thread_id, format="full")
+        .get(userId=gmail_user_id(), id=ticket.gmail_thread_id, format="full")
         .execute()
     )
 
@@ -415,8 +415,9 @@ def send_ack(thread_id: str, payload: SendAckIn, db: Session = Depends(get_db), 
             body_html = (body_html + "<br><br>" + _html.escape(signature_text).replace("\n", "<br>")).strip()
 
     send_reply_in_thread(
-        db=db,
-        thread_id=thread_id,
+            db=db,
+            mailbox=mailbox,
+            thread_id=ticket.gmail_thread_id,
         to_email=t.from_email,
         subject=payload.subject,
         body_text=body_text,
@@ -433,7 +434,7 @@ def send_ack(thread_id: str, payload: SendAckIn, db: Session = Depends(get_db), 
     # after send, this should not be not-replied
     t.is_not_replied = False
 
-    add_audit(db, thread_id=thread_id, action=AuditAction.REPLIED, actor_user_id=user.id, detail={"subject": payload.subject})
+    add_audit(db, thread_id=ticket.gmail_thread_id, action=AuditAction.REPLIED, actor_user_id=user.id, detail={"subject": payload.subject})
     db.commit()
     return {"ok": True}
 
@@ -500,7 +501,8 @@ async def send_reply_form(
     try:
         send_reply_in_thread(
             db=db,
-            thread_id=thread_id,
+            mailbox=mailbox,
+            thread_id=ticket.gmail_thread_id,
             to_email=t.from_email,
             subject=subject,
             body_text=final_body,
@@ -520,7 +522,7 @@ async def send_reply_form(
         t.status = TicketStatus.RESPONDED
     t.is_not_replied = False
 
-    add_audit(db, thread_id=thread_id, action=AuditAction.REPLIED, actor_user_id=user.id, detail={"subject": subject, "cc": cc, "bcc": bcc, "attachments": [a.filename for a in out_attachments]})
+    add_audit(db, thread_id=ticket.gmail_thread_id, action=AuditAction.REPLIED, actor_user_id=user.id, detail={"subject": subject, "cc": cc, "bcc": bcc, "attachments": [a.filename for a in out_attachments]})
     db.commit()
     return {"ok": True}
 
@@ -551,7 +553,7 @@ def set_category(
     t.updated_at = datetime.utcnow()
     add_audit(
         db,
-        thread_id=thread_id,
+        thread_id=ticket.gmail_thread_id,
         action=AuditAction.CATEGORY_SET,
         actor_user_id=user.id,
         detail={"from": old.value if old else None, "to": t.category.value, "sla_due_at": t.sla_due_at.isoformat() if t.sla_due_at else None},
@@ -592,10 +594,10 @@ def add_note(thread_id: str, payload: NoteIn, db: Session = Depends(get_db), use
     body = (payload.body or "").strip()
     if not body:
         raise HTTPException(400, "Note body required")
-    note = ThreadTicketNote(thread_id=thread_id, author_user_id=user.id, body=body, created_at=datetime.utcnow())
+    note = ThreadTicketNote(thread_id=ticket.gmail_thread_id, author_user_id=user.id, body=body, created_at=datetime.utcnow())
     db.add(note)
     db.flush()  # assigns note.id
-    add_audit(db, thread_id=thread_id, action=AuditAction.NOTE_ADDED, actor_user_id=user.id, detail={"note_id": note.id})
+    add_audit(db, thread_id=ticket.gmail_thread_id, action=AuditAction.NOTE_ADDED, actor_user_id=user.id, detail={"note_id": note.id})
     db.commit()
     db.refresh(note)
     return TicketNoteOut(

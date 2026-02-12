@@ -37,6 +37,7 @@ class TicketAuditOut(BaseModel):
 class TicketOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     thread_id: str
+    mailbox: str
     subject: str | None
     snippet: str | None
     from_name: str | None

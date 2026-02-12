@@ -2,6 +2,10 @@ let currentTab = "awaiting_reply";
 let currentAckThreadId = null;
 let currentAiThreadId = null;
 
+// Mailbox context (multi-inbox)
+let currentMailbox = localStorage.getItem("agent_mailbox") || "";
+
+
 // Local user auth (JWT)
 let authToken = localStorage.getItem("agent_auth_token") || "";
 let currentUser = null;
@@ -11,6 +15,9 @@ async function apiFetch(url, options = {}) {
     const opts = { ...options, headers: { ...(options.headers || {}) } };
     if (authToken) {
         opts.headers["Authorization"] = `Bearer ${authToken}`;
+    }
+    if (currentMailbox) {
+        opts.headers["X-Mailbox"] = currentMailbox;
     }
     return fetch(url, opts);
 }
@@ -37,6 +44,41 @@ let currentSearch = "";
 // Category filtering removed (we avoid AI-based categorization and UI filters for now).
 
 let googleConnected = false;
+async function initMailboxes() {
+    const sel = document.getElementById("mailboxSelect");
+    if (!sel) return;
+    try {
+        const r = await apiFetch("/settings/mailboxes");
+        const j = await r.json();
+        const mbs = Array.isArray(j.mailboxes) ? j.mailboxes : [];
+        sel.innerHTML = "";
+        for (const mb of mbs) {
+            const opt = document.createElement("option");
+            opt.value = mb;
+            opt.textContent = mb;
+            sel.appendChild(opt);
+        }
+        if (!currentMailbox && mbs.length) currentMailbox = mbs[0];
+        if (currentMailbox) {
+            localStorage.setItem("agent_mailbox", currentMailbox);
+            sel.value = currentMailbox;
+        }
+        sel.addEventListener("change", () => {
+            currentMailbox = sel.value;
+            localStorage.setItem("agent_mailbox", currentMailbox);
+            // refresh UI data under new mailbox
+            currentPage = 1;
+            loadTickets();
+            refreshGoogleStatus();
+        });
+
+        const lbl = document.getElementById("mailboxLabel");
+        if (lbl) lbl.textContent = currentMailbox || "—";
+    } catch (e) {
+        // If auth isn't ready yet, we'll retry after login.
+    }
+}
+
 
 async function refreshGoogleStatus() {
     const btn = document.getElementById("googleBtn");
@@ -60,7 +102,7 @@ async function refreshGoogleStatus() {
         const j = await r.json();
         googleConnected = !!j.connected;
 
-        const target = (j.target_mailbox || j.delegated_mailbox || "me");
+        const target = (currentMailbox || j.target_mailbox || j.delegated_mailbox || "me");
 
         const mb = document.getElementById("mailboxBadge");
         if (mb) mb.textContent = googleConnected ? (`Mailbox: ${target}`) : "";
@@ -427,6 +469,7 @@ async function fetchNow() {
         currentDateFilter = { start: start || "", end: end || "" };
 
         const url = new URL("/sync/fetch-now", window.location.origin);
+        if (currentMailbox) url.searchParams.set("mailbox", currentMailbox);
         if (start) url.searchParams.set("start", start);
         if (end) url.searchParams.set("end", end);
         if (!Number.isNaN(maxThreads) && maxThreads > 0) url.searchParams.set("max_threads", String(maxThreads));
@@ -476,6 +519,7 @@ async function checkUpdates() {
 
     try {
         const url = new URL("/sync/check-updates", window.location.origin);
+        if (currentMailbox) url.searchParams.set("mailbox", currentMailbox);
         // Safety cap; frequent use should stay light.
         url.searchParams.set("max_threads", "200");
 
@@ -1296,6 +1340,7 @@ window.addEventListener("load", async () => {
     if (!ok) return;
 
     await refreshGoogleStatus();
+    initMailboxes();
 
     // Small UX: show a one-time confirmation after OAuth callback.
     try {

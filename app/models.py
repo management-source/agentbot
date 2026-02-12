@@ -55,7 +55,8 @@ class BlacklistedSender(Base):
     __tablename__ = "blacklisted_senders"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    email: Mapped[str] = mapped_column(String, unique=True, index=True)
+    mailbox: Mapped[str] = mapped_column(String, index=True)
+    email: Mapped[str] = mapped_column(String, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
@@ -118,6 +119,7 @@ class ThreadTicketNote(Base):
     __tablename__ = "thread_ticket_notes"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    mailbox: Mapped[str] = mapped_column(String, index=True)
     thread_id: Mapped[str] = mapped_column(String, index=True)
     author_user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), index=True)
 
@@ -131,6 +133,7 @@ class ThreadTicketAudit(Base):
     __tablename__ = "thread_ticket_audit"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    mailbox: Mapped[str] = mapped_column(String, index=True)
     thread_id: Mapped[str] = mapped_column(String, index=True)
     action: Mapped[AuditAction] = mapped_column(SAEnum(AuditAction), index=True)
     actor_user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True, index=True)
@@ -145,7 +148,12 @@ class ThreadTicketAudit(Base):
 class ThreadTicket(Base):
     __tablename__ = "thread_tickets"
 
+    # Internal unique ticket identifier. We namespace by mailbox to prevent cross-mailbox collisions.
     thread_id: Mapped[str] = mapped_column(String, primary_key=True)
+    # Original Gmail thread id (without mailbox namespace)
+    gmail_thread_id: Mapped[str] = mapped_column(String, index=True)
+    mailbox: Mapped[str] = mapped_column(String, index=True)
+
     last_message_id: Mapped[str | None] = mapped_column(String, nullable=True)
 
     subject: Mapped[str | None] = mapped_column(String, nullable=True)
