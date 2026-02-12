@@ -78,32 +78,32 @@ class Settings(BaseSettings):
     # Observability
     SENTRY_DSN: Optional[str] = None
 
-def monitored_mailboxes_list(self) -> List[str]:
-    raw = (self.MONITORED_MAILBOXES or "").strip()
-    if raw:
-        return [e.strip().lower() for e in raw.split(",") if e.strip()]
-    # Back-compat: fall back to single impersonation mailbox.
-    if (self.IMPERSONATE_USER or "").strip():
-        return [(self.IMPERSONATE_USER or "").strip().lower()]
-    return []
+    def monitored_mailboxes_list(self) -> List[str]:
+        raw = (self.MONITORED_MAILBOXES or "").strip()
+        if raw:
+            return [e.strip().lower() for e in raw.split(",") if e.strip()]
+        # Back-compat: fall back to single impersonation mailbox.
+        if (self.IMPERSONATE_USER or "").strip():
+            return [(self.IMPERSONATE_USER or "").strip().lower()]
+        return []
 
-    def my_emails_list(self) -> List[str]:
-        return [e.strip().lower() for e in self.MY_EMAILS.split(",") if e.strip()]
+        def my_emails_list(self) -> List[str]:
+            return [e.strip().lower() for e in self.MY_EMAILS.split(",") if e.strip()]
 
-    def service_account_info(self) -> Optional[dict]:
-        """Return service account JSON dict (if configured), else None."""
-        raw = self.SERVICE_ACCOUNT_JSON
-        if not raw and self.SERVICE_ACCOUNT_JSON_B64:
+        def service_account_info(self) -> Optional[dict]:
+            """Return service account JSON dict (if configured), else None."""
+            raw = self.SERVICE_ACCOUNT_JSON
+            if not raw and self.SERVICE_ACCOUNT_JSON_B64:
+                try:
+                    raw = base64.b64decode(self.SERVICE_ACCOUNT_JSON_B64).decode("utf-8")
+                except Exception:
+                    raw = None
+            if not raw:
+                return None
             try:
-                raw = base64.b64decode(self.SERVICE_ACCOUNT_JSON_B64).decode("utf-8")
+                return json.loads(raw)
             except Exception:
-                raw = None
-        if not raw:
-            return None
-        try:
-            return json.loads(raw)
-        except Exception:
-            return None
+                return None
 
     @model_validator(mode="after")
     def _validate_modes(self):
