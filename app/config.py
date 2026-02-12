@@ -87,23 +87,23 @@ class Settings(BaseSettings):
             return [(self.IMPERSONATE_USER or "").strip().lower()]
         return []
 
-        def my_emails_list(self) -> List[str]:
-            return [e.strip().lower() for e in self.MY_EMAILS.split(",") if e.strip()]
+    def my_emails_list(self) -> List[str]:
+        return [e.strip().lower() for e in self.MY_EMAILS.split(",") if e.strip()]
 
-        def service_account_info(self) -> Optional[dict]:
-            """Return service account JSON dict (if configured), else None."""
-            raw = self.SERVICE_ACCOUNT_JSON
-            if not raw and self.SERVICE_ACCOUNT_JSON_B64:
-                try:
-                    raw = base64.b64decode(self.SERVICE_ACCOUNT_JSON_B64).decode("utf-8")
-                except Exception:
-                    raw = None
-            if not raw:
-                return None
+    def service_account_info(self) -> Optional[dict]:
+        """Return service account JSON dict (if configured), else None."""
+        raw = self.SERVICE_ACCOUNT_JSON
+        if not raw and self.SERVICE_ACCOUNT_JSON_B64:
             try:
-                return json.loads(raw)
+                 raw = base64.b64decode(self.SERVICE_ACCOUNT_JSON_B64).decode("utf-8")
             except Exception:
-                return None
+                raw = None
+        if not raw:
+            return None
+        try:
+            return json.loads(raw)
+        except Exception:
+            return None
 
     @model_validator(mode="after")
     def _validate_modes(self):
