@@ -452,6 +452,12 @@ async def transcribe_audio(
         resp = client.audio.transcriptions.create(
             model=settings.OPENAI_TRANSCRIBE_MODEL,
             file=audio,
+            language="en",
+            temperature=0,
+            prompt=(
+                "Property management email dictation. "
+                "Transcribe exactly what the speaker says for editing a draft email."
+            ),
         )
         text = (getattr(resp, "text", "") or "").strip()
         return {"text": text}

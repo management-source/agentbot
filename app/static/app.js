@@ -1642,7 +1642,14 @@ async function startAiVoiceCapture() {
     }
 
     try {
-        aiVoiceStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        aiVoiceStream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true,
+                channelCount: 1,
+            }
+        });
         aiVoiceChunks = [];
         const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
             ? "audio/webm;codecs=opus"
@@ -1694,6 +1701,12 @@ async function stopAiVoiceCaptureAndTranscribe() {
             if (startBtn) startBtn.disabled = false;
             return;
         }
+        // Too-short clips often produce junk transcripts like "you".
+        if (blob.size < 12000) {
+            setAiVoiceStatus("Recording too short. Please speak for at least 2-3 seconds.");
+            if (startBtn) startBtn.disabled = false;
+            return;
+        }
 
         const form = new FormData();
         form.append("file", blob, "voice-note.webm");
@@ -1708,6 +1721,16 @@ async function stopAiVoiceCaptureAndTranscribe() {
         let j = null;
         try { j = JSON.parse(t); } catch { j = null; }
         const transcript = ((j && j.text) ? String(j.text) : "").trim();
+        const weakTranscript = (
+            !transcript ||
+            transcript.length < 6 ||
+            /^(you|yeah|yep|uh|um|hmm|thank you|thanks)[.!?\s]*$/i.test(transcript)
+        );
+        if (weakTranscript) {
+            setAiVoiceStatus("Low-confidence transcript. Please speak closer to mic and try again.");
+            if (startBtn) startBtn.disabled = false;
+            return;
+        }
         const extraEl = getAiReplyExtraEl();
         if (extraEl && transcript) {
             const cur = String(extraEl.value || "").trim();
