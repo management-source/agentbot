@@ -452,7 +452,7 @@ def sync_inbox_threads(
 
         # Advance watermark only for the incremental (no-range) flow.
         if (not start and not end) and current_history_id:
-            set_state(db, "gmail_history_id", current_history_id)
+            set_state(db, "gmail_history_id", current_history_id, mailbox)
 
         db.commit()
         return {
