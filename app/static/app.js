@@ -1621,9 +1621,20 @@ function setAiVoiceStatus(text) {
     if (el) el.textContent = text || "";
 }
 
+function setAiRegenerateBusy(isBusy) {
+    const btn = document.getElementById("aiReplyRegenerateBtn");
+    if (!btn) return;
+    btn.disabled = !!isBusy;
+    btn.textContent = isBusy ? "Regenerating..." : "Regenerate";
+}
+
 async function startAiVoiceCapture() {
-    if (!navigator.mediaDevices || !window.MediaRecorder) {
-        alert("Voice capture is not supported in this browser.");
+    if (!window.isSecureContext) {
+        setAiVoiceStatus("Mic requires a secure context (HTTPS).");
+        return;
+    }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
+        alert("Voice capture is not supported in this browser/device.");
         return;
     }
     if (aiVoiceRecorder && aiVoiceRecorder.state === "recording") {
@@ -1633,7 +1644,10 @@ async function startAiVoiceCapture() {
     try {
         aiVoiceStream = await navigator.mediaDevices.getUserMedia({ audio: true });
         aiVoiceChunks = [];
-        aiVoiceRecorder = new MediaRecorder(aiVoiceStream);
+        const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+            ? "audio/webm;codecs=opus"
+            : (MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "");
+        aiVoiceRecorder = mime ? new MediaRecorder(aiVoiceStream, { mimeType: mime }) : new MediaRecorder(aiVoiceStream);
         aiVoiceRecorder.ondataavailable = (e) => {
             if (e.data && e.data.size > 0) aiVoiceChunks.push(e.data);
         };
@@ -1644,7 +1658,9 @@ async function startAiVoiceCapture() {
         if (startBtn) startBtn.disabled = true;
         if (stopBtn) stopBtn.disabled = false;
     } catch (e) {
-        setAiVoiceStatus("Microphone permission denied or unavailable.");
+        const name = e && e.name ? e.name : "Error";
+        const msg = e && e.message ? e.message : "";
+        setAiVoiceStatus(`Mic failed: ${name}${msg ? ` - ${msg}` : ""}`);
     }
 }
 
@@ -1697,7 +1713,14 @@ async function stopAiVoiceCaptureAndTranscribe() {
             const cur = String(extraEl.value || "").trim();
             extraEl.value = cur ? `${cur}\n${transcript}` : transcript;
         }
-        setAiVoiceStatus(transcript ? "Voice inserted into Additional info." : "No speech detected.");
+        if (transcript) {
+            setAiVoiceStatus("Voice inserted. Regenerating draft...");
+            if (currentAiThreadId) {
+                await regenerateAiDraftFromModal();
+            }
+        } else {
+            setAiVoiceStatus("No speech detected.");
+        }
     } finally {
         aiVoiceChunks = [];
         aiVoiceRecorder = null;
@@ -1731,11 +1754,19 @@ async function generateAiDraft(threadId, tone, extraContext) {
 }
 
 async function regenerateAiDraftFromModal() {
-    if (!currentAiThreadId) return;
+    if (!currentAiThreadId) {
+        alert("No active thread selected for regeneration.");
+        return;
+    }
     const extraEl = getAiReplyExtraEl();
     const extra = extraEl ? (extraEl.value || "").trim() : "";
     document.getElementById("aiReplyBody").value = "Regenerating...";
-    await generateAiDraft(currentAiThreadId, "neutral", extra || null);
+    setAiRegenerateBusy(true);
+    try {
+        await generateAiDraft(currentAiThreadId, "neutral", extra || null);
+    } finally {
+        setAiRegenerateBusy(false);
+    }
 }
 
 async function regenerateAiDraft() {
