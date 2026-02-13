@@ -574,11 +574,13 @@ function switchDashboardTab(tab) {
     const rentPanel = document.getElementById("rentPanel");
     const navInbox = document.getElementById("navInbox");
     const navRent = document.getElementById("navRentTracker");
+    const shell = document.getElementById("dashboardShell");
 
     if (inboxPanel) inboxPanel.classList.toggle("hidden", currentDashboardTab !== "inbox");
     if (rentPanel) rentPanel.classList.toggle("hidden", currentDashboardTab !== "rent");
     if (navInbox) navInbox.classList.toggle("active", currentDashboardTab === "inbox");
     if (navRent) navRent.classList.toggle("active", currentDashboardTab === "rent");
+    if (shell) shell.classList.toggle("rent-mode", currentDashboardTab === "rent");
 
     updateSyncContextUI();
     if (currentDashboardTab === "rent" && !rentLoadedOnce) {
@@ -690,6 +692,22 @@ async function loadRentTracker(page = null) {
         const pages = sizeNow > 0 ? Math.max(1, Math.ceil(total / sizeNow)) : 1;
         pi.textContent = `Page ${pageNow} of ${pages} • ${total} rows`;
     }
+
+    const btnPrev = document.getElementById("rentBtnPrev");
+    const btnNext = document.getElementById("rentBtnNext");
+    if (btnPrev) btnPrev.disabled = Number(data.page || 1) <= 1;
+    if (btnNext) btnNext.disabled = !Boolean(data.has_more);
+}
+
+function prevRentPage() {
+    if (currentRentPage <= 1) return;
+    currentRentPage -= 1;
+    loadRentTracker();
+}
+
+function nextRentPage() {
+    currentRentPage += 1;
+    loadRentTracker();
 }
 
 async function saveRentRow(itemId) {

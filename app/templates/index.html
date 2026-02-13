@@ -237,6 +237,12 @@
       gap: var(--gap);
       align-items:start;
     }
+    .dashboard-shell.rent-mode{
+      grid-template-columns: 1fr;
+    }
+    .dashboard-shell.rent-mode .left-rail{
+      display:none;
+    }
     @media (max-width: 1080px){
       .dashboard-shell{grid-template-columns: 1fr}
     }
@@ -708,7 +714,7 @@
         </div>
 
         <div class="page">
-            <div class="dashboard-shell">
+            <div class="dashboard-shell" id="dashboardShell">
                 <aside class="left-rail">
                     <div class="top-grid">
                 <div class="card brand">
@@ -855,7 +861,7 @@
                 <div class="filters-row">
                     <div class="field">
                         <div class="label">Month (YYYY-MM)</div>
-                        <input type="text" id="rentMonthFilter" placeholder="2025-12" />
+                        <input type="text" id="rentMonthFilter" placeholder="2026-12" />
                     </div>
                     <div class="field">
                         <div class="label">Status</div>
@@ -904,6 +910,10 @@
                     </table>
                 </div>
                 <div class="small muted" id="rentPageInfo" style="margin-top:8px"></div>
+                <div class="row space" style="margin-top:10px">
+                    <button class="btn" id="rentBtnPrev" onclick="prevRentPage()">Prev</button>
+                    <button class="btn" id="rentBtnNext" onclick="nextRentPage()">Next</button>
+                </div>
             </div>
 
                 </main>

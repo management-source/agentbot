@@ -300,6 +300,13 @@ def _parse_rent_workbook(content: bytes) -> list[dict[str, Any]]:
     return parsed_items
 
 
+def _current_year_window() -> tuple[datetime, datetime, int]:
+    year = datetime.utcnow().year
+    start = datetime(year, 1, 1, 0, 0, 0, 0)
+    end = datetime(year, 12, 31, 23, 59, 59, 999999)
+    return start, end, year
+
+
 @router.post("/import-xlsx")
 async def import_xlsx(
     file: UploadFile = File(...),
@@ -321,6 +328,12 @@ async def import_xlsx(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to parse workbook: {e}")
 
+    start_year, end_year, current_year = _current_year_window()
+    parsed = [
+        r for r in parsed
+        if r.get("due_date") is not None and start_year <= r["due_date"] <= end_year
+    ]
+
     if not parsed:
         raise HTTPException(status_code=400, detail="No rent tracking rows were detected in this workbook.")
 
@@ -338,6 +351,7 @@ async def import_xlsx(
         "imported_rows": len(parsed),
         "mailbox": mailbox,
         "imported_by": user.email,
+        "year": current_year,
         "status_counts": status_counts,
     }
 
@@ -355,6 +369,8 @@ def list_items(
     _user: User = Depends(get_current_user),
 ):
     q = db.query(RentDueTracker).filter(RentDueTracker.mailbox == mailbox)
+    start_year, end_year, current_year = _current_year_window()
+    q = q.filter(RentDueTracker.due_date.isnot(None)).filter(RentDueTracker.due_date >= start_year).filter(RentDueTracker.due_date <= end_year)
 
     if status:
         q = q.filter(RentDueTracker.status == status)
@@ -375,9 +391,11 @@ def list_items(
             start = datetime.strptime(month, "%Y-%m")
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid month. Use YYYY-MM.")
+        if start.year != current_year:
+            raise HTTPException(status_code=400, detail=f"Only {current_year} tracking is enabled.")
         _, month_last_day = calendar.monthrange(start.year, start.month)
         end = datetime(start.year, start.month, month_last_day, 23, 59, 59, 999999)
-        q = q.filter(RentDueTracker.due_date.isnot(None)).filter(RentDueTracker.due_date >= start).filter(RentDueTracker.due_date <= end)
+        q = q.filter(RentDueTracker.due_date >= start).filter(RentDueTracker.due_date <= end)
 
     page = max(int(page or 1), 1)
     page_size = max(10, min(int(page_size or 50), 200))
@@ -407,14 +425,18 @@ def summary(
     _user: User = Depends(get_current_user),
 ):
     q = db.query(RentDueTracker).filter(RentDueTracker.mailbox == mailbox)
+    start_year, end_year, current_year = _current_year_window()
+    q = q.filter(RentDueTracker.due_date.isnot(None)).filter(RentDueTracker.due_date >= start_year).filter(RentDueTracker.due_date <= end_year)
     if month:
         try:
             start = datetime.strptime(month, "%Y-%m")
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid month. Use YYYY-MM.")
+        if start.year != current_year:
+            raise HTTPException(status_code=400, detail=f"Only {current_year} tracking is enabled.")
         _, month_last_day = calendar.monthrange(start.year, start.month)
         end = datetime(start.year, start.month, month_last_day, 23, 59, 59, 999999)
-        q = q.filter(RentDueTracker.due_date.isnot(None)).filter(RentDueTracker.due_date >= start).filter(RentDueTracker.due_date <= end)
+        q = q.filter(RentDueTracker.due_date >= start).filter(RentDueTracker.due_date <= end)
 
     rows = q.all()
     today = datetime.utcnow().date()
@@ -446,6 +468,7 @@ def summary(
         "total": len(rows),
         "overdue": overdue,
         "due_next_7_days": due_next_7_days,
+        "year": current_year,
         "status_counts": status_counts,
     }
 
