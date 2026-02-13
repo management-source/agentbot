@@ -43,6 +43,7 @@ MONTHS = {
 class RentItemUpdateIn(BaseModel):
     status: RentTrackStatus | None = None
     paid_on: datetime | None = None
+    partial_amount: float | None = None
     notes: str | None = None
 
 
@@ -124,6 +125,20 @@ def _normalize_status(raw: str) -> RentTrackStatus:
     if "paid" in text:
         return RentTrackStatus.PAID
     return RentTrackStatus.DUE
+
+
+def _extract_partial_amount(raw: str) -> float | None:
+    text = (raw or "").strip().lower()
+    if not text:
+        return None
+    m = re.search(r"(?:\$|aud\s*)?(\d+(?:\.\d{1,2})?)", text)
+    if not m:
+        return None
+    try:
+        val = float(m.group(1))
+        return val if val > 0 else None
+    except ValueError:
+        return None
 
 
 def _read_shared_strings(zf: zipfile.ZipFile) -> list[str]:
@@ -211,6 +226,7 @@ def _parse_monthly_sheet(sheet_name: str, rows: list[tuple[int, dict[str, str]]]
             due_date = datetime(year, month_num, due_day)
             status = _normalize_status(raw_value)
             paid_on = _parse_date_from_any(raw_value, fallback_year=year)
+            partial_amount = _extract_partial_amount(raw_value) if status == RentTrackStatus.PARTIAL else None
 
             items.append(
                 {
@@ -223,6 +239,7 @@ def _parse_monthly_sheet(sheet_name: str, rows: list[tuple[int, dict[str, str]]]
                     "status": status,
                     "raw_value": raw_value or None,
                     "paid_on": paid_on,
+                    "partial_amount": partial_amount,
                     "notes": None,
                     "created_at": datetime.utcnow(),
                     "updated_at": datetime.utcnow(),
@@ -275,6 +292,7 @@ def _parse_fortnight_sheet(sheet_name: str, rows: list[tuple[int, dict[str, str]
                     "status": RentTrackStatus.DUE,
                     "raw_value": raw_due,
                     "paid_on": None,
+                    "partial_amount": None,
                     "notes": None,
                     "created_at": datetime.utcnow(),
                     "updated_at": datetime.utcnow(),
@@ -483,13 +501,14 @@ def list_property_progress(
             }
             groups[key] = g
 
-        month_key = str(r.due_date.month) if r.due_date else None
+        month_key = r.due_date.strftime("%Y-%m") if r.due_date else None
         if month_key:
             incoming = {
                 "id": r.id,
                 "status": r.status.value,
                 "due_date": r.due_date,
                 "paid_on": r.paid_on,
+                "partial_amount": r.partial_amount,
                 "notes": r.notes,
                 "extra_items": 0,
             }
@@ -608,8 +627,14 @@ def update_item(
         row.status = payload.status
         if payload.status == RentTrackStatus.PAID and not payload.paid_on and not row.paid_on:
             row.paid_on = datetime.utcnow()
+        if payload.status != RentTrackStatus.PARTIAL and payload.partial_amount is None:
+            row.partial_amount = None
     if payload.paid_on is not None:
         row.paid_on = payload.paid_on
+    if payload.partial_amount is not None:
+        if payload.partial_amount < 0:
+            raise HTTPException(status_code=400, detail="partial_amount must be non-negative.")
+        row.partial_amount = payload.partial_amount
     if payload.notes is not None:
         row.notes = payload.notes.strip() or None
 

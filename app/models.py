@@ -6,6 +6,7 @@ from sqlalchemy import (
     DateTime,
     Boolean,
     Integer,
+    Float,
     Enum as SAEnum,
     Text,
     ForeignKey,
@@ -252,6 +253,7 @@ class RentDueTracker(Base):
     status: Mapped[RentTrackStatus] = mapped_column(SAEnum(RentTrackStatus), default=RentTrackStatus.DUE, index=True)
     raw_value: Mapped[str | None] = mapped_column(Text, nullable=True)
     paid_on: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    partial_amount: Mapped[float | None] = mapped_column(Float, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)

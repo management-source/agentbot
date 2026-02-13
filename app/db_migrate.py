@@ -268,3 +268,13 @@ def migrate(engine: Engine) -> None:
                     conn.execute(text(stmt))
                 except Exception:
                     pass
+
+    # -------------------------------------------------------------------------
+    # 4) Rent tracker fields (added 2026-02)
+    # -------------------------------------------------------------------------
+    rt = "rent_due_tracker"
+    if _table_exists(engine, rt):
+        stmts: list[str] = []
+        if not _column_exists(engine, rt, "partial_amount"):
+            stmts.append(f"ALTER TABLE {rt} ADD COLUMN partial_amount FLOAT")
+        _exec_statements(engine, stmts)

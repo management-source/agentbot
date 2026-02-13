@@ -120,6 +120,7 @@ class RentDueItemOut(BaseModel):
     status: RentTrackStatus
     raw_value: str | None
     paid_on: datetime | None
+    partial_amount: float | None
     notes: str | None
     updated_at: datetime
 

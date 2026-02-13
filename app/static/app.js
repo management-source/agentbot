@@ -604,22 +604,40 @@ function getRentFilters() {
     return { status, frequency, query };
 }
 
+function getRollingMonths() {
+    const base = new Date();
+    return [-1, 0, 1].map((offset) => {
+        const d = new Date(base.getFullYear(), base.getMonth() + offset, 1);
+        const y = d.getFullYear();
+        const m = d.getMonth() + 1;
+        return {
+            key: `${y}-${String(m).padStart(2, "0")}`,
+            label: d.toLocaleDateString(undefined, { month: "short", year: "numeric" }),
+        };
+    });
+}
+
 function monthCellSelect(item) {
     if (!item || !item.id) return `<span class="small muted">-</span>`;
     const status = String(item.status || "DUE").toUpperCase();
     const extra = Number(item.extra_items || 0);
     const due = item.due_date ? formatDateShort(item.due_date) : "";
+    const partialAmount = (typeof item.partial_amount === "number" && item.partial_amount > 0) ? Number(item.partial_amount).toFixed(2) : "";
     return `
       <div>
-        <select style="min-width:110px" onchange="updateRentMonthCell(${item.id}, this.value)">
+        <select style="min-width:110px" onchange="updateRentMonthCell(${item.id}, this.value, ${item.partial_amount || 0})">
           <option value="DUE" ${status === "DUE" ? "selected" : ""}>Due</option>
           <option value="PAID" ${status === "PAID" ? "selected" : ""}>Paid</option>
           <option value="PARTIAL" ${status === "PARTIAL" ? "selected" : ""}>Partial</option>
           <option value="AWAITING_CLEARANCE" ${status === "AWAITING_CLEARANCE" ? "selected" : ""}>Awaiting</option>
           <option value="VACANT" ${status === "VACANT" ? "selected" : ""}>Vacant</option>
         </select>
+        ${status === "PARTIAL" ? `
+        <div style="margin-top:6px">
+          <input type="number" min="0" step="0.01" placeholder="Amount" value="${partialAmount}" style="width:100px" onchange="updateRentPartialAmount(${item.id}, this.value)" />
+        </div>` : ``}
         <div style="margin-top:4px">${rentStatusChip(status)}</div>
-        <div class="small muted" style="margin-top:4px">${escapeHtml(due)}${extra > 0 ? ` • +${extra}` : ""}</div>
+        <div class="small muted" style="margin-top:4px">${escapeHtml(due)}${partialAmount ? ` • $${partialAmount}` : ""}${extra > 0 ? ` • +${extra}` : ""}</div>
       </div>
     `;
 }
@@ -638,7 +656,15 @@ async function loadRentTracker(page = null) {
     if (query) itemsUrl.searchParams.set("query", query);
 
     const body = document.getElementById("rentTableBody");
-    if (body) body.innerHTML = `<tr><td colspan="15" class="muted">Loading...</td></tr>`;
+    if (body) body.innerHTML = `<tr><td colspan="6" class="muted">Loading...</td></tr>`;
+
+    const rollingMonths = getRollingMonths();
+    const h1 = document.getElementById("rentMonthHead1");
+    const h2 = document.getElementById("rentMonthHead2");
+    const h3 = document.getElementById("rentMonthHead3");
+    if (h1) h1.textContent = rollingMonths[0].label;
+    if (h2) h2.textContent = rollingMonths[1].label;
+    if (h3) h3.textContent = rollingMonths[2].label;
 
     const [itemsResp, summaryResp] = await Promise.all([
         apiFetch(itemsUrl.toString()),
@@ -647,12 +673,12 @@ async function loadRentTracker(page = null) {
 
     if (!itemsResp.ok) {
         const t = await itemsResp.text();
-        if (body) body.innerHTML = `<tr><td colspan="15" class="muted">Failed to load rent tracker: ${escapeHtml(t)}</td></tr>`;
+        if (body) body.innerHTML = `<tr><td colspan="6" class="muted">Failed to load rent tracker: ${escapeHtml(t)}</td></tr>`;
         return;
     }
     if (!summaryResp.ok) {
         const t = await summaryResp.text();
-        if (body) body.innerHTML = `<tr><td colspan="15" class="muted">Failed to load summary: ${escapeHtml(t)}</td></tr>`;
+        if (body) body.innerHTML = `<tr><td colspan="6" class="muted">Failed to load summary: ${escapeHtml(t)}</td></tr>`;
         return;
     }
 
@@ -675,9 +701,8 @@ async function loadRentTracker(page = null) {
 
     if (!body) return;
     if (items.length === 0) {
-        body.innerHTML = `<tr><td colspan="15" class="muted">No properties found for this filter.</td></tr>`;
+        body.innerHTML = `<tr><td colspan="6" class="muted">No properties found for this filter.</td></tr>`;
     } else {
-        const monthKeys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"];
         body.innerHTML = items.map((r) => `
             <tr>
                 <td><div style="font-weight:700">${escapeHtml(r.property_address || "")}</div><div class="small muted">${escapeHtml(r.source_sheet || "-")}</div></td>
@@ -686,7 +711,7 @@ async function loadRentTracker(page = null) {
                     <div class="small muted">Paid ${Number((r.counts || {}).PAID || 0)} / ${Number(r.total_items || 0)}</div>
                     <div class="small muted">Due ${Number((r.counts || {}).DUE || 0)} • Partial ${Number((r.counts || {}).PARTIAL || 0)}</div>
                 </td>
-                ${monthKeys.map((mk) => `<td>${monthCellSelect((r.months || {})[mk])}</td>`).join("")}
+                ${rollingMonths.map((mk) => `<td>${monthCellSelect((r.months || {})[mk.key])}</td>`).join("")}
             </tr>
         `).join("");
     }
@@ -717,11 +742,26 @@ function nextRentPage() {
     loadRentTracker();
 }
 
-async function updateRentMonthCell(itemId, status) {
+async function updateRentMonthCell(itemId, status, existingPartialAmount = 0) {
     const payload = { status };
     if (status === "PAID") {
         const d = new Date();
         payload.paid_on = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}T00:00:00`;
+    }
+    if (status === "PARTIAL") {
+        let amount = Number(existingPartialAmount || 0);
+        if (!(amount > 0)) {
+            const entered = prompt("Enter partially paid amount:");
+            if (entered === null) return;
+            amount = Number(entered);
+        }
+        if (!(amount > 0)) {
+            alert("Please enter a valid partial amount greater than 0.");
+            return;
+        }
+        payload.partial_amount = amount;
+    } else {
+        payload.partial_amount = null;
     }
     const r = await apiFetch(`/rent-tracker/items/${itemId}`, {
         method: "PATCH",
@@ -731,6 +771,25 @@ async function updateRentMonthCell(itemId, status) {
     if (!r.ok) {
         const t = await r.text();
         alert(`Failed to update month cell: ${t}`);
+        return;
+    }
+    await loadRentTracker();
+}
+
+async function updateRentPartialAmount(itemId, value) {
+    const amount = Number(value || 0);
+    if (!(amount > 0)) {
+        alert("Partial amount must be greater than 0.");
+        return;
+    }
+    const r = await apiFetch(`/rent-tracker/items/${itemId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "PARTIAL", partial_amount: amount }),
+    });
+    if (!r.ok) {
+        const t = await r.text();
+        alert(`Failed to update partial amount: ${t}`);
         return;
     }
     await loadRentTracker();
