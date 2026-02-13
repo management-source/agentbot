@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import io
 from fastapi import APIRouter, Depends, HTTPException, Body, File, Form, UploadFile
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_
@@ -423,6 +424,39 @@ def draft_ai_reply(
     db.commit()
 
     return DraftAiReplyOut(subject=reply_subject, body=reply_body, meta=meta)
+
+
+@router.post("/transcribe-audio")
+async def transcribe_audio(
+    file: UploadFile = File(...),
+    _user: User = Depends(get_current_user),
+):
+    """Transcribe short voice notes for AI Draft additional context."""
+    if not settings.OPENAI_API_KEY:
+        raise HTTPException(status_code=400, detail="Speech-to-text is not configured. Set OPENAI_API_KEY.")
+    if not file:
+        raise HTTPException(status_code=400, detail="No audio file uploaded.")
+
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="Uploaded audio file is empty.")
+    if len(data) > 25 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Audio file too large (max 25MB).")
+
+    try:
+        from openai import OpenAI
+
+        client = OpenAI(api_key=settings.OPENAI_API_KEY)
+        audio = io.BytesIO(data)
+        audio.name = file.filename or "voice.webm"
+        resp = client.audio.transcriptions.create(
+            model=settings.OPENAI_TRANSCRIBE_MODEL,
+            file=audio,
+        )
+        text = (getattr(resp, "text", "") or "").strip()
+        return {"text": text}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Transcription failed: {e}")
 
 @router.post("/{thread_id}/send-ack")
 def send_ack(

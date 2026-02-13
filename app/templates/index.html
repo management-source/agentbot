@@ -1188,6 +1188,11 @@
                         <textarea id="aiReplyExtra"
                             placeholder="e.g., confirm access window, quote requested, landlord approved, attach invoice number..."
                             style="width:100%;min-height:90px;padding:10px 12px;border:1px solid var(--border);border-radius:12px;font-size:13px"></textarea>
+                        <div class="row" style="margin-top:8px">
+                            <button class="btn" id="aiVoiceStartBtn" onclick="startAiVoiceCapture()">Start Voice</button>
+                            <button class="btn" id="aiVoiceStopBtn" onclick="stopAiVoiceCaptureAndTranscribe()" disabled>Stop & Insert</button>
+                            <span class="small muted" id="aiVoiceStatus">Voice input idle.</span>
+                        </div>
                     </div>
                     <div class="small muted" id="aiReplyMeta" style="margin-top:10px"></div>
                 </div>

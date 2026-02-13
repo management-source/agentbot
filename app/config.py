@@ -71,6 +71,7 @@ class Settings(BaseSettings):
 
     OPENAI_API_KEY: Optional[str] = None
     OPENAI_MODEL: str = "gpt-4o-mini"
+    OPENAI_TRANSCRIBE_MODEL: str = "whisper-1"
 
     # Optional default signature if not set via UI
     DEFAULT_SIGNATURE: str = ""

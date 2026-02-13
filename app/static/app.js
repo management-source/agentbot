@@ -1,6 +1,9 @@
 let currentTab = "awaiting_reply";
 let currentAckThreadId = null;
 let currentAiThreadId = null;
+let aiVoiceRecorder = null;
+let aiVoiceStream = null;
+let aiVoiceChunks = [];
 let currentDashboardTab = "inbox";
 
 // Mailbox context (multi-inbox)
@@ -1596,10 +1599,110 @@ async function openAiReplyModal(threadId) {
     document.getElementById("aiReplyBody").value = "Loading draft...";
     const metaEl = document.getElementById("aiReplyMeta");
     if (metaEl) metaEl.textContent = "";
-    const extraEl = document.getElementById("aiExtraContext");
+    const extraEl = getAiReplyExtraEl();
     if (extraEl) extraEl.value = "";
+    const voiceStatus = document.getElementById("aiVoiceStatus");
+    if (voiceStatus) voiceStatus.textContent = "Voice input idle.";
+    const startBtn = document.getElementById("aiVoiceStartBtn");
+    const stopBtn = document.getElementById("aiVoiceStopBtn");
+    if (startBtn) startBtn.disabled = false;
+    if (stopBtn) stopBtn.disabled = true;
+    aiVoiceChunks = [];
 
     await generateAiDraft(threadId, "neutral", null);
+}
+
+function getAiReplyExtraEl() {
+    return document.getElementById("aiReplyExtra") || document.getElementById("aiExtraContext");
+}
+
+function setAiVoiceStatus(text) {
+    const el = document.getElementById("aiVoiceStatus");
+    if (el) el.textContent = text || "";
+}
+
+async function startAiVoiceCapture() {
+    if (!navigator.mediaDevices || !window.MediaRecorder) {
+        alert("Voice capture is not supported in this browser.");
+        return;
+    }
+    if (aiVoiceRecorder && aiVoiceRecorder.state === "recording") {
+        return;
+    }
+
+    try {
+        aiVoiceStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        aiVoiceChunks = [];
+        aiVoiceRecorder = new MediaRecorder(aiVoiceStream);
+        aiVoiceRecorder.ondataavailable = (e) => {
+            if (e.data && e.data.size > 0) aiVoiceChunks.push(e.data);
+        };
+        aiVoiceRecorder.start();
+        setAiVoiceStatus("Recording... click Stop & Insert when done.");
+        const startBtn = document.getElementById("aiVoiceStartBtn");
+        const stopBtn = document.getElementById("aiVoiceStopBtn");
+        if (startBtn) startBtn.disabled = true;
+        if (stopBtn) stopBtn.disabled = false;
+    } catch (e) {
+        setAiVoiceStatus("Microphone permission denied or unavailable.");
+    }
+}
+
+async function stopAiVoiceCaptureAndTranscribe() {
+    const startBtn = document.getElementById("aiVoiceStartBtn");
+    const stopBtn = document.getElementById("aiVoiceStopBtn");
+    if (stopBtn) stopBtn.disabled = true;
+    setAiVoiceStatus("Processing voice note...");
+
+    if (!aiVoiceRecorder) {
+        setAiVoiceStatus("No recording to process.");
+        if (startBtn) startBtn.disabled = false;
+        return;
+    }
+
+    if (aiVoiceRecorder.state === "recording") {
+        await new Promise((resolve) => {
+            aiVoiceRecorder.onstop = resolve;
+            aiVoiceRecorder.stop();
+        });
+    }
+
+    try {
+        if (aiVoiceStream) {
+            aiVoiceStream.getTracks().forEach(t => t.stop());
+            aiVoiceStream = null;
+        }
+        const blob = new Blob(aiVoiceChunks, { type: (aiVoiceChunks[0] && aiVoiceChunks[0].type) || "audio/webm" });
+        if (!blob || blob.size === 0) {
+            setAiVoiceStatus("No audio captured.");
+            if (startBtn) startBtn.disabled = false;
+            return;
+        }
+
+        const form = new FormData();
+        form.append("file", blob, "voice-note.webm");
+        const r = await apiFetch("/tickets/transcribe-audio", { method: "POST", body: form });
+        const t = await r.text();
+        if (!r.ok) {
+            setAiVoiceStatus("Transcription failed.");
+            alert(`Transcription failed (${r.status}):\n\n${t}`);
+            if (startBtn) startBtn.disabled = false;
+            return;
+        }
+        let j = null;
+        try { j = JSON.parse(t); } catch { j = null; }
+        const transcript = ((j && j.text) ? String(j.text) : "").trim();
+        const extraEl = getAiReplyExtraEl();
+        if (extraEl && transcript) {
+            const cur = String(extraEl.value || "").trim();
+            extraEl.value = cur ? `${cur}\n${transcript}` : transcript;
+        }
+        setAiVoiceStatus(transcript ? "Voice inserted into Additional info." : "No speech detected.");
+    } finally {
+        aiVoiceChunks = [];
+        aiVoiceRecorder = null;
+        if (startBtn) startBtn.disabled = false;
+    }
 }
 
 async function generateAiDraft(threadId, tone, extraContext) {
@@ -1629,15 +1732,28 @@ async function generateAiDraft(threadId, tone, extraContext) {
 
 async function regenerateAiDraftFromModal() {
     if (!currentAiThreadId) return;
-    const extraEl = document.getElementById("aiExtraContext");
+    const extraEl = getAiReplyExtraEl();
     const extra = extraEl ? (extraEl.value || "").trim() : "";
     document.getElementById("aiReplyBody").value = "Regenerating...";
     await generateAiDraft(currentAiThreadId, "neutral", extra || null);
 }
 
+async function regenerateAiDraft() {
+    await regenerateAiDraftFromModal();
+}
+
 function closeAiReplyModal() {
     const modal = document.getElementById("aiReplyModal");
     if (modal) modal.classList.add("hidden");
+    if (aiVoiceRecorder && aiVoiceRecorder.state === "recording") {
+        try { aiVoiceRecorder.stop(); } catch { }
+    }
+    if (aiVoiceStream) {
+        try { aiVoiceStream.getTracks().forEach(t => t.stop()); } catch { }
+        aiVoiceStream = null;
+    }
+    aiVoiceRecorder = null;
+    aiVoiceChunks = [];
     currentAiThreadId = null;
 }
 
