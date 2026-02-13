@@ -238,9 +238,16 @@ def on_startup():
     # For free-hosting deployments (e.g., Render free tier), we typically disable
     # background schedulers and rely on manual sync.
     if settings.ENABLE_SCHEDULER:
+        def _poll_mailboxes():
+            for mb in settings.monitored_mailboxes_list():
+                try:
+                    sync_inbox_threads(mailbox=mb)
+                except Exception:
+                    logging.getLogger("scheduler").exception("Scheduled sync failed for mailbox=%s", mb)
+
         # IMPORTANT: job id must match what endpoints look for
         scheduler.add_job(
-            func=sync_inbox_threads,
+            func=_poll_mailboxes,
             trigger="interval",
             seconds=settings.POLL_INTERVAL_SECONDS,
             id="gmail_poll",

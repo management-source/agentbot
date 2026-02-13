@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 from app.db import get_db
 from app.authz import get_current_user, require_role
+from app.deps import get_current_mailbox
 from app.models import (
     ThreadTicket,
     TicketStatus,
@@ -40,7 +41,6 @@ from app.config import settings
 from app.services.gmail_send import send_reply_in_thread, OutgoingAttachment
 from app.services.gmail_client import get_gmail_service, gmail_user_id
 from app.services.gmail_parse import extract_message_body
-from app.schemas import DraftAiIn
 
 router = APIRouter()
 
@@ -64,7 +64,27 @@ def _compute_sla_due_at(category: TicketCategory, priority: str, base_time: date
 
 class StatusUpdate(BaseModel):
     status: TicketStatus
-    
+
+
+def _get_ticket(db: Session, thread_id: str, mailbox: str) -> ThreadTicket:
+    # Primary path: namespaced internal ticket id.
+    t = db.get(ThreadTicket, thread_id)
+    if t and t.mailbox == mailbox:
+        return t
+
+    # Back-compat path: allow raw Gmail thread id in API path.
+    t = (
+        db.query(ThreadTicket)
+        .filter(ThreadTicket.mailbox == mailbox)
+        .filter(ThreadTicket.gmail_thread_id == thread_id)
+        .first()
+    )
+    if t:
+        return t
+
+    raise HTTPException(status_code=404, detail="Ticket not found")
+
+
 def _tab_filter(q, tab: str):
     tab = (tab or "all").lower().strip()
 
@@ -99,6 +119,7 @@ def list_tickets(
     page_size: int = 25,
     start: str | None = None,
     end: str | None = None,
+    mailbox: str = Depends(get_current_mailbox),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -107,12 +128,14 @@ def list_tickets(
     - start/end are expected as YYYY-MM-DD (from <input type="date">)
     - filtering is applied against ThreadTicket.last_message_at
     """
-    q = db.query(ThreadTicket)
+    q = db.query(ThreadTicket).filter(ThreadTicket.mailbox == mailbox)
     q = _tab_filter(q, tab)
 
     # Always hide blacklisted senders.
     q = q.filter(
-        ~exists().where(BlacklistedSender.email == func.lower(ThreadTicket.from_email))
+        ~exists()
+        .where(BlacklistedSender.mailbox == mailbox)
+        .where(BlacklistedSender.email == func.lower(ThreadTicket.from_email))
     )
 
     if category:
@@ -169,7 +192,11 @@ def list_tickets(
     # Counters for top tiles / tabs
     # KPI counts (exclude blacklisted senders to match list behavior)
     base = db.query(ThreadTicket).filter(
-        ~exists().where(BlacklistedSender.email == func.lower(ThreadTicket.from_email))
+        ThreadTicket.mailbox == mailbox
+    ).filter(
+        ~exists()
+        .where(BlacklistedSender.mailbox == mailbox)
+        .where(BlacklistedSender.email == func.lower(ThreadTicket.from_email))
     )
     counts = {
         "awaiting_reply": base.filter(ThreadTicket.is_not_replied == True).count(),
@@ -191,12 +218,11 @@ def list_tickets(
 def update_status(
     thread_id: str,
     payload: StatusUpdate,
+    mailbox: str = Depends(get_current_mailbox),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    t = db.get(ThreadTicket, thread_id)
-    if not t:
-        raise HTTPException(404, "Ticket not found")
+    t = _get_ticket(db, thread_id, mailbox)
 
     old = t.status
     t.status = payload.status
@@ -206,18 +232,25 @@ def update_status(
         t.is_not_replied = False
 
     t.updated_at = datetime.utcnow()
-    add_audit(db, thread_id=ticket.gmail_thread_id, action=AuditAction.STATUS_CHANGED, actor_user_id=user.id, detail={
-        "from": old.value,
-        "to": t.status.value,
-    })
+    add_audit(
+        db,
+        mailbox=t.mailbox,
+        thread_id=t.thread_id,
+        action=AuditAction.STATUS_CHANGED,
+        actor_user_id=user.id,
+        detail={"from": old.value, "to": t.status.value},
+    )
     db.commit()
-    return {"ok": True, "thread_id": thread_id, "status": t.status.value}
+    return {"ok": True, "thread_id": t.thread_id, "status": t.status.value}
 
 @router.post("/{thread_id}/draft-ack", response_model=DraftAckOut)
-def draft_ack(thread_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    t = db.get(ThreadTicket, thread_id)
-    if not t:
-        raise HTTPException(status_code=404, detail="Ticket not found")
+def draft_ack(
+    thread_id: str,
+    mailbox: str = Depends(get_current_mailbox),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    t = _get_ticket(db, thread_id, mailbox)
 
     subject, body = draft_acknowledgement(
         from_name=t.from_name,
@@ -230,15 +263,18 @@ def draft_ack(thread_id: str, db: Session = Depends(get_db), user: User = Depend
 
 
 @router.post("/{thread_id}/draft-reply", response_model=DraftAiReplyOut)
-def draft_reply(thread_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def draft_reply(
+    thread_id: str,
+    mailbox: str = Depends(get_current_mailbox),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
     """Generate a deterministic (non-AI) quick-reply draft.
 
     IMPORTANT: To avoid OpenAI rate-limit failures and to keep "Fetch now" reliable,
     this endpoint NEVER calls OpenAI. Use /draft-ai-reply for AI drafting.
     """
-    t = db.get(ThreadTicket, thread_id)
-    if not t:
-        raise HTTPException(status_code=404, detail="Ticket not found")
+    t = _get_ticket(db, thread_id, mailbox)
 
     subj = (t.subject or "").strip()
     safe_subject = subj or "(no subject)"
@@ -321,6 +357,7 @@ def draft_ai_reply(
     thread_id: str,
     tone: str = "neutral",
     payload: DraftAiIn | None = Body(default=None),
+    mailbox: str = Depends(get_current_mailbox),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -332,16 +369,14 @@ def draft_ai_reply(
     if payload:
         additional_info = (payload.additional_info or payload.extra_context)
 
-    t = db.get(ThreadTicket, thread_id)
-    if not t:
-        raise HTTPException(status_code=404, detail="Ticket not found")
+    t = _get_ticket(db, thread_id, mailbox)
 
     # Fetch last message body (plain text) from Gmail.
-    service = get_gmail_service(db, impersonate_user=mailbox)
+    service = get_gmail_service(db, impersonate_user=t.mailbox)
     th = (
         service.users()
         .threads()
-        .get(userId=gmail_user_id(), id=ticket.gmail_thread_id, format="full")
+        .get(userId=gmail_user_id(), id=t.gmail_thread_id, format="full")
         .execute()
     )
 
@@ -363,7 +398,7 @@ def draft_ai_reply(
     if not settings.OPENAI_API_KEY:
         raise HTTPException(status_code=400, detail="AI drafting is not configured. Set OPENAI_API_KEY.")
 
-    signature = (get_state(db, "signature_text") or settings.DEFAULT_SIGNATURE or "").strip()
+    signature = (get_state(db, "signature_text", t.mailbox) or settings.DEFAULT_SIGNATURE or "").strip()
 
     try:
         reply_subject, reply_body, meta = draft_context_reply(
@@ -389,16 +424,20 @@ def draft_ai_reply(
     return DraftAiReplyOut(subject=reply_subject, body=reply_body, meta=meta)
 
 @router.post("/{thread_id}/send-ack")
-def send_ack(thread_id: str, payload: SendAckIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    t = db.get(ThreadTicket, thread_id)
-    if not t:
-        raise HTTPException(status_code=404, detail="Ticket not found")
+def send_ack(
+    thread_id: str,
+    payload: SendAckIn,
+    mailbox: str = Depends(get_current_mailbox),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    t = _get_ticket(db, thread_id, mailbox)
 
     # Signature support:
     # - Text signature is appended for the plain-text part
     # - HTML signature (if present) is appended for the HTML part so images render
-    signature_text = (get_state(db, "signature_text") or settings.DEFAULT_SIGNATURE or "").strip()
-    signature_html = (get_state(db, "signature_html") or "").strip()
+    signature_text = (get_state(db, "signature_text", t.mailbox) or settings.DEFAULT_SIGNATURE or "").strip()
+    signature_html = (get_state(db, "signature_html", t.mailbox) or "").strip()
 
     body_text = (payload.body or "").rstrip()
     if signature_text and signature_text not in body_text:
@@ -415,9 +454,9 @@ def send_ack(thread_id: str, payload: SendAckIn, db: Session = Depends(get_db), 
             body_html = (body_html + "<br><br>" + _html.escape(signature_text).replace("\n", "<br>")).strip()
 
     send_reply_in_thread(
-            db=db,
-            mailbox=mailbox,
-            thread_id=ticket.gmail_thread_id,
+        db=db,
+        mailbox=t.mailbox,
+        thread_id=t.gmail_thread_id,
         to_email=t.from_email,
         subject=payload.subject,
         body_text=body_text,
@@ -434,7 +473,14 @@ def send_ack(thread_id: str, payload: SendAckIn, db: Session = Depends(get_db), 
     # after send, this should not be not-replied
     t.is_not_replied = False
 
-    add_audit(db, thread_id=ticket.gmail_thread_id, action=AuditAction.REPLIED, actor_user_id=user.id, detail={"subject": payload.subject})
+    add_audit(
+        db,
+        mailbox=t.mailbox,
+        thread_id=t.thread_id,
+        action=AuditAction.REPLIED,
+        actor_user_id=user.id,
+        detail={"subject": payload.subject},
+    )
     db.commit()
     return {"ok": True}
 
@@ -448,6 +494,7 @@ async def send_reply_form(
     bcc: str = Form(""),
     mark_as_responded: bool = Form(True),
     attachments: list[UploadFile] | None = File(default=None),
+    mailbox: str = Depends(get_current_mailbox),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -456,15 +503,13 @@ async def send_reply_form(
     This endpoint is used by the Quick Reply modal. It avoids breaking the legacy
     JSON-based /send-ack endpoint.
     """
-    t = db.get(ThreadTicket, thread_id)
-    if not t:
-        raise HTTPException(status_code=404, detail="Ticket not found")
+    t = _get_ticket(db, thread_id, mailbox)
 
     # Signature support:
     # We ONLY use the app-managed HTML signature. The legacy plain-text signature
     # field is kept for backwards compatibility, but must NOT be appended automatically
     # (otherwise users get double signatures).
-    signature_html = (get_state(db, "signature_html") or "").strip()
+    signature_html = (get_state(db, "signature_html", t.mailbox) or "").strip()
 
     # Build text + HTML bodies.
     import html as _html
@@ -501,8 +546,8 @@ async def send_reply_form(
     try:
         send_reply_in_thread(
             db=db,
-            mailbox=mailbox,
-            thread_id=ticket.gmail_thread_id,
+            mailbox=t.mailbox,
+            thread_id=t.gmail_thread_id,
             to_email=t.from_email,
             subject=subject,
             body_text=final_body,
@@ -522,7 +567,14 @@ async def send_reply_form(
         t.status = TicketStatus.RESPONDED
     t.is_not_replied = False
 
-    add_audit(db, thread_id=ticket.gmail_thread_id, action=AuditAction.REPLIED, actor_user_id=user.id, detail={"subject": subject, "cc": cc, "bcc": bcc, "attachments": [a.filename for a in out_attachments]})
+    add_audit(
+        db,
+        mailbox=t.mailbox,
+        thread_id=t.thread_id,
+        action=AuditAction.REPLIED,
+        actor_user_id=user.id,
+        detail={"subject": subject, "cc": cc, "bcc": bcc, "attachments": [a.filename for a in out_attachments]},
+    )
     db.commit()
     return {"ok": True}
 
@@ -536,12 +588,11 @@ class CategoryIn(BaseModel):
 def set_category(
     thread_id: str,
     payload: CategoryIn,
+    mailbox: str = Depends(get_current_mailbox),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    t = db.get(ThreadTicket, thread_id)
-    if not t:
-        raise HTTPException(404, "Ticket not found")
+    t = _get_ticket(db, thread_id, mailbox)
 
     old = t.category
     t.category = payload.category
@@ -553,7 +604,8 @@ def set_category(
     t.updated_at = datetime.utcnow()
     add_audit(
         db,
-        thread_id=ticket.gmail_thread_id,
+        mailbox=t.mailbox,
+        thread_id=t.thread_id,
         action=AuditAction.CATEGORY_SET,
         actor_user_id=user.id,
         detail={"from": old.value if old else None, "to": t.category.value, "sla_due_at": t.sla_due_at.isoformat() if t.sla_due_at else None},
@@ -567,10 +619,17 @@ class NoteIn(BaseModel):
 
 
 @router.get("/{thread_id}/notes", response_model=list[TicketNoteOut])
-def list_notes(thread_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def list_notes(
+    thread_id: str,
+    mailbox: str = Depends(get_current_mailbox),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    t = _get_ticket(db, thread_id, mailbox)
     notes = (
         db.query(ThreadTicketNote)
-        .filter(ThreadTicketNote.thread_id == thread_id)
+        .filter(ThreadTicketNote.mailbox == t.mailbox)
+        .filter(ThreadTicketNote.thread_id == t.thread_id)
         .order_by(ThreadTicketNote.created_at.asc())
         .all()
     )
@@ -590,14 +649,34 @@ def list_notes(thread_id: str, db: Session = Depends(get_db), user: User = Depen
 
 
 @router.post("/{thread_id}/notes", response_model=TicketNoteOut)
-def add_note(thread_id: str, payload: NoteIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def add_note(
+    thread_id: str,
+    payload: NoteIn,
+    mailbox: str = Depends(get_current_mailbox),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    t = _get_ticket(db, thread_id, mailbox)
     body = (payload.body or "").strip()
     if not body:
         raise HTTPException(400, "Note body required")
-    note = ThreadTicketNote(thread_id=ticket.gmail_thread_id, author_user_id=user.id, body=body, created_at=datetime.utcnow())
+    note = ThreadTicketNote(
+        mailbox=t.mailbox,
+        thread_id=t.thread_id,
+        author_user_id=user.id,
+        body=body,
+        created_at=datetime.utcnow(),
+    )
     db.add(note)
     db.flush()  # assigns note.id
-    add_audit(db, thread_id=ticket.gmail_thread_id, action=AuditAction.NOTE_ADDED, actor_user_id=user.id, detail={"note_id": note.id})
+    add_audit(
+        db,
+        mailbox=t.mailbox,
+        thread_id=t.thread_id,
+        action=AuditAction.NOTE_ADDED,
+        actor_user_id=user.id,
+        detail={"note_id": note.id},
+    )
     db.commit()
     db.refresh(note)
     return TicketNoteOut(
@@ -611,10 +690,17 @@ def add_note(thread_id: str, payload: NoteIn, db: Session = Depends(get_db), use
 
 
 @router.get("/{thread_id}/audit", response_model=list[TicketAuditOut])
-def list_audit(thread_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def list_audit(
+    thread_id: str,
+    mailbox: str = Depends(get_current_mailbox),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    t = _get_ticket(db, thread_id, mailbox)
     rows = (
         db.query(ThreadTicketAudit)
-        .filter(ThreadTicketAudit.thread_id == thread_id)
+        .filter(ThreadTicketAudit.mailbox == t.mailbox)
+        .filter(ThreadTicketAudit.thread_id == t.thread_id)
         .order_by(ThreadTicketAudit.created_at.asc())
         .limit(200)
         .all()
@@ -640,6 +726,7 @@ class FlushIn(BaseModel):
 @router.post("/admin/flush")
 def flush_database(
     payload: FlushIn,
+    mailbox: str = Depends(get_current_mailbox),
     db: Session = Depends(get_db),
     _user: User = Depends(require_role(UserRole.ADMIN)),
 ):
@@ -650,11 +737,13 @@ def flush_database(
     if (payload.confirm or "").strip().upper() != "FLUSH":
         raise HTTPException(status_code=400, detail="Confirmation required. Send confirm='FLUSH'.")
 
-    # Delete tickets
-    db.query(ThreadTicket).delete(synchronize_session=False)
+    # Delete mailbox-scoped records only.
+    db.query(ThreadTicket).filter(ThreadTicket.mailbox == mailbox).delete(synchronize_session=False)
+    db.query(ThreadTicketNote).filter(ThreadTicketNote.mailbox == mailbox).delete(synchronize_session=False)
+    db.query(ThreadTicketAudit).filter(ThreadTicketAudit.mailbox == mailbox).delete(synchronize_session=False)
 
-    # Clear sync-related state (keep other state keys if you add them later)
-    db.query(AppState).delete(synchronize_session=False)
+    # Clear mailbox-scoped sync/settings state keys.
+    db.query(AppState).filter(AppState.key.like(f"{mailbox}:%")).delete(synchronize_session=False)
 
     db.commit()
-    return {"ok": True, "message": "Database flushed (tickets and state cleared)."}
+    return {"ok": True, "message": f"Mailbox '{mailbox}' flushed (tickets, notes, audit, and state cleared)."}
