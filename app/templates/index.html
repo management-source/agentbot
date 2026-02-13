@@ -474,6 +474,7 @@
       border-collapse:collapse;
       min-width:980px;
     }
+    .rent-table.year-full{min-width:1700px}
     .rent-table th, .rent-table td{
       border-bottom:1px solid var(--border);
       padding:10px 12px;
@@ -488,6 +489,18 @@
       position:sticky;
       top:0;
       z-index:1;
+    }
+    .rent-table .sticky-col{
+      position:sticky;
+      left:0;
+      background:#fff;
+      z-index:2;
+      min-width:280px;
+      max-width:340px;
+    }
+    .rent-table th.sticky-col{
+      background:#f8fafc;
+      z-index:3;
     }
     .rent-status{
       display:inline-flex;
@@ -682,10 +695,6 @@
                 <nav class="side-nav">
                     <a id="navInbox" class="active" href="javascript:void(0)" onclick="switchDashboardTab('inbox')">Inbox Dashboard</a>
                     <a id="navRentTracker" href="javascript:void(0)" onclick="switchDashboardTab('rent')">Rent Tracker</a>
-                    <a href="javascript:void(0)">Tasks</a>
-                    <a href="javascript:void(0)">Rules</a>
-                    <a href="javascript:void(0)">Reports</a>
-                    <a href="javascript:void(0)">Automation</a>
                     <a id="btnSystemUsers" href="javascript:void(0)" style="display:none" onclick="openUsersModal()">System</a>
                 </nav>
             </aside>
@@ -861,6 +870,10 @@
                 </div>
 
                 <div class="filters-row">
+                    <div class="seg" id="rentViewSeg">
+                        <button id="rentViewTrackerBtn" class="active" onclick="switchRentViewMode('tracker')">Tracker</button>
+                        <button id="rentViewYearBtn" onclick="switchRentViewMode('year')">Year Report</button>
+                    </div>
                     <div class="field">
                         <div class="label">Status</div>
                         <select id="rentStatusFilter">
@@ -885,11 +898,11 @@
                         <input type="text" id="rentSearchBox" placeholder="Property, notes, raw value..." />
                     </div>
                     <div class="row" style="align-self:flex-end">
-                        <button class="btn" onclick="loadRentTracker(1)">Apply</button>
+                        <button class="btn" onclick="loadActiveRentView(1)">Apply</button>
                     </div>
                 </div>
 
-                <div class="rent-table-wrap">
+                <div class="rent-table-wrap" id="rentTrackerGrid">
                     <table class="rent-table">
                         <thead>
                             <tr>
@@ -903,6 +916,32 @@
                         </thead>
                         <tbody id="rentTableBody">
                             <tr><td colspan="6" class="muted">No data loaded.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="rent-table-wrap hidden" id="rentYearReportGrid">
+                    <table class="rent-table year-full">
+                        <thead>
+                            <tr>
+                                <th class="sticky-col">Property</th>
+                                <th>Frequency</th>
+                                <th>Progress</th>
+                                <th>Jan</th>
+                                <th>Feb</th>
+                                <th>Mar</th>
+                                <th>Apr</th>
+                                <th>May</th>
+                                <th>Jun</th>
+                                <th>Jul</th>
+                                <th>Aug</th>
+                                <th>Sep</th>
+                                <th>Oct</th>
+                                <th>Nov</th>
+                                <th>Dec</th>
+                            </tr>
+                        </thead>
+                        <tbody id="rentYearTableBody">
+                            <tr><td colspan="15" class="muted">No data loaded.</td></tr>
                         </tbody>
                     </table>
                 </div>

@@ -45,6 +45,7 @@ let currentSearch = "";
 // Category filtering removed (we avoid AI-based categorization and UI filters for now).
 let currentRentPage = 1;
 let rentLoadedOnce = false;
+let rentViewMode = "tracker";
 
 function isAllEmailsTab() {
     return String(currentTab || "").toLowerCase() === "all";
@@ -99,7 +100,7 @@ async function initMailboxes() {
             loadTickets();
             if (currentDashboardTab === "rent") {
                 currentRentPage = 1;
-                loadRentTracker();
+                loadActiveRentView();
             }
             refreshGoogleStatus();
         });
@@ -584,7 +585,7 @@ function switchDashboardTab(tab) {
 
     updateSyncContextUI();
     if (currentDashboardTab === "rent" && !rentLoadedOnce) {
-        loadRentTracker();
+        loadActiveRentView();
     }
 }
 
@@ -615,6 +616,34 @@ function getRollingMonths() {
             label: d.toLocaleDateString(undefined, { month: "short", year: "numeric" }),
         };
     });
+}
+
+function getYearMonths() {
+    const year = new Date().getFullYear();
+    const labels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    return labels.map((label, idx) => ({
+        key: `${year}-${String(idx + 1).padStart(2, "0")}`,
+        label,
+    }));
+}
+
+function switchRentViewMode(mode) {
+    rentViewMode = (mode === "year") ? "year" : "tracker";
+    const btnTracker = document.getElementById("rentViewTrackerBtn");
+    const btnYear = document.getElementById("rentViewYearBtn");
+    const trackerGrid = document.getElementById("rentTrackerGrid");
+    const yearGrid = document.getElementById("rentYearReportGrid");
+    if (btnTracker) btnTracker.classList.toggle("active", rentViewMode === "tracker");
+    if (btnYear) btnYear.classList.toggle("active", rentViewMode === "year");
+    if (trackerGrid) trackerGrid.classList.toggle("hidden", rentViewMode !== "tracker");
+    if (yearGrid) yearGrid.classList.toggle("hidden", rentViewMode !== "year");
+    currentRentPage = 1;
+    loadActiveRentView();
+}
+
+function loadActiveRentView(page = null) {
+    if (rentViewMode === "year") return loadRentYearReport(page);
+    return loadRentTracker(page);
 }
 
 function monthCellSelect(item) {
@@ -731,15 +760,96 @@ async function loadRentTracker(page = null) {
     if (btnNext) btnNext.disabled = !Boolean(data.has_more);
 }
 
+async function loadRentYearReport(page = null) {
+    if (page !== null) currentRentPage = page;
+    const p = currentRentPage || 1;
+    const { status, frequency, query } = getRentFilters();
+
+    const itemsUrl = new URL("/rent-tracker/properties", window.location.origin);
+    const summaryUrl = new URL("/rent-tracker/summary", window.location.origin);
+    itemsUrl.searchParams.set("page", String(p));
+    itemsUrl.searchParams.set("page_size", "25");
+    if (status) itemsUrl.searchParams.set("status", status);
+    if (frequency) itemsUrl.searchParams.set("frequency", frequency);
+    if (query) itemsUrl.searchParams.set("query", query);
+
+    const body = document.getElementById("rentYearTableBody");
+    if (body) body.innerHTML = `<tr><td colspan="15" class="muted">Loading...</td></tr>`;
+
+    const [itemsResp, summaryResp] = await Promise.all([
+        apiFetch(itemsUrl.toString()),
+        apiFetch(summaryUrl.toString()),
+    ]);
+
+    if (!itemsResp.ok) {
+        const t = await itemsResp.text();
+        if (body) body.innerHTML = `<tr><td colspan="15" class="muted">Failed to load report: ${escapeHtml(t)}</td></tr>`;
+        return;
+    }
+    if (!summaryResp.ok) {
+        const t = await summaryResp.text();
+        if (body) body.innerHTML = `<tr><td colspan="15" class="muted">Failed to load summary: ${escapeHtml(t)}</td></tr>`;
+        return;
+    }
+
+    const data = await itemsResp.json();
+    const summary = await summaryResp.json();
+    rentLoadedOnce = true;
+
+    const items = Array.isArray(data.items) ? data.items : [];
+    const statusCounts = summary.status_counts || {};
+    const setText = (id, val) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = String(val || 0);
+    };
+    setText("rentKpiTotal", summary.total || 0);
+    setText("rentKpiOverdue", summary.overdue || 0);
+    setText("rentKpiDueSoon", summary.due_next_7_days || 0);
+    setText("rentKpiPaid", statusCounts.PAID || 0);
+    setText("rentKpiPending", (statusCounts.DUE || 0) + (statusCounts.PARTIAL || 0) + (statusCounts.AWAITING_CLEARANCE || 0));
+
+    if (!body) return;
+    const yearMonths = getYearMonths();
+    if (items.length === 0) {
+        body.innerHTML = `<tr><td colspan="15" class="muted">No properties found for this filter.</td></tr>`;
+    } else {
+        body.innerHTML = items.map((r) => `
+            <tr>
+                <td class="sticky-col"><div style="font-weight:700">${escapeHtml(r.property_address || "")}</div><div class="small muted">${escapeHtml(r.source_sheet || "-")}</div></td>
+                <td>${escapeHtml(r.frequency || "-")}</td>
+                <td>
+                    <div class="small muted">Paid ${Number((r.counts || {}).PAID || 0)} / ${Number(r.total_items || 0)}</div>
+                    <div class="small muted">Due ${Number((r.counts || {}).DUE || 0)} • Partial ${Number((r.counts || {}).PARTIAL || 0)}</div>
+                </td>
+                ${yearMonths.map((mk) => `<td>${monthCellSelect((r.months || {})[mk.key])}</td>`).join("")}
+            </tr>
+        `).join("");
+    }
+
+    const pi = document.getElementById("rentPageInfo");
+    if (pi) {
+        const total = Number(data.total || 0);
+        const pageNow = Number(data.page || 1);
+        const sizeNow = Number(data.page_size || 25);
+        const pages = sizeNow > 0 ? Math.max(1, Math.ceil(total / sizeNow)) : 1;
+        pi.textContent = `Page ${pageNow} of ${pages} • ${total} properties`;
+    }
+
+    const btnPrev = document.getElementById("rentBtnPrev");
+    const btnNext = document.getElementById("rentBtnNext");
+    if (btnPrev) btnPrev.disabled = Number(data.page || 1) <= 1;
+    if (btnNext) btnNext.disabled = !Boolean(data.has_more);
+}
+
 function prevRentPage() {
     if (currentRentPage <= 1) return;
     currentRentPage -= 1;
-    loadRentTracker();
+    loadActiveRentView();
 }
 
 function nextRentPage() {
     currentRentPage += 1;
-    loadRentTracker();
+    loadActiveRentView();
 }
 
 async function updateRentMonthCell(itemId, status, existingPartialAmount = 0) {
@@ -773,7 +883,7 @@ async function updateRentMonthCell(itemId, status, existingPartialAmount = 0) {
         alert(`Failed to update month cell: ${t}`);
         return;
     }
-    await loadRentTracker();
+    await loadActiveRentView();
 }
 
 async function updateRentPartialAmount(itemId, value) {
@@ -792,7 +902,7 @@ async function updateRentPartialAmount(itemId, value) {
         alert(`Failed to update partial amount: ${t}`);
         return;
     }
-    await loadRentTracker();
+    await loadActiveRentView();
 }
 
 async function importRentWorkbook() {
@@ -827,7 +937,7 @@ async function importRentWorkbook() {
         meta.textContent = `Imported ${rows} rows for ${y} from ${escapeHtml(f.name)} at ${new Date().toLocaleString()}.`;
     }
     currentRentPage = 1;
-    await loadRentTracker();
+    await loadActiveRentView();
 }
 
 function setTab(tab) {
@@ -1846,7 +1956,7 @@ window.addEventListener("load", async () => {
             tmr = setTimeout(() => {
                 if (currentDashboardTab === "rent") {
                     currentRentPage = 1;
-                    loadRentTracker();
+                    loadActiveRentView();
                 }
             }, 250);
         });
@@ -1857,7 +1967,7 @@ window.addEventListener("load", async () => {
         el.addEventListener("change", () => {
             if (currentDashboardTab === "rent") {
                 currentRentPage = 1;
-                loadRentTracker();
+                loadActiveRentView();
             }
         });
     });
