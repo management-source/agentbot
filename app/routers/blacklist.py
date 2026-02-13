@@ -44,8 +44,18 @@ def delete_blacklist_by_email(email: str, db: Session = Depends(get_db), mailbox
     return {"ok": True}
 
 @router.delete("/{item_id}")
-def delete_blacklist(item_id: int, db: Session = Depends(get_db)):
-    x = db.get(BlacklistedSender, item_id)
+def delete_blacklist(
+    item_id: int,
+    db: Session = Depends(get_db),
+    mailbox: str = Depends(get_current_mailbox),
+    user=Depends(get_current_user),
+):
+    x = (
+        db.query(BlacklistedSender)
+        .filter(BlacklistedSender.id == item_id)
+        .filter(BlacklistedSender.mailbox == mailbox)
+        .first()
+    )
     if not x:
         raise HTTPException(404, "Not found")
     db.delete(x)

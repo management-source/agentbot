@@ -554,7 +554,7 @@ async def send_reply_form(
             body_html=body_html,
             cc=cc or None,
             bcc=bcc or None,
-            from_email=settings.my_emails_list()[0] if settings.my_emails_list() else None,
+            from_email=t.mailbox,
             attachments=out_attachments,
         )
     except Exception as e:
