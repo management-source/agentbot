@@ -1307,6 +1307,8 @@ async function ensureAuthenticated() {
     // Good UI pill
     const authText = document.getElementById("authText");
     if (authText) authText.textContent = `Signed in as ${currentUser.name} (${currentUser.role})`;
+    const topUserInfo = document.getElementById("topUserInfo");
+    if (topUserInfo) topUserInfo.textContent = `User: ${currentUser.name} (${currentUser.role})`;
     const authDot = document.getElementById("authDot");
     if (authDot) {
         authDot.classList.add("green");
@@ -1373,6 +1375,8 @@ function logout() {
 
     const authText = document.getElementById("authText");
     if (authText) authText.textContent = "Not signed in";
+    const topUserInfo = document.getElementById("topUserInfo");
+    if (topUserInfo) topUserInfo.textContent = "User: Not signed in";
     const authDot = document.getElementById("authDot");
     if (authDot) {
         authDot.classList.remove("green");

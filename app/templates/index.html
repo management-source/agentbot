@@ -51,7 +51,7 @@
     }
 
     .sidebar{
-      background: linear-gradient(180deg, #0f2238 0%, #102a45 48%, #133055 100%);
+      background: linear-gradient(180deg, #060606 0%, #0b0b0b 58%, #121212 100%);
       color:#d4deea;
       border-right:1px solid rgba(255,255,255,.08);
       padding:18px 14px;
@@ -70,10 +70,19 @@
       }
     }
     .side-brand{
-      border:1px solid rgba(255,255,255,.14);
+      border:1px solid rgba(255,255,255,.12);
       border-radius:14px;
-      padding:12px;
-      background:rgba(255,255,255,.05);
+      padding:8px;
+      background:rgba(255,255,255,.04);
+    }
+    .side-brand img{
+      width:100%;
+      height:52px;
+      object-fit:contain;
+      border-radius:10px;
+      display:block;
+      background:#000;
+      border:1px solid rgba(255,255,255,.1);
     }
     .side-brand h2{
       margin:0;
@@ -383,7 +392,7 @@
 
     /* Ticket list */
     .ticket{
-      margin-top:0;
+      margin-top:12px;
       padding:16px;
       border:1px solid var(--border);
       border-radius:var(--radius);
@@ -397,18 +406,7 @@
     @media (max-width: 980px){
       .ticket{grid-template-columns:1fr}
     }
-    #ticketList{
-      display:grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap:12px;
-      align-items:start;
-    }
-    @media (max-width: 1280px){
-      #ticketList{grid-template-columns: repeat(2, minmax(0, 1fr))}
-    }
-    @media (max-width: 860px){
-      #ticketList{grid-template-columns: 1fr}
-    }
+    #ticketList{display:block}
 
     .ticket h4{
       margin:0;
@@ -563,8 +561,7 @@
         <div class="app-shell">
             <aside class="sidebar">
                 <div class="side-brand">
-                    <h2>Dons Premier</h2>
-                    <p>Email Operations Console</p>
+                    <img src="https://ik.imagekit.io/donspremier/Banner%20-%20Logo.png?updatedAt=1767844482007" alt="Dons Premier Estate Agents" loading="lazy" />
                 </div>
                 <nav class="side-nav">
                     <a class="active" href="javascript:void(0)">Inbox Dashboard</a>
@@ -576,7 +573,7 @@
                 </nav>
             </aside>
             <div class="main-wrap">
-        <div class="topbar-modern">
+            <div class="topbar-modern">
             <div>
                 <h1>Modern Reply Dashboard</h1>
                 <p>Mailbox-separated workflow and expandable modules</p>
@@ -585,11 +582,7 @@
                 <span class="chip">Mode: Live</span>
                 <span class="chip">Queue: <span id="queueViewMode">Awaiting Reply</span></span>
                 <span class="chip">Mailbox: <span id="queueMailboxMode">-</span></span>
-            </div>
-        </div>
-        <div class="header">
-            <div class="banner">
-                <img src="https://ik.imagekit.io/donspremier/Banner%20-%20Logo.png?updatedAt=1767844482007" alt="Dons Premier Estate Agents" loading="lazy" />
+                <span class="chip" id="topUserInfo">User: Not signed in</span>
             </div>
         </div>
 
