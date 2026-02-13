@@ -224,9 +224,10 @@
     }
 
     .page{
-      max-width: 1380px;
-      margin: 0 auto;
-      padding: 20px;
+      width: 100%;
+      max-width: none;
+      margin: 0;
+      padding: 20px 24px;
       display:flex;
       flex-direction:column;
       gap: var(--gap);
@@ -245,6 +246,7 @@
     }
     @media (max-width: 1080px){
       .dashboard-shell{grid-template-columns: 1fr}
+      .page{padding:16px}
     }
     .left-rail{
       display:flex;
@@ -321,9 +323,9 @@
     .footer{
       margin-top:auto;
       padding: 18px 20px 26px 20px;
-      max-width: 1200px;
-      margin-left:auto;
-      margin-right:auto;
+      max-width: none;
+      margin-left:0;
+      margin-right:0;
       color: var(--muted);
       font-size: 12px;
       text-align:center;
