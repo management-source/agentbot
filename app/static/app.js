@@ -4,6 +4,8 @@ let currentAiThreadId = null;
 let aiVoiceRecorder = null;
 let aiVoiceStream = null;
 let aiVoiceChunks = [];
+let aiSpeechRecognition = null;
+let aiSpeechTranscript = "";
 let currentDashboardTab = "inbox";
 
 // Mailbox context (multi-inbox)
@@ -1633,15 +1635,75 @@ async function startAiVoiceCapture() {
         setAiVoiceStatus("Mic requires a secure context (HTTPS).");
         return;
     }
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
-        alert("Voice capture is not supported in this browser/device.");
+    if (aiVoiceRecorder && aiVoiceRecorder.state === "recording") {
         return;
     }
-    if (aiVoiceRecorder && aiVoiceRecorder.state === "recording") {
+    if (aiSpeechRecognition) {
         return;
     }
 
     try {
+        const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (SR) {
+            aiSpeechTranscript = "";
+            aiSpeechRecognition = new SR();
+            aiSpeechRecognition.lang = "en-US";
+            aiSpeechRecognition.interimResults = true;
+            aiSpeechRecognition.continuous = true;
+            aiSpeechRecognition.onresult = (event) => {
+                let out = "";
+                for (let i = 0; i < event.results.length; i++) {
+                    out += (event.results[i][0]?.transcript || "") + " ";
+                }
+                aiSpeechTranscript = out.trim();
+            };
+            aiSpeechRecognition.onerror = (event) => {
+                setAiVoiceStatus(`Speech recognition error: ${event.error || "unknown"}`);
+            };
+            aiSpeechRecognition.onend = async () => {
+                const transcript = (aiSpeechTranscript || "").trim();
+                aiSpeechRecognition = null;
+                const startBtn = document.getElementById("aiVoiceStartBtn");
+                const stopBtn = document.getElementById("aiVoiceStopBtn");
+                if (startBtn) startBtn.disabled = false;
+                if (stopBtn) stopBtn.disabled = true;
+
+                const weakTranscript = (
+                    !transcript ||
+                    transcript.length < 6 ||
+                    /^(you|yeah|yep|uh|um|hmm|thank you|thanks)[.!?\s]*$/i.test(transcript)
+                );
+                if (weakTranscript) {
+                    setAiVoiceStatus("Low-confidence transcript. Please speak closer to mic and try again.");
+                    return;
+                }
+
+                const extraEl = getAiReplyExtraEl();
+                if (extraEl) {
+                    const cur = String(extraEl.value || "").trim();
+                    extraEl.value = cur ? `${cur}\n${transcript}` : transcript;
+                }
+                setAiVoiceStatus("Voice inserted. Regenerating draft...");
+                if (currentAiThreadId) {
+                    await regenerateAiDraftFromModal();
+                }
+            };
+
+            aiSpeechRecognition.start();
+            setAiVoiceStatus("Listening... click Stop & Insert when done.");
+            const startBtn = document.getElementById("aiVoiceStartBtn");
+            const stopBtn = document.getElementById("aiVoiceStopBtn");
+            if (startBtn) startBtn.disabled = true;
+            if (stopBtn) stopBtn.disabled = false;
+            return;
+        }
+
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
+            alert("Voice capture is not supported in this browser/device.");
+            return;
+        }
+
+        // Fallback path: record audio and transcribe on backend.
         aiVoiceStream = await navigator.mediaDevices.getUserMedia({
             audio: {
                 echoCancellation: true,
@@ -1675,7 +1737,16 @@ async function stopAiVoiceCaptureAndTranscribe() {
     const startBtn = document.getElementById("aiVoiceStartBtn");
     const stopBtn = document.getElementById("aiVoiceStopBtn");
     if (stopBtn) stopBtn.disabled = true;
-    setAiVoiceStatus("Processing voice note...");
+    setAiVoiceStatus("Processing voice input...");
+
+    if (aiSpeechRecognition) {
+        try {
+            aiSpeechRecognition.stop();
+            return;
+        } catch {
+            // Continue to fallback/cleanup path below.
+        }
+    }
 
     if (!aiVoiceRecorder) {
         setAiVoiceStatus("No recording to process.");
@@ -1799,6 +1870,11 @@ async function regenerateAiDraft() {
 function closeAiReplyModal() {
     const modal = document.getElementById("aiReplyModal");
     if (modal) modal.classList.add("hidden");
+    if (aiSpeechRecognition) {
+        try { aiSpeechRecognition.stop(); } catch { }
+        aiSpeechRecognition = null;
+    }
+    aiSpeechTranscript = "";
     if (aiVoiceRecorder && aiVoiceRecorder.state === "recording") {
         try { aiVoiceRecorder.stop(); } catch { }
     }

@@ -454,12 +454,13 @@ async def transcribe_audio(
             file=audio,
             language="en",
             temperature=0,
-            prompt=(
-                "Property management email dictation. "
-                "Transcribe exactly what the speaker says for editing a draft email."
-            ),
+            response_format="text",
         )
-        text = (getattr(resp, "text", "") or "").strip()
+        text = ""
+        if isinstance(resp, str):
+            text = resp.strip()
+        else:
+            text = (getattr(resp, "text", "") or "").strip()
         return {"text": text}
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Transcription failed: {e}")
