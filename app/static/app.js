@@ -1,6 +1,7 @@
 let currentTab = "awaiting_reply";
 let currentAckThreadId = null;
 let currentAiThreadId = null;
+let currentDashboardTab = "inbox";
 
 // Mailbox context (multi-inbox)
 let currentMailbox = localStorage.getItem("agent_mailbox") || "";
@@ -42,6 +43,8 @@ let pageSize = 25;
 // UI filters
 let currentSearch = "";
 // Category filtering removed (we avoid AI-based categorization and UI filters for now).
+let currentRentPage = 1;
+let rentLoadedOnce = false;
 
 function isAllEmailsTab() {
     return String(currentTab || "").toLowerCase() === "all";
@@ -52,6 +55,11 @@ function updateSyncContextUI() {
     const viewBadge = document.getElementById("queueViewMode");
     const mailboxBadge = document.getElementById("queueMailboxMode");
     if (mailboxBadge) mailboxBadge.textContent = currentMailbox || "-";
+    if (currentDashboardTab === "rent") {
+        if (viewBadge) viewBadge.textContent = "Rent Tracker";
+        if (info) info.textContent = "Inbox sync controls are hidden while you are on the rent tracker tab.";
+        return;
+    }
     if (!info) return;
     if (isAllEmailsTab()) {
         if (viewBadge) viewBadge.textContent = "All Emails";
@@ -89,6 +97,10 @@ async function initMailboxes() {
             currentPage = 1;
             updateSyncContextUI();
             loadTickets();
+            if (currentDashboardTab === "rent") {
+                currentRentPage = 1;
+                loadRentTracker();
+            }
             refreshGoogleStatus();
         });
 
@@ -550,6 +562,191 @@ async function flushDatabase() {
 function formatDate(dt) {
     if (!dt) return "-";
     try { return new Date(dt).toLocaleString(); } catch { return dt; }
+}
+function formatDateShort(dt) {
+    if (!dt) return "-";
+    try { return new Date(dt).toLocaleDateString(); } catch { return dt; }
+}
+
+function switchDashboardTab(tab) {
+    currentDashboardTab = tab === "rent" ? "rent" : "inbox";
+    const inboxPanel = document.getElementById("inboxPanel");
+    const rentPanel = document.getElementById("rentPanel");
+    const navInbox = document.getElementById("navInbox");
+    const navRent = document.getElementById("navRentTracker");
+
+    if (inboxPanel) inboxPanel.classList.toggle("hidden", currentDashboardTab !== "inbox");
+    if (rentPanel) rentPanel.classList.toggle("hidden", currentDashboardTab !== "rent");
+    if (navInbox) navInbox.classList.toggle("active", currentDashboardTab === "inbox");
+    if (navRent) navRent.classList.toggle("active", currentDashboardTab === "rent");
+
+    updateSyncContextUI();
+    if (currentDashboardTab === "rent" && !rentLoadedOnce) {
+        loadRentTracker();
+    }
+}
+
+function rentStatusChip(status) {
+    const key = String(status || "DUE").toUpperCase();
+    if (key === "PAID") return `<span class="rent-status paid">Paid</span>`;
+    if (key === "PARTIAL") return `<span class="rent-status partial">Partial</span>`;
+    if (key === "VACANT") return `<span class="rent-status vacant">Vacant</span>`;
+    if (key === "AWAITING_CLEARANCE") return `<span class="rent-status awaiting">Awaiting Clearance</span>`;
+    return `<span class="rent-status due">Due</span>`;
+}
+
+function getRentFilters() {
+    const month = (document.getElementById("rentMonthFilter")?.value || "").trim();
+    const status = (document.getElementById("rentStatusFilter")?.value || "").trim();
+    const frequency = (document.getElementById("rentFrequencyFilter")?.value || "").trim();
+    const query = (document.getElementById("rentSearchBox")?.value || "").trim();
+    return { month, status, frequency, query };
+}
+
+async function loadRentTracker(page = null) {
+    if (page !== null) currentRentPage = page;
+    const p = currentRentPage || 1;
+    const { month, status, frequency, query } = getRentFilters();
+
+    const itemsUrl = new URL("/rent-tracker/items", window.location.origin);
+    const summaryUrl = new URL("/rent-tracker/summary", window.location.origin);
+    itemsUrl.searchParams.set("page", String(p));
+    itemsUrl.searchParams.set("page_size", "50");
+    if (month) {
+        itemsUrl.searchParams.set("month", month);
+        summaryUrl.searchParams.set("month", month);
+    }
+    if (status) itemsUrl.searchParams.set("status", status);
+    if (frequency) itemsUrl.searchParams.set("frequency", frequency);
+    if (query) itemsUrl.searchParams.set("query", query);
+
+    const body = document.getElementById("rentTableBody");
+    if (body) body.innerHTML = `<tr><td colspan="7" class="muted">Loading...</td></tr>`;
+
+    const [itemsResp, summaryResp] = await Promise.all([
+        apiFetch(itemsUrl.toString()),
+        apiFetch(summaryUrl.toString()),
+    ]);
+
+    if (!itemsResp.ok) {
+        const t = await itemsResp.text();
+        if (body) body.innerHTML = `<tr><td colspan="7" class="muted">Failed to load rent tracker: ${escapeHtml(t)}</td></tr>`;
+        return;
+    }
+    if (!summaryResp.ok) {
+        const t = await summaryResp.text();
+        if (body) body.innerHTML = `<tr><td colspan="7" class="muted">Failed to load summary: ${escapeHtml(t)}</td></tr>`;
+        return;
+    }
+
+    const data = await itemsResp.json();
+    const summary = await summaryResp.json();
+    rentLoadedOnce = true;
+
+    const items = Array.isArray(data.items) ? data.items : [];
+    const statusCounts = summary.status_counts || {};
+    const setText = (id, val) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = String(val || 0);
+    };
+
+    setText("rentKpiTotal", summary.total || 0);
+    setText("rentKpiOverdue", summary.overdue || 0);
+    setText("rentKpiDueSoon", summary.due_next_7_days || 0);
+    setText("rentKpiPaid", statusCounts.PAID || 0);
+    setText("rentKpiPending", (statusCounts.DUE || 0) + (statusCounts.PARTIAL || 0) + (statusCounts.AWAITING_CLEARANCE || 0));
+
+    if (!body) return;
+    if (items.length === 0) {
+        body.innerHTML = `<tr><td colspan="7" class="muted">No rent tracker rows found for this filter.</td></tr>`;
+    } else {
+        body.innerHTML = items.map((r) => `
+            <tr>
+                <td><div style="font-weight:700">${escapeHtml(r.property_address || "")}</div><div class="small muted">${escapeHtml(r.source_sheet || "-")}</div></td>
+                <td>${escapeHtml(r.frequency || "-")}</td>
+                <td>${escapeHtml(formatDateShort(r.due_date))}</td>
+                <td>
+                    <div>${rentStatusChip(r.status)}</div>
+                    <select id="rentStatus_${r.id}" style="margin-top:6px;min-width:180px">
+                        <option value="DUE" ${r.status === "DUE" ? "selected" : ""}>Due</option>
+                        <option value="PAID" ${r.status === "PAID" ? "selected" : ""}>Paid</option>
+                        <option value="PARTIAL" ${r.status === "PARTIAL" ? "selected" : ""}>Partial</option>
+                        <option value="AWAITING_CLEARANCE" ${r.status === "AWAITING_CLEARANCE" ? "selected" : ""}>Awaiting clearance</option>
+                        <option value="VACANT" ${r.status === "VACANT" ? "selected" : ""}>Vacant</option>
+                    </select>
+                </td>
+                <td><input type="date" id="rentPaidOn_${r.id}" value="${r.paid_on ? new Date(r.paid_on).toISOString().slice(0, 10) : ""}" /></td>
+                <td><input type="text" id="rentNotes_${r.id}" value="${escapeHtml(r.notes || "")}" placeholder="optional note" /></td>
+                <td><button class="btn" onclick="saveRentRow(${r.id})">Save</button></td>
+            </tr>
+        `).join("");
+    }
+
+    const pi = document.getElementById("rentPageInfo");
+    if (pi) {
+        const total = Number(data.total || 0);
+        const pageNow = Number(data.page || 1);
+        const sizeNow = Number(data.page_size || 50);
+        const pages = sizeNow > 0 ? Math.max(1, Math.ceil(total / sizeNow)) : 1;
+        pi.textContent = `Page ${pageNow} of ${pages} • ${total} rows`;
+    }
+}
+
+async function saveRentRow(itemId) {
+    const status = document.getElementById(`rentStatus_${itemId}`)?.value || "DUE";
+    const paidOnVal = document.getElementById(`rentPaidOn_${itemId}`)?.value || "";
+    const notes = document.getElementById(`rentNotes_${itemId}`)?.value || "";
+
+    const payload = { status, notes };
+    if (paidOnVal) {
+        payload.paid_on = `${paidOnVal}T00:00:00`;
+    }
+
+    const r = await apiFetch(`/rent-tracker/items/${itemId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+    });
+    if (!r.ok) {
+        const t = await r.text();
+        alert(`Failed to update row: ${t}`);
+        return;
+    }
+    await loadRentTracker();
+}
+
+async function importRentWorkbook() {
+    const fileInput = document.getElementById("rentImportFile");
+    const f = fileInput && fileInput.files ? fileInput.files[0] : null;
+    if (!f) {
+        alert("Choose an .xlsx workbook first.");
+        return;
+    }
+
+    const form = new FormData();
+    form.append("file", f, f.name);
+
+    const meta = document.getElementById("rentImportMeta");
+    if (meta) meta.textContent = "Importing workbook...";
+
+    const r = await apiFetch("/rent-tracker/import-xlsx", {
+        method: "POST",
+        body: form,
+    });
+    const t = await r.text();
+    if (!r.ok) {
+        if (meta) meta.textContent = "Import failed.";
+        alert(`Import failed (${r.status}):\n\n${t}`);
+        return;
+    }
+    let j = null;
+    try { j = JSON.parse(t); } catch { j = null; }
+    if (meta) {
+        const rows = j && j.imported_rows ? j.imported_rows : "-";
+        meta.textContent = `Imported ${rows} rows from ${escapeHtml(f.name)} at ${new Date().toLocaleString()}.`;
+    }
+    currentRentPage = 1;
+    await loadRentTracker();
 }
 
 function setTab(tab) {
@@ -1560,9 +1757,33 @@ window.addEventListener("load", async () => {
             tmr = setTimeout(() => loadTickets(), 250);
         });
     }
+    const rentSearch = document.getElementById("rentSearchBox");
+    if (rentSearch) {
+        let tmr = null;
+        rentSearch.addEventListener("input", () => {
+            if (tmr) clearTimeout(tmr);
+            tmr = setTimeout(() => {
+                if (currentDashboardTab === "rent") {
+                    currentRentPage = 1;
+                    loadRentTracker();
+                }
+            }, 250);
+        });
+    }
+    ["rentMonthFilter", "rentStatusFilter", "rentFrequencyFilter"].forEach((id) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.addEventListener("change", () => {
+            if (currentDashboardTab === "rent") {
+                currentRentPage = 1;
+                loadRentTracker();
+            }
+        });
+    });
 
     // Assignment / category filters removed.
 
+    switchDashboardTab("inbox");
     updateSyncContextUI();
 
     // Set default tab (will load tickets).

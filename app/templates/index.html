@@ -425,6 +425,7 @@
     .kpi .accent{color:var(--primary)}
     .kpi .warn{color:var(--warn)}
     .kpi .ok{color:var(--success)}
+    .kpi .danger{color:var(--danger)}
 
     .filters-row{
       display:flex;
@@ -452,6 +453,50 @@
       color:var(--muted);
     }
     .seg button.active{background:rgba(79,70,229,.10); color:var(--primary)}
+
+    .rent-table-wrap{
+      margin-top:12px;
+      border:1px solid var(--border);
+      border-radius:14px;
+      overflow:auto;
+      background:#fff;
+    }
+    .rent-table{
+      width:100%;
+      border-collapse:collapse;
+      min-width:980px;
+    }
+    .rent-table th, .rent-table td{
+      border-bottom:1px solid var(--border);
+      padding:10px 12px;
+      font-size:12px;
+      text-align:left;
+      vertical-align:top;
+    }
+    .rent-table th{
+      color:#475569;
+      background:#f8fafc;
+      font-weight:800;
+      position:sticky;
+      top:0;
+      z-index:1;
+    }
+    .rent-status{
+      display:inline-flex;
+      align-items:center;
+      padding:4px 8px;
+      border-radius:999px;
+      font-size:11px;
+      font-weight:800;
+      border:1px solid var(--border);
+      background:#fff;
+      color:#334155;
+    }
+    .rent-status.paid{background:rgba(22,163,74,.1); border-color:rgba(22,163,74,.25); color:#166534}
+    .rent-status.due{background:rgba(220,38,38,.08); border-color:rgba(220,38,38,.25); color:#991b1b}
+    .rent-status.partial{background:rgba(245,158,11,.12); border-color:rgba(245,158,11,.28); color:#92400e}
+    .rent-status.vacant{background:rgba(100,116,139,.12); border-color:rgba(100,116,139,.24); color:#334155}
+    .rent-status.awaiting{background:rgba(59,130,246,.1); border-color:rgba(59,130,246,.25); color:#1e40af}
 
     /* Ticket list */
     .ticket{
@@ -627,7 +672,8 @@
                     <img src="https://ik.imagekit.io/donspremier/Banner%20-%20Logo.png?updatedAt=1767844482007" alt="Dons Premier Estate Agents" loading="lazy" />
                 </div>
                 <nav class="side-nav">
-                    <a class="active" href="javascript:void(0)">Inbox Dashboard</a>
+                    <a id="navInbox" class="active" href="javascript:void(0)" onclick="switchDashboardTab('inbox')">Inbox Dashboard</a>
+                    <a id="navRentTracker" href="javascript:void(0)" onclick="switchDashboardTab('rent')">Rent Tracker</a>
                     <a href="javascript:void(0)">Tasks</a>
                     <a href="javascript:void(0)">Rules</a>
                     <a href="javascript:void(0)">Reports</a>
@@ -740,6 +786,7 @@
                 </aside>
 
                 <main class="content-rail">
+            <div id="inboxPanel">
 
             <div class="filters-row">
                 <div class="seg" id="statusSeg">
@@ -764,6 +811,99 @@
                 <button class="btn" id="btnPrev" onclick="prevPage()">Prev</button>
                 <div class="small muted" id="pageInfo">Page 1</div>
                 <button class="btn" id="btnNext" onclick="nextPage()">Next</button>
+            </div>
+            </div>
+
+            <div id="rentPanel" class="hidden">
+                <div class="card">
+                    <div class="row space">
+                        <div>
+                            <p class="panel-title">Rent Due Tracker</p>
+                            <p class="panel-sub">Import rent due schedules from your Excel sheet and track overdue, due soon, and paid statuses in one place.</p>
+                        </div>
+                        <div class="row">
+                            <input type="file" id="rentImportFile" accept=".xlsx" />
+                            <button class="btn primary" onclick="importRentWorkbook()">Import Workbook</button>
+                        </div>
+                    </div>
+                    <div class="small muted" id="rentImportMeta" style="margin-top:8px">No rent workbook imported yet.</div>
+                </div>
+
+                <div class="kpi-row">
+                    <div class="card kpi">
+                        <h3>Total Rows</h3>
+                        <div class="num" id="rentKpiTotal">0</div>
+                    </div>
+                    <div class="card kpi">
+                        <h3>Overdue</h3>
+                        <div class="num danger" id="rentKpiOverdue">0</div>
+                    </div>
+                    <div class="card kpi">
+                        <h3>Due Next 7 Days</h3>
+                        <div class="num warn" id="rentKpiDueSoon">0</div>
+                    </div>
+                    <div class="card kpi">
+                        <h3>Paid</h3>
+                        <div class="num ok" id="rentKpiPaid">0</div>
+                    </div>
+                    <div class="card kpi">
+                        <h3>Pending</h3>
+                        <div class="num accent" id="rentKpiPending">0</div>
+                    </div>
+                </div>
+
+                <div class="filters-row">
+                    <div class="field">
+                        <div class="label">Month (YYYY-MM)</div>
+                        <input type="text" id="rentMonthFilter" placeholder="2025-12" />
+                    </div>
+                    <div class="field">
+                        <div class="label">Status</div>
+                        <select id="rentStatusFilter">
+                            <option value>All</option>
+                            <option value="DUE">Due</option>
+                            <option value="PAID">Paid</option>
+                            <option value="PARTIAL">Partial</option>
+                            <option value="AWAITING_CLEARANCE">Awaiting clearance</option>
+                            <option value="VACANT">Vacant</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <div class="label">Frequency</div>
+                        <select id="rentFrequencyFilter">
+                            <option value>All</option>
+                            <option value="MONTHLY">Monthly</option>
+                            <option value="FORTNIGHTLY">Fortnightly</option>
+                        </select>
+                    </div>
+                    <div class="field" style="min-width:260px">
+                        <div class="label">Search</div>
+                        <input type="text" id="rentSearchBox" placeholder="Property, notes, raw value..." />
+                    </div>
+                    <div class="row" style="align-self:flex-end">
+                        <button class="btn" onclick="loadRentTracker()">Apply</button>
+                    </div>
+                </div>
+
+                <div class="rent-table-wrap">
+                    <table class="rent-table">
+                        <thead>
+                            <tr>
+                                <th>Property</th>
+                                <th>Frequency</th>
+                                <th>Due Date</th>
+                                <th>Status</th>
+                                <th>Paid On</th>
+                                <th>Notes</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="rentTableBody">
+                            <tr><td colspan="7" class="muted">No data loaded.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="small muted" id="rentPageInfo" style="margin-top:8px"></div>
             </div>
 
                 </main>

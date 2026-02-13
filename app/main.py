@@ -27,6 +27,7 @@ from app.routers import auth, tickets, ui, threads
 from app.routers import sync
 from app.routers import blacklist
 from app.routers import assets
+from app.routers import rent_tracker
 from app.routers import settings as app_settings
 from app.routers import user_auth
 from app.models import User, UserRole
@@ -207,6 +208,7 @@ app.include_router(assets.router, prefix="/assets", tags=["assets"])
 app.include_router(tasks.router, prefix="/tasks", tags=["tasks"])
 app.include_router(app_settings.router, prefix="/settings", tags=["settings"])
 app.include_router(blacklist.router, prefix="/blacklist", tags=["blacklist"])
+app.include_router(rent_tracker.router, prefix="/rent-tracker", tags=["rent-tracker"])
 
 @app.on_event("startup")
 def on_startup():

@@ -1,7 +1,7 @@
 from datetime import datetime
 from pydantic import BaseModel
 from pydantic import ConfigDict
-from app.models import TicketStatus, TicketCategory, UserRole
+from app.models import TicketStatus, TicketCategory, UserRole, RentTrackStatus
 from typing import Optional
 
 
@@ -105,3 +105,28 @@ class SendAckIn(BaseModel):
     subject: str
     body: str
     mark_as_responded: bool = True
+
+
+class RentDueItemOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    mailbox: str
+    property_address: str
+    frequency: str
+    due_date: datetime | None
+    due_day: int | None
+    period_label: str | None
+    source_sheet: str | None
+    status: RentTrackStatus
+    raw_value: str | None
+    paid_on: datetime | None
+    notes: str | None
+    updated_at: datetime
+
+
+class RentDueListOut(BaseModel):
+    items: list[RentDueItemOut]
+    total: int
+    page: int
+    page_size: int
+    has_more: bool
