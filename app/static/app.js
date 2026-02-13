@@ -43,6 +43,25 @@ let pageSize = 25;
 let currentSearch = "";
 // Category filtering removed (we avoid AI-based categorization and UI filters for now).
 
+function isAllEmailsTab() {
+    return String(currentTab || "").toLowerCase() === "all";
+}
+
+function updateSyncContextUI() {
+    const info = document.getElementById("syncInfo");
+    const viewBadge = document.getElementById("queueViewMode");
+    const mailboxBadge = document.getElementById("queueMailboxMode");
+    if (mailboxBadge) mailboxBadge.textContent = currentMailbox || "-";
+    if (!info) return;
+    if (isAllEmailsTab()) {
+        if (viewBadge) viewBadge.textContent = "All Emails";
+        info.textContent = "All Emails mode: choose a From/To date range, then Fetch or Check updates for that range.";
+    } else {
+        if (viewBadge) viewBadge.textContent = "Awaiting Reply";
+        info.textContent = "Awaiting Reply mode: incremental updates focus on active inbox threads that need a response.";
+    }
+}
+
 let googleConnected = false;
 async function initMailboxes() {
     const sel = document.getElementById("mailboxSelect");
@@ -68,12 +87,16 @@ async function initMailboxes() {
             localStorage.setItem("agent_mailbox", currentMailbox);
             // refresh UI data under new mailbox
             currentPage = 1;
+            updateSyncContextUI();
             loadTickets();
             refreshGoogleStatus();
         });
 
         const lbl = document.getElementById("mailboxLabel");
-        if (lbl) lbl.textContent = currentMailbox || "—";
+        if (lbl) lbl.textContent = currentMailbox || "-";
+        const mailboxBadge = document.getElementById("queueMailboxMode");
+        if (mailboxBadge) mailboxBadge.textContent = currentMailbox || "-";
+        updateSyncContextUI();
     } catch (e) {
         // If auth isn't ready yet, we'll retry after login.
     }
@@ -419,6 +442,7 @@ function formatDate(dt) {
 function setTab(tab) {
     currentTab = tab;
     currentPage = 1;
+    updateSyncContextUI();
 
     // Tailwind tabs (legacy)
     document.querySelectorAll(".tabbtn").forEach(btn => {
@@ -464,6 +488,12 @@ async function fetchNow() {
         const maxThreads = parseInt((maxEl && maxEl.value) ? maxEl.value : "500", 10);
         const incremental = !!(incEl && incEl.checked);
         const includeAnywhere = !!(allEl && allEl.checked);
+        const allMode = isAllEmailsTab();
+
+        if (allMode && (!start || !end)) {
+            alert("All Emails mode requires both From and To dates.");
+            return;
+        }
 
         // Persist the selected date filter for the ticket list.
         currentDateFilter = { start: start || "", end: end || "" };
@@ -473,9 +503,13 @@ async function fetchNow() {
         if (start) url.searchParams.set("start", start);
         if (end) url.searchParams.set("end", end);
         if (!Number.isNaN(maxThreads) && maxThreads > 0) url.searchParams.set("max_threads", String(maxThreads));
+        url.searchParams.set("awaiting_only", allMode ? "false" : "true");
         // incremental applies only when no date range
         if (!start && !end) url.searchParams.set("incremental", incremental ? "true" : "false");
-        if (start || end) url.searchParams.set("include_anywhere", includeAnywhere ? "true" : "false");
+        if (start || end) {
+            const includeAny = allMode ? true : includeAnywhere;
+            url.searchParams.set("include_anywhere", includeAny ? "true" : "false");
+        }
 
         const r = await apiFetch(url.toString(), { method: "POST" });
         const text = await r.text();
@@ -518,10 +552,34 @@ async function checkUpdates() {
     }
 
     try {
-        const url = new URL("/sync/check-updates", window.location.origin);
+        const allMode = isAllEmailsTab();
+        const startEl = document.getElementById("startDate") || document.getElementById("fromDate");
+        const endEl = document.getElementById("endDate") || document.getElementById("toDate");
+        const maxEl = document.getElementById("maxThreads") || document.getElementById("limit");
+        const start = startEl ? (startEl.value || currentDateFilter.start || "") : (currentDateFilter.start || "");
+        const end = endEl ? (endEl.value || currentDateFilter.end || "") : (currentDateFilter.end || "");
+        const maxThreads = parseInt((maxEl && maxEl.value) ? maxEl.value : "200", 10);
+
+        let url;
+        if (allMode) {
+            if (!start || !end) {
+                alert("In All Emails mode, choose both From and To dates before checking updates.");
+                return;
+            }
+            currentDateFilter = { start, end };
+            url = new URL("/sync/fetch-now", window.location.origin);
+            url.searchParams.set("start", start);
+            url.searchParams.set("end", end);
+            url.searchParams.set("incremental", "false");
+            url.searchParams.set("include_anywhere", "true");
+            url.searchParams.set("awaiting_only", "false");
+            url.searchParams.set("max_threads", String(!Number.isNaN(maxThreads) && maxThreads > 0 ? maxThreads : 500));
+        } else {
+            url = new URL("/sync/check-updates", window.location.origin);
+            // Safety cap; frequent use should stay light.
+            url.searchParams.set("max_threads", String(!Number.isNaN(maxThreads) && maxThreads > 0 ? maxThreads : 200));
+        }
         if (currentMailbox) url.searchParams.set("mailbox", currentMailbox);
-        // Safety cap; frequent use should stay light.
-        url.searchParams.set("max_threads", "200");
 
         const r = await apiFetch(url.toString(), { method: "POST" });
         const text = await r.text();
@@ -751,6 +809,7 @@ async function loadTickets() {
         const el = document.getElementById(id);
         if (el) el.textContent = String(val ?? 0);
     };
+    setText("tabAllCount", c.all ?? 0);
     setText("tabAwaitingCount", c.awaiting_reply ?? 0);
     setText("tabInProgressCount", c.in_progress ?? 0);
     setText("tabRespondedCount", c.responded ?? 0);
@@ -1381,6 +1440,9 @@ window.addEventListener("load", async () => {
 
     // Assignment / category filters removed.
 
+    updateSyncContextUI();
+
     // Set default tab (will load tickets).
     setTab(currentTab);
 });
+

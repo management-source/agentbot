@@ -42,12 +42,37 @@
     }
 
     .page{
-      max-width: 1200px;
+      max-width: 1380px;
       margin: 0 auto;
       padding: 20px;
       display:flex;
       flex-direction:column;
       gap: var(--gap);
+    }
+    .dashboard-shell{
+      display:grid;
+      grid-template-columns: 340px minmax(0, 1fr);
+      gap: var(--gap);
+      align-items:start;
+    }
+    @media (max-width: 1080px){
+      .dashboard-shell{grid-template-columns: 1fr}
+    }
+    .left-rail{
+      display:flex;
+      flex-direction:column;
+      gap:var(--gap);
+      position:sticky;
+      top:12px;
+    }
+    @media (max-width: 1080px){
+      .left-rail{position:static}
+    }
+    .content-rail{
+      display:flex;
+      flex-direction:column;
+      gap:var(--gap);
+      min-width:0;
     }
 
     .header{
@@ -85,6 +110,24 @@
       grid-template-columns: 1fr;
       gap:var(--gap);
       align-items:start;
+    }
+    .workspace-head{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      flex-wrap:wrap;
+    }
+    .workspace-title{
+      margin:0;
+      font-size:18px;
+      font-weight:800;
+      letter-spacing:-.01em;
+    }
+    .workspace-sub{
+      margin:4px 0 0 0;
+      color:var(--muted);
+      font-size:12px;
     }
 
     .footer{
@@ -402,7 +445,9 @@
         </div>
 
         <div class="page">
-            <div class="top-grid">
+            <div class="dashboard-shell">
+                <aside class="left-rail">
+                    <div class="top-grid">
                 <div class="card brand">
                     <h1>Email Reply Manager</h1>
                     <p><strong>Dons Premier Estate Agents</strong> · Project: <span class="muted">Email Agent</span></p>
@@ -483,10 +528,24 @@
                             onclick="clearDateFilter()">Clear Dates</button>
                     </div>
                 </div>
-            </div>
+                    </div>
+                </aside>
+
+                <main class="content-rail">
+                    <div class="card workspace-head">
+                        <div>
+                            <h2 class="workspace-title">Work Queue Dashboard</h2>
+                            <p class="workspace-sub">Mailbox-isolated queue management. Use All Emails with a date range for historical review and updates.</p>
+                        </div>
+                        <div class="row">
+                            <span class="pill">View: <strong id="queueViewMode">Awaiting Reply</strong></span>
+                            <span class="pill">Mailbox: <strong id="queueMailboxMode">—</strong></span>
+                        </div>
+                    </div>
 
             <div class="filters-row">
                 <div class="seg" id="statusSeg">
+                    <button data-tab="all">All Emails <span class="pill" style="margin-left:8px" id="tabAllCount">0</span></button>
                     <button data-tab="awaiting_reply" class="active">Awaiting Reply <span class="pill" style="margin-left:8px" id="tabAwaitingCount">0</span></button>
                     <button data-tab="in_progress">In Progress <span class="pill" style="margin-left:8px" id="tabInProgressCount">0</span></button>
                     <button data-tab="responded">Responded <span class="pill" style="margin-left:8px" id="tabRespondedCount">0</span></button>
@@ -509,6 +568,8 @@
                 <button class="btn" id="btnNext" onclick="nextPage()">Next</button>
             </div>
 
+                </main>
+            </div>
             <div class="footer">© <span id="year"></span> Dons Premier Estate Agents. Developed by - Kusal Wickremasingha.</div>
         </div>
 

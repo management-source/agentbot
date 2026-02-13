@@ -199,6 +199,7 @@ def list_tickets(
         .where(BlacklistedSender.email == func.lower(ThreadTicket.from_email))
     )
     counts = {
+        "all": base.count(),
         "awaiting_reply": base.filter(ThreadTicket.is_not_replied == True).count(),
         "in_progress": base.filter(ThreadTicket.status == TicketStatus.IN_PROGRESS).count(),
         "responded": base.filter(ThreadTicket.status == TicketStatus.RESPONDED).count(),
