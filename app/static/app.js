@@ -267,6 +267,7 @@ async function renderUsersList() {
               <input type="password" data-user-password="${u.id}" placeholder="Reset password" style="max-width:220px" />
               <button class="px-3 py-1.5 rounded-md border text-sm" onclick="adminResetPassword(${u.id})">Reset Password</button>
               <button class="px-3 py-1.5 rounded-md border text-sm" onclick="saveUserEdits(${u.id})">Save</button>
+              <button class="px-3 py-1.5 rounded-md border text-sm" style="color:#b91c1c" onclick="deleteUser(${u.id})">Delete</button>
             </div>
         `;
         list.appendChild(row);
@@ -348,6 +349,28 @@ async function adminResetPassword(userId) {
     }
     if (el) el.value = "";
     alert("Password reset successfully.");
+}
+
+async function deleteUser(userId) {
+    if (!confirm("Delete this user permanently? This cannot be undone.")) return;
+    const r = await apiFetch(`/user-auth/users/${userId}`, { method: "DELETE" });
+    if (!r.ok) {
+        const t = await r.text();
+        alert("Delete failed: " + t);
+        return;
+    }
+    await renderUsersList();
+}
+
+function toggleAccountMenu() {
+    const dd = document.getElementById("accountMenuDropdown");
+    if (!dd) return;
+    dd.classList.toggle("show");
+}
+
+function closeAccountMenu() {
+    const dd = document.getElementById("accountMenuDropdown");
+    if (dd) dd.classList.remove("show");
 }
 
 function openPasswordModal() {
@@ -1397,12 +1420,12 @@ async function ensureAuthenticated() {
     // Good UI pill
     const authText = document.getElementById("authText");
     if (authText) authText.textContent = `Signed in as ${currentUser.name} (${currentUser.role})`;
-    const topUserInfo = document.getElementById("topUserInfo");
-    if (topUserInfo) topUserInfo.textContent = `User: ${currentUser.name} (${currentUser.role})`;
-    const topLogout = document.getElementById("btnTopLogout");
-    if (topLogout) topLogout.style.display = "inline-flex";
-    const topChangePassword = document.getElementById("btnChangePassword");
-    if (topChangePassword) topChangePassword.style.display = "inline-flex";
+    const accountName = document.getElementById("accountBarUserName");
+    if (accountName) accountName.textContent = `${currentUser.name} (${currentUser.role})`;
+    const accountAvatar = document.getElementById("accountBarAvatar");
+    if (accountAvatar) {
+        accountAvatar.src = currentUser.avatar_url || "/static/logo.png";
+    }
     const authDot = document.getElementById("authDot");
     if (authDot) {
         authDot.classList.add("green");
@@ -1463,12 +1486,11 @@ function logout() {
 
     const authText = document.getElementById("authText");
     if (authText) authText.textContent = "Not signed in";
-    const topUserInfo = document.getElementById("topUserInfo");
-    if (topUserInfo) topUserInfo.textContent = "User: Not signed in";
-    const topLogout = document.getElementById("btnTopLogout");
-    if (topLogout) topLogout.style.display = "none";
-    const topChangePassword = document.getElementById("btnChangePassword");
-    if (topChangePassword) topChangePassword.style.display = "none";
+    const accountName = document.getElementById("accountBarUserName");
+    if (accountName) accountName.textContent = "Not signed in";
+    const accountAvatar = document.getElementById("accountBarAvatar");
+    if (accountAvatar) accountAvatar.src = "/static/logo.png";
+    closeAccountMenu();
     const systemBtn = document.getElementById("btnSystemUsers");
     if (systemBtn) systemBtn.style.display = "none";
     const authDot = document.getElementById("authDot");
@@ -1490,6 +1512,14 @@ window.addEventListener("load", async () => {
     document.getElementById("lastSync").textContent = new Date().toLocaleString();
     const ok = await ensureAuthenticated();
     if (!ok) return;
+
+    document.addEventListener("click", (ev) => {
+        const trigger = document.getElementById("accountMenuTrigger");
+        const dd = document.getElementById("accountMenuDropdown");
+        if (!dd || !trigger) return;
+        if (dd.contains(ev.target) || trigger.contains(ev.target)) return;
+        dd.classList.remove("show");
+    });
 
     await refreshGoogleStatus();
     initMailboxes();

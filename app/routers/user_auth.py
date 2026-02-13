@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from app.authz import get_current_user, require_role
 from app.config import settings
 from app.db import get_db
-from app.models import User, UserRole
+from app.models import ThreadTicket, ThreadTicketAudit, ThreadTicketNote, User, UserRole
 from app.schemas import UserOut
 from app.security import create_access_token, hash_password, verify_password
 
@@ -310,3 +310,29 @@ def admin_reset_user_password(
     db.commit()
     db.refresh(u)
     return _to_user_out(u)
+
+
+@router.delete("/users/{user_id}")
+def delete_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    admin_user: User = Depends(require_role(UserRole.ADMIN)),
+):
+    u = db.get(User, user_id)
+    if not u:
+        raise HTTPException(status_code=404, detail="User not found")
+    if u.id == admin_user.id:
+        raise HTTPException(status_code=400, detail="You cannot delete your own account.")
+    if u.role == UserRole.ADMIN and u.is_active and _active_admin_count(db) <= 1:
+        raise HTTPException(status_code=400, detail="Cannot delete the last active admin.")
+
+    # Remove user-owned references so deletion succeeds safely.
+    db.query(ThreadTicket).filter(ThreadTicket.owner_user_id == u.id).update({ThreadTicket.owner_user_id: None}, synchronize_session=False)
+    db.query(ThreadTicket).filter(ThreadTicket.assignee_user_id == u.id).update({ThreadTicket.assignee_user_id: None}, synchronize_session=False)
+    db.query(ThreadTicketAudit).filter(ThreadTicketAudit.actor_user_id == u.id).update({ThreadTicketAudit.actor_user_id: None}, synchronize_session=False)
+    db.query(ThreadTicketNote).filter(ThreadTicketNote.author_user_id == u.id).delete(synchronize_session=False)
+
+    _delete_local_avatar(u.avatar_url)
+    db.delete(u)
+    db.commit()
+    return {"ok": True}

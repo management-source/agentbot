@@ -139,6 +139,68 @@
       z-index:4;
       backdrop-filter: blur(3px);
     }
+    .account-bar{
+      background:#050505;
+      color:#e5e7eb;
+      border-bottom:1px solid #1f2937;
+      padding:8px 14px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      position:sticky;
+      top:0;
+      z-index:6;
+    }
+    .account-trigger{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      cursor:pointer;
+      padding:6px 10px;
+      border-radius:10px;
+      border:1px solid rgba(255,255,255,.15);
+      background:rgba(255,255,255,.06);
+    }
+    .account-avatar{
+      width:28px;
+      height:28px;
+      border-radius:999px;
+      object-fit:cover;
+      border:1px solid rgba(255,255,255,.25);
+      background:#111827;
+    }
+    .account-name{
+      font-size:13px;
+      font-weight:700;
+      color:#f8fafc;
+      white-space:nowrap;
+    }
+    .account-menu{
+      position:absolute;
+      top:44px;
+      left:14px;
+      background:#111827;
+      border:1px solid #334155;
+      border-radius:12px;
+      padding:8px;
+      min-width:200px;
+      box-shadow:0 12px 28px rgba(0,0,0,.35);
+      display:none;
+    }
+    .account-menu.show{display:block}
+    .account-menu button{
+      width:100%;
+      text-align:left;
+      margin:0;
+      border:none;
+      background:transparent;
+      color:#e2e8f0;
+      padding:8px 10px;
+      border-radius:8px;
+      font-weight:700;
+      cursor:pointer;
+    }
+    .account-menu button:hover{background:#1f2937}
     .topbar-modern h1{
       margin:0;
       font-size:16px;
@@ -151,16 +213,6 @@
       font-size:12px;
     }
     .topbar-actions{display:flex; gap:8px; flex-wrap:wrap}
-    .top-user-stack{
-      display:flex;
-      flex-direction:column;
-      align-items:flex-end;
-      gap:6px;
-    }
-    .top-user-actions{
-      display:flex;
-      gap:6px;
-    }
     .chip{
       padding:8px 10px;
       border:1px solid #d7e1ed;
@@ -584,6 +636,19 @@
                 </nav>
             </aside>
             <div class="main-wrap">
+            <div class="account-bar">
+                <div style="position:relative">
+                    <div class="account-trigger" id="accountMenuTrigger" onclick="toggleAccountMenu()">
+                        <img class="account-avatar" id="accountBarAvatar" src="/static/logo.png" alt="profile" />
+                        <span class="account-name" id="accountBarUserName">Not signed in</span>
+                    </div>
+                    <div class="account-menu" id="accountMenuDropdown">
+                        <button onclick="openPasswordModal()">Change Password</button>
+                        <button onclick="logout()">Logout</button>
+                    </div>
+                </div>
+                <div class="small muted">System Access</div>
+            </div>
             <div class="topbar-modern">
             <div>
                 <h1>Email Manager</h1>
@@ -593,13 +658,6 @@
                 <span class="chip">Mode: Live</span>
                 <span class="chip">Queue: <span id="queueViewMode">Awaiting Reply</span></span>
                 <span class="chip">Mailbox: <span id="queueMailboxMode">-</span></span>
-                <div class="top-user-stack">
-                    <span class="chip" id="topUserInfo">User: Not signed in</span>
-                    <div class="top-user-actions">
-                        <button class="btn" id="btnChangePassword" style="display:none" onclick="openPasswordModal()">Change Password</button>
-                        <button class="btn" id="btnTopLogout" style="display:none" onclick="logout()">Logout</button>
-                    </div>
-                </div>
             </div>
         </div>
 
