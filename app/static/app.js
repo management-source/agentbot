@@ -598,32 +598,47 @@ function rentStatusChip(status) {
 }
 
 function getRentFilters() {
-    const month = (document.getElementById("rentMonthFilter")?.value || "").trim();
     const status = (document.getElementById("rentStatusFilter")?.value || "").trim();
     const frequency = (document.getElementById("rentFrequencyFilter")?.value || "").trim();
     const query = (document.getElementById("rentSearchBox")?.value || "").trim();
-    return { month, status, frequency, query };
+    return { status, frequency, query };
+}
+
+function monthCellSelect(item) {
+    if (!item || !item.id) return `<span class="small muted">-</span>`;
+    const status = String(item.status || "DUE").toUpperCase();
+    const extra = Number(item.extra_items || 0);
+    const due = item.due_date ? formatDateShort(item.due_date) : "";
+    return `
+      <div>
+        <select style="min-width:110px" onchange="updateRentMonthCell(${item.id}, this.value)">
+          <option value="DUE" ${status === "DUE" ? "selected" : ""}>Due</option>
+          <option value="PAID" ${status === "PAID" ? "selected" : ""}>Paid</option>
+          <option value="PARTIAL" ${status === "PARTIAL" ? "selected" : ""}>Partial</option>
+          <option value="AWAITING_CLEARANCE" ${status === "AWAITING_CLEARANCE" ? "selected" : ""}>Awaiting</option>
+          <option value="VACANT" ${status === "VACANT" ? "selected" : ""}>Vacant</option>
+        </select>
+        <div style="margin-top:4px">${rentStatusChip(status)}</div>
+        <div class="small muted" style="margin-top:4px">${escapeHtml(due)}${extra > 0 ? ` • +${extra}` : ""}</div>
+      </div>
+    `;
 }
 
 async function loadRentTracker(page = null) {
     if (page !== null) currentRentPage = page;
     const p = currentRentPage || 1;
-    const { month, status, frequency, query } = getRentFilters();
+    const { status, frequency, query } = getRentFilters();
 
-    const itemsUrl = new URL("/rent-tracker/items", window.location.origin);
+    const itemsUrl = new URL("/rent-tracker/properties", window.location.origin);
     const summaryUrl = new URL("/rent-tracker/summary", window.location.origin);
     itemsUrl.searchParams.set("page", String(p));
-    itemsUrl.searchParams.set("page_size", "50");
-    if (month) {
-        itemsUrl.searchParams.set("month", month);
-        summaryUrl.searchParams.set("month", month);
-    }
+    itemsUrl.searchParams.set("page_size", "25");
     if (status) itemsUrl.searchParams.set("status", status);
     if (frequency) itemsUrl.searchParams.set("frequency", frequency);
     if (query) itemsUrl.searchParams.set("query", query);
 
     const body = document.getElementById("rentTableBody");
-    if (body) body.innerHTML = `<tr><td colspan="7" class="muted">Loading...</td></tr>`;
+    if (body) body.innerHTML = `<tr><td colspan="15" class="muted">Loading...</td></tr>`;
 
     const [itemsResp, summaryResp] = await Promise.all([
         apiFetch(itemsUrl.toString()),
@@ -632,12 +647,12 @@ async function loadRentTracker(page = null) {
 
     if (!itemsResp.ok) {
         const t = await itemsResp.text();
-        if (body) body.innerHTML = `<tr><td colspan="7" class="muted">Failed to load rent tracker: ${escapeHtml(t)}</td></tr>`;
+        if (body) body.innerHTML = `<tr><td colspan="15" class="muted">Failed to load rent tracker: ${escapeHtml(t)}</td></tr>`;
         return;
     }
     if (!summaryResp.ok) {
         const t = await summaryResp.text();
-        if (body) body.innerHTML = `<tr><td colspan="7" class="muted">Failed to load summary: ${escapeHtml(t)}</td></tr>`;
+        if (body) body.innerHTML = `<tr><td colspan="15" class="muted">Failed to load summary: ${escapeHtml(t)}</td></tr>`;
         return;
     }
 
@@ -660,26 +675,18 @@ async function loadRentTracker(page = null) {
 
     if (!body) return;
     if (items.length === 0) {
-        body.innerHTML = `<tr><td colspan="7" class="muted">No rent tracker rows found for this filter.</td></tr>`;
+        body.innerHTML = `<tr><td colspan="15" class="muted">No properties found for this filter.</td></tr>`;
     } else {
+        const monthKeys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"];
         body.innerHTML = items.map((r) => `
             <tr>
                 <td><div style="font-weight:700">${escapeHtml(r.property_address || "")}</div><div class="small muted">${escapeHtml(r.source_sheet || "-")}</div></td>
                 <td>${escapeHtml(r.frequency || "-")}</td>
-                <td>${escapeHtml(formatDateShort(r.due_date))}</td>
                 <td>
-                    <div>${rentStatusChip(r.status)}</div>
-                    <select id="rentStatus_${r.id}" style="margin-top:6px;min-width:180px">
-                        <option value="DUE" ${r.status === "DUE" ? "selected" : ""}>Due</option>
-                        <option value="PAID" ${r.status === "PAID" ? "selected" : ""}>Paid</option>
-                        <option value="PARTIAL" ${r.status === "PARTIAL" ? "selected" : ""}>Partial</option>
-                        <option value="AWAITING_CLEARANCE" ${r.status === "AWAITING_CLEARANCE" ? "selected" : ""}>Awaiting clearance</option>
-                        <option value="VACANT" ${r.status === "VACANT" ? "selected" : ""}>Vacant</option>
-                    </select>
+                    <div class="small muted">Paid ${Number((r.counts || {}).PAID || 0)} / ${Number(r.total_items || 0)}</div>
+                    <div class="small muted">Due ${Number((r.counts || {}).DUE || 0)} • Partial ${Number((r.counts || {}).PARTIAL || 0)}</div>
                 </td>
-                <td><input type="date" id="rentPaidOn_${r.id}" value="${r.paid_on ? new Date(r.paid_on).toISOString().slice(0, 10) : ""}" /></td>
-                <td><input type="text" id="rentNotes_${r.id}" value="${escapeHtml(r.notes || "")}" placeholder="optional note" /></td>
-                <td><button class="btn" onclick="saveRentRow(${r.id})">Save</button></td>
+                ${monthKeys.map((mk) => `<td>${monthCellSelect((r.months || {})[mk])}</td>`).join("")}
             </tr>
         `).join("");
     }
@@ -688,9 +695,9 @@ async function loadRentTracker(page = null) {
     if (pi) {
         const total = Number(data.total || 0);
         const pageNow = Number(data.page || 1);
-        const sizeNow = Number(data.page_size || 50);
+        const sizeNow = Number(data.page_size || 25);
         const pages = sizeNow > 0 ? Math.max(1, Math.ceil(total / sizeNow)) : 1;
-        pi.textContent = `Page ${pageNow} of ${pages} • ${total} rows`;
+        pi.textContent = `Page ${pageNow} of ${pages} • ${total} properties`;
     }
 
     const btnPrev = document.getElementById("rentBtnPrev");
@@ -710,16 +717,12 @@ function nextRentPage() {
     loadRentTracker();
 }
 
-async function saveRentRow(itemId) {
-    const status = document.getElementById(`rentStatus_${itemId}`)?.value || "DUE";
-    const paidOnVal = document.getElementById(`rentPaidOn_${itemId}`)?.value || "";
-    const notes = document.getElementById(`rentNotes_${itemId}`)?.value || "";
-
-    const payload = { status, notes };
-    if (paidOnVal) {
-        payload.paid_on = `${paidOnVal}T00:00:00`;
+async function updateRentMonthCell(itemId, status) {
+    const payload = { status };
+    if (status === "PAID") {
+        const d = new Date();
+        payload.paid_on = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}T00:00:00`;
     }
-
     const r = await apiFetch(`/rent-tracker/items/${itemId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -727,7 +730,7 @@ async function saveRentRow(itemId) {
     });
     if (!r.ok) {
         const t = await r.text();
-        alert(`Failed to update row: ${t}`);
+        alert(`Failed to update month cell: ${t}`);
         return;
     }
     await loadRentTracker();
@@ -761,7 +764,8 @@ async function importRentWorkbook() {
     try { j = JSON.parse(t); } catch { j = null; }
     if (meta) {
         const rows = j && j.imported_rows ? j.imported_rows : "-";
-        meta.textContent = `Imported ${rows} rows from ${escapeHtml(f.name)} at ${new Date().toLocaleString()}.`;
+        const y = (j && j.year) ? j.year : new Date().getFullYear();
+        meta.textContent = `Imported ${rows} rows for ${y} from ${escapeHtml(f.name)} at ${new Date().toLocaleString()}.`;
     }
     currentRentPage = 1;
     await loadRentTracker();
@@ -1788,7 +1792,7 @@ window.addEventListener("load", async () => {
             }, 250);
         });
     }
-    ["rentMonthFilter", "rentStatusFilter", "rentFrequencyFilter"].forEach((id) => {
+    ["rentStatusFilter", "rentFrequencyFilter"].forEach((id) => {
         const el = document.getElementById(id);
         if (!el) return;
         el.addEventListener("change", () => {

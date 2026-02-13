@@ -860,10 +860,6 @@
 
                 <div class="filters-row">
                     <div class="field">
-                        <div class="label">Month (YYYY-MM)</div>
-                        <input type="text" id="rentMonthFilter" placeholder="2026-12" />
-                    </div>
-                    <div class="field">
                         <div class="label">Status</div>
                         <select id="rentStatusFilter">
                             <option value>All</option>
@@ -878,7 +874,7 @@
                         <div class="label">Frequency</div>
                         <select id="rentFrequencyFilter">
                             <option value>All</option>
-                            <option value="MONTHLY">Monthly</option>
+                            <option value="MONTHLY" selected>Monthly</option>
                             <option value="FORTNIGHTLY">Fortnightly</option>
                         </select>
                     </div>
@@ -887,7 +883,7 @@
                         <input type="text" id="rentSearchBox" placeholder="Property, notes, raw value..." />
                     </div>
                     <div class="row" style="align-self:flex-end">
-                        <button class="btn" onclick="loadRentTracker()">Apply</button>
+                        <button class="btn" onclick="loadRentTracker(1)">Apply</button>
                     </div>
                 </div>
 
@@ -897,15 +893,23 @@
                             <tr>
                                 <th>Property</th>
                                 <th>Frequency</th>
-                                <th>Due Date</th>
-                                <th>Status</th>
-                                <th>Paid On</th>
-                                <th>Notes</th>
-                                <th>Action</th>
+                                <th>Progress</th>
+                                <th>Jan</th>
+                                <th>Feb</th>
+                                <th>Mar</th>
+                                <th>Apr</th>
+                                <th>May</th>
+                                <th>Jun</th>
+                                <th>Jul</th>
+                                <th>Aug</th>
+                                <th>Sep</th>
+                                <th>Oct</th>
+                                <th>Nov</th>
+                                <th>Dec</th>
                             </tr>
                         </thead>
                         <tbody id="rentTableBody">
-                            <tr><td colspan="7" class="muted">No data loaded.</td></tr>
+                            <tr><td colspan="15" class="muted">No data loaded.</td></tr>
                         </tbody>
                     </table>
                 </div>

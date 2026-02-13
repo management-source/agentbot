@@ -46,6 +46,15 @@ class RentItemUpdateIn(BaseModel):
     notes: str | None = None
 
 
+STATUS_RANK = {
+    RentTrackStatus.DUE: 5,
+    RentTrackStatus.PARTIAL: 4,
+    RentTrackStatus.AWAITING_CLEARANCE: 3,
+    RentTrackStatus.PAID: 2,
+    RentTrackStatus.VACANT: 1,
+}
+
+
 def _col_to_num(col: str) -> int:
     n = 0
     for ch in col:
@@ -307,6 +316,10 @@ def _current_year_window() -> tuple[datetime, datetime, int]:
     return start, end, year
 
 
+def _normalize_address_key(address: str) -> str:
+    return re.sub(r"\s+", " ", (address or "").strip().lower())
+
+
 @router.post("/import-xlsx")
 async def import_xlsx(
     file: UploadFile = File(...),
@@ -415,6 +428,107 @@ def list_items(
         page_size=page_size,
         has_more=(page * page_size) < total,
     )
+
+
+@router.get("/properties")
+def list_property_progress(
+    status: RentTrackStatus | None = None,
+    frequency: str | None = "MONTHLY",
+    query: str | None = None,
+    page: int = 1,
+    page_size: int = 25,
+    mailbox: str = Depends(get_current_mailbox),
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    q = db.query(RentDueTracker).filter(RentDueTracker.mailbox == mailbox)
+    start_year, end_year, current_year = _current_year_window()
+    q = q.filter(RentDueTracker.due_date.isnot(None)).filter(RentDueTracker.due_date >= start_year).filter(RentDueTracker.due_date <= end_year)
+
+    if frequency:
+        q = q.filter(func.upper(RentDueTracker.frequency) == frequency.strip().upper())
+    if query and query.strip():
+        like = f"%{query.strip()}%"
+        q = q.filter(
+            or_(
+                RentDueTracker.property_address.ilike(like),
+                RentDueTracker.notes.ilike(like),
+                RentDueTracker.raw_value.ilike(like),
+            )
+        )
+
+    rows = (
+        q.order_by(RentDueTracker.property_address.asc(), RentDueTracker.due_date.asc())
+        .all()
+    )
+
+    groups: dict[str, dict[str, Any]] = {}
+    for r in rows:
+        key = f"{_normalize_address_key(r.property_address)}::{(r.frequency or '').upper()}"
+        g = groups.get(key)
+        if not g:
+            g = {
+                "property_address": r.property_address,
+                "frequency": (r.frequency or "").upper(),
+                "source_sheet": r.source_sheet,
+                "months": {},
+                "counts": {
+                    "DUE": 0,
+                    "PAID": 0,
+                    "PARTIAL": 0,
+                    "VACANT": 0,
+                    "AWAITING_CLEARANCE": 0,
+                },
+                "total_items": 0,
+            }
+            groups[key] = g
+
+        month_key = str(r.due_date.month) if r.due_date else None
+        if month_key:
+            incoming = {
+                "id": r.id,
+                "status": r.status.value,
+                "due_date": r.due_date,
+                "paid_on": r.paid_on,
+                "notes": r.notes,
+                "extra_items": 0,
+            }
+            existing = g["months"].get(month_key)
+            if not existing:
+                g["months"][month_key] = incoming
+            else:
+                existing_status = RentTrackStatus(existing["status"])
+                if STATUS_RANK.get(r.status, 0) > STATUS_RANK.get(existing_status, 0):
+                    incoming["extra_items"] = (existing.get("extra_items") or 0) + 1
+                    g["months"][month_key] = incoming
+                else:
+                    existing["extra_items"] = (existing.get("extra_items") or 0) + 1
+                    g["months"][month_key] = existing
+
+        g["counts"][r.status.value] = g["counts"].get(r.status.value, 0) + 1
+        g["total_items"] += 1
+
+    grouped = list(groups.values())
+    if status:
+        grouped = [g for g in grouped if int(g["counts"].get(status.value, 0)) > 0]
+
+    grouped.sort(key=lambda x: (x.get("property_address") or "").lower())
+
+    page = max(int(page or 1), 1)
+    page_size = max(10, min(int(page_size or 25), 200))
+    total = len(grouped)
+    start_i = (page - 1) * page_size
+    end_i = start_i + page_size
+    items = grouped[start_i:end_i]
+
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "has_more": end_i < total,
+        "year": current_year,
+    }
 
 
 @router.get("/summary")
