@@ -215,7 +215,15 @@ def _list_thread_ids_in_range(service, start: str | None, end: str | None, max_t
     return thread_ids, hit_limit
 
 
-def _upsert_ticket_from_thread(db: Session, service, thread_id: str, *, awaiting_only: bool = True, auto_triage: bool = True) -> bool:
+def _upsert_ticket_from_thread(
+    db: Session,
+    service,
+    mailbox: str,
+    thread_id: str,
+    *,
+    awaiting_only: bool = True,
+    auto_triage: bool = True,
+) -> bool:
     """Fetch thread metadata and upsert a ThreadTicket row.
 
     Returns True if ticket was updated/created, False if skipped (e.g., blacklisted, or not awaiting reply when awaiting_only=True).
@@ -433,7 +441,7 @@ def sync_inbox_threads(
         skipped = 0
         for tid in thread_ids:
             try:
-                if _upsert_ticket_from_thread(db, service, tid, awaiting_only=awaiting_only, auto_triage=auto_triage):
+                if _upsert_ticket_from_thread(db, service, mailbox, tid, awaiting_only=awaiting_only, auto_triage=auto_triage):
                     upserted += 1
                 else:
                     skipped += 1
