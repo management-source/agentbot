@@ -477,7 +477,7 @@ async function fetchNow() {
         if (!start && !end) url.searchParams.set("incremental", incremental ? "true" : "false");
         if (start || end) url.searchParams.set("include_anywhere", includeAnywhere ? "true" : "false");
 
-        const r = await fetch(url.toString(), { method: "POST" });
+        const r = await apiFetch(url.toString(), { method: "POST" });
         const text = await r.text();
         if (!r.ok) {
             alert(`Fetch failed (${r.status}):\n\n${text}`);
@@ -523,7 +523,7 @@ async function checkUpdates() {
         // Safety cap; frequent use should stay light.
         url.searchParams.set("max_threads", "200");
 
-        const r = await fetch(url.toString(), { method: "POST" });
+        const r = await apiFetch(url.toString(), { method: "POST" });
         const text = await r.text();
         if (!r.ok) {
             alert(`Check Updates failed (${r.status}):\n\n${text}`);
@@ -945,7 +945,7 @@ async function openThread(threadId) {
     if (useViewer) {
         // Populate message iframes after the viewer frame loads its srcdoc.
         viewerFrame.onload = () => {
-            try { populateIframes(viewerFrame.contentDocument); } catch (e) {}
+            try { populateIframes(viewerFrame.contentDocument); } catch (e) { }
         };
         viewerFrame.srcdoc = threadHtml;
     } else {
@@ -1023,7 +1023,7 @@ async function openAckModal(threadId) {
                 listEl.innerHTML = "";
                 return;
             }
-            listEl.innerHTML = files.map(f => `${escapeHtml(f.name)} <span class="muted">(${Math.round(f.size/1024)} KB)</span>`).join("<br/>");
+            listEl.innerHTML = files.map(f => `${escapeHtml(f.name)} <span class="muted">(${Math.round(f.size / 1024)} KB)</span>`).join("<br/>");
         };
     }
 }
