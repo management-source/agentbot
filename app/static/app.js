@@ -131,7 +131,7 @@ async function refreshGoogleStatus() {
         if (mb) mb.textContent = googleConnected ? (`Mailbox: ${target}`) : "";
 
         const mb2 = document.getElementById("mailboxLabel");
-        if (mb2) mb2.textContent = googleConnected ? target : "—";
+        if (mb2) mb2.textContent = googleConnected ? target : "-";
 
         const pill = document.getElementById("googlePill");
         if (pill) pill.style.display = googleConnected ? "inline-flex" : "none";
@@ -238,20 +238,34 @@ async function renderUsersList() {
     list.innerHTML = "";
     for (const u of usersCache) {
         const row = document.createElement("div");
-        row.className = "flex items-center justify-between gap-3 p-2 rounded-lg border bg-white";
+        row.className = "p-2 rounded-lg border bg-white";
+        const avatar = u.avatar_url ? `<img src="${escapeHtml(u.avatar_url)}" style="width:40px;height:40px;border-radius:999px;object-fit:cover;border:1px solid #ddd" />` : `<div style="width:40px;height:40px;border-radius:999px;background:#eef2f7;border:1px solid #ddd"></div>`;
         row.innerHTML = `
-            <div class="min-w-0">
-              <div class="font-medium text-slate-900 truncate">${escapeHtml(u.name)}</div>
-              <div class="text-xs text-slate-500 truncate">${escapeHtml(u.email)} • ${escapeHtml(u.role)}${u.is_active ? "" : " • Inactive"}</div>
+            <div class="row space" style="align-items:flex-start">
+              <div class="row" style="align-items:flex-start">
+                ${avatar}
+                <div class="min-w-0">
+                  <div class="font-medium text-slate-900 truncate">${escapeHtml(u.name)}</div>
+                  <div class="text-xs text-slate-500 truncate">${escapeHtml(u.email)} • ${escapeHtml(u.role)}${u.is_active ? "" : " • Inactive"}</div>
+                </div>
+              </div>
+              <div class="row" style="align-items:center">
+                <label class="btn" style="cursor:pointer">
+                  Avatar
+                  <input type="file" accept="image/*" style="display:none" onchange="uploadUserAvatar(${u.id}, this)" />
+                </label>
+              </div>
             </div>
-            <div class="flex items-center gap-2">
+            <div class="row" style="margin-top:8px;align-items:flex-end">
               <select class="px-2 py-1 rounded-md border bg-white text-sm" data-user-role="${u.id}">
                 ${["ADMIN", "PM", "LEASING", "SALES", "ACCOUNTS", "READONLY"].map(r => `<option value="${r}" ${r === u.role ? "selected" : ""}>${r}</option>`).join("")}
               </select>
-              <label class="text-sm text-slate-600 flex items-center gap-1">
+              <label class="text-sm text-slate-600 flex items-center gap-1 checkbox" style="padding:6px 10px">
                 <input type="checkbox" ${u.is_active ? "checked" : ""} data-user-active="${u.id}" />
                 Active
               </label>
+              <input type="password" data-user-password="${u.id}" placeholder="Reset password" style="max-width:220px" />
+              <button class="px-3 py-1.5 rounded-md border text-sm" onclick="adminResetPassword(${u.id})">Reset Password</button>
               <button class="px-3 py-1.5 rounded-md border text-sm" onclick="saveUserEdits(${u.id})">Save</button>
             </div>
         `;
@@ -280,6 +294,7 @@ async function createUserFromForm() {
     const name = document.getElementById("newUserName").value.trim();
     const role = document.getElementById("newUserRole").value;
     const password = document.getElementById("newUserPassword").value;
+    const force = !!document.getElementById("newUserForcePassword")?.checked;
     if (!email || !name || !password) {
         alert("Email, name and password are required.");
         return;
@@ -287,7 +302,7 @@ async function createUserFromForm() {
     const r = await apiFetch("/user-auth/users", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, name, role, password, is_active: true }),
+        body: JSON.stringify({ email, name, role, password, is_active: true, must_change_password: force }),
     });
     if (!r.ok) {
         const msg = await r.text();
@@ -297,7 +312,82 @@ async function createUserFromForm() {
     document.getElementById("newUserEmail").value = "";
     document.getElementById("newUserName").value = "";
     document.getElementById("newUserPassword").value = "";
+    if (document.getElementById("newUserForcePassword")) document.getElementById("newUserForcePassword").checked = true;
     await renderUsersList();
+}
+
+async function uploadUserAvatar(userId, input) {
+    const file = input && input.files ? input.files[0] : null;
+    if (!file) return;
+    const form = new FormData();
+    form.append("file", file);
+    const r = await apiFetch(`/user-auth/users/${userId}/avatar`, { method: "POST", body: form });
+    if (!r.ok) {
+        alert("Failed to upload avatar.");
+        return;
+    }
+    await renderUsersList();
+}
+
+async function adminResetPassword(userId) {
+    const el = document.querySelector(`[data-user-password="${userId}"]`);
+    const pw = el ? String(el.value || "") : "";
+    if (!pw) {
+        alert("Enter a new password first.");
+        return;
+    }
+    const r = await apiFetch(`/user-auth/users/${userId}/password`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ new_password: pw, force_change_on_next_login: true }),
+    });
+    if (!r.ok) {
+        const t = await r.text();
+        alert("Password reset failed: " + t);
+        return;
+    }
+    if (el) el.value = "";
+    alert("Password reset successfully.");
+}
+
+function openPasswordModal() {
+    const m = document.getElementById("passwordModal");
+    if (!m) return;
+    const e = document.getElementById("pwError");
+    if (e) { e.style.display = "none"; e.textContent = ""; }
+    ["pwCurrent", "pwNew", "pwConfirm"].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = "";
+    });
+    m.classList.remove("hidden");
+}
+
+function closePasswordModal() {
+    const m = document.getElementById("passwordModal");
+    if (m) m.classList.add("hidden");
+}
+
+async function submitPasswordChange() {
+    const curr = document.getElementById("pwCurrent")?.value || "";
+    const next = document.getElementById("pwNew")?.value || "";
+    const confirm = document.getElementById("pwConfirm")?.value || "";
+    const err = document.getElementById("pwError");
+    if (next !== confirm) {
+        if (err) { err.style.display = "block"; err.textContent = "New password confirmation does not match."; }
+        return;
+    }
+    const r = await apiFetch("/user-auth/me/password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ current_password: curr, new_password: next }),
+    });
+    if (!r.ok) {
+        const t = await r.text();
+        if (err) { err.style.display = "block"; err.textContent = t; }
+        return;
+    }
+    closePasswordModal();
+    alert("Password updated successfully.");
 }
 
 function openSettings() {
@@ -345,7 +435,7 @@ async function refreshSignaturePreview() {
             const sa = (j && j.send_as) ? j.send_as : "";
             meta.textContent = src === "gmail" ? `Source: Gmail (${sa || ""})` : (src ? `Source: ${src}` : "");
         }
-        iframe.srcdoc = html || "<div style='font-family:Arial; padding:10px; color:#666'>No HTML signature set yet. Click “Fetch from Gmail”.</div>";
+        iframe.srcdoc = html || "<div style='font-family:Arial; padding:10px; color:#666'>No HTML signature set yet. Click Fetch from Gmail.</div>";
     } catch {
         // ignore
     }
@@ -435,7 +525,7 @@ async function flushDatabase() {
 // Autopilot / query rules removed.
 
 function formatDate(dt) {
-    if (!dt) return "—";
+    if (!dt) return "-";
     try { return new Date(dt).toLocaleString(); } catch { return dt; }
 }
 
@@ -643,15 +733,15 @@ function statusOptions(selected) {
 function renderTicket(t) {
     const useGoodUi = !!document.querySelector(".page") && !document.querySelector(".tabbtn");
 
-    const due = t.due_at ? `Due: ${formatDate(t.due_at)}` : "Due: —";
-    const last = t.last_message_at ? `Last: ${formatDate(t.last_message_at)}` : "Last: —";
+    const due = t.due_at ? `Due: ${formatDate(t.due_at)}` : "Due: -";
+    const last = t.last_message_at ? `Last: ${formatDate(t.last_message_at)}` : "Last: -";
 
     // Legacy manual category removed from UI; prefer AI category.
     const cat = "";
     // Assignment feature removed.
     const assignee = "";
 
-    let slaText = "SLA: —";
+    let slaText = "SLA: -";
     let slaOverdue = false;
     if (t.sla_due_at) {
         const dueMs = Date.parse(t.sla_due_at);
@@ -676,7 +766,7 @@ function renderTicket(t) {
         card.innerHTML = `
           <div>
             <h4>${escapeHtml(t.subject || "(no subject)")}</h4>
-            <div class="from">${escapeHtml(t.from_name || t.from_email || "(unknown sender)")} • ${escapeHtml(t.from_email || "")}</div>
+            <div class="from">${escapeHtml(t.from_name || t.from_email || "(unknown sender)")}  •  ${escapeHtml(t.from_email || "")}</div>
             <div class="snippet">${escapeHtml(t.snippet || "")}</div>
 
             <div class="badge-row">
@@ -851,7 +941,7 @@ function renderPagination(data) {
     wrap.style.display = "flex";
     if (btnPrev) btnPrev.disabled = page <= 1;
     if (btnNext) btnNext.disabled = !has_more;
-    if (info) info.textContent = `Page ${page} of ${totalPages} • ${total} tickets`;
+    if (info) info.textContent = `Page ${page} of ${totalPages}  •  ${total} tickets`;
 }
 
 function prevPage() {
@@ -893,10 +983,10 @@ async function openThread(threadId) {
     if (useViewer) {
         viewerBackdrop.classList.add("show");
         if (viewerTitle) viewerTitle.textContent = "Thread";
-        viewerFrame.srcdoc = `<div style="font-family:system-ui; padding:16px; color:#334155">Loading thread…</div>`;
+        viewerFrame.srcdoc = `<div style="font-family:system-ui; padding:16px; color:#334155">Loading thread...</div>`;
     } else if (modal && content) {
         modal.classList.remove("hidden");
-        content.innerHTML = `<div class="text-sm text-slate-600">Loading thread…</div>`;
+        content.innerHTML = `<div class="text-sm text-slate-600">Loading thread...</div>`;
     } else {
         alert("Thread viewer UI is missing from the page (threadModal/threadContent).");
         return;
@@ -1055,7 +1145,7 @@ async function openAckModal(threadId) {
     const listEl = document.getElementById("ackAttachList");
     if (fEl) fEl.value = "";
     if (listEl) listEl.innerHTML = "";
-    document.getElementById("ackBody").value = "Loading draft…";
+    document.getElementById("ackBody").value = "Loading draft...";
     document.getElementById("sendAckBtn").disabled = true;
 
     // Quick Reply is deterministic (non-AI). AI is only invoked when you explicitly click AI Draft.
@@ -1092,7 +1182,7 @@ async function openAiReplyModal(threadId) {
     const modal = document.getElementById("aiReplyModal");
     if (modal) modal.classList.remove("hidden");
     document.getElementById("aiReplySubject").value = "";
-    document.getElementById("aiReplyBody").value = "Loading draft…";
+    document.getElementById("aiReplyBody").value = "Loading draft...";
     const metaEl = document.getElementById("aiReplyMeta");
     if (metaEl) metaEl.textContent = "";
     const extraEl = document.getElementById("aiExtraContext");
@@ -1122,7 +1212,7 @@ async function generateAiDraft(threadId, tone, extraContext) {
         const cat = j.meta?.ai_category ? `AI category: ${j.meta.ai_category}` : "";
         const urg = (typeof j.meta?.ai_urgency === "number") ? `Urgency: ${j.meta.ai_urgency}/5` : "";
         const conf = (typeof j.meta?.ai_confidence === "number") ? `Confidence: ${j.meta.ai_confidence}%` : "";
-        metaEl.textContent = [role, cat, urg, conf].filter(Boolean).join(" • ");
+        metaEl.textContent = [role, cat, urg, conf].filter(Boolean).join("  •  ");
     }
 }
 
@@ -1309,21 +1399,19 @@ async function ensureAuthenticated() {
     if (authText) authText.textContent = `Signed in as ${currentUser.name} (${currentUser.role})`;
     const topUserInfo = document.getElementById("topUserInfo");
     if (topUserInfo) topUserInfo.textContent = `User: ${currentUser.name} (${currentUser.role})`;
+    const topLogout = document.getElementById("btnTopLogout");
+    if (topLogout) topLogout.style.display = "inline-flex";
+    const topChangePassword = document.getElementById("btnChangePassword");
+    if (topChangePassword) topChangePassword.style.display = "inline-flex";
     const authDot = document.getElementById("authDot");
     if (authDot) {
         authDot.classList.add("green");
     }
+    const systemBtn = document.getElementById("btnSystemUsers");
+    if (systemBtn) systemBtn.style.display = (String(currentUser.role || "").toUpperCase() === "ADMIN") ? "block" : "none";
 
-    // Logout buttons
-    const logoutBtn = document.getElementById("logoutBtn");
-    if (logoutBtn) logoutBtn.classList.remove("hidden");
-    const btnLogout2 = document.getElementById("btnLogout");
-    if (btnLogout2) btnLogout2.style.display = "inline-flex";
-
-    // Admin-only UI controls (Good UI)
-    const manageUsersBtn = document.getElementById("btnManageUsers");
-    if (manageUsersBtn) {
-        manageUsersBtn.style.display = (String(currentUser.role || "").toUpperCase() === "ADMIN") ? "inline-flex" : "none";
+    if (currentUser.must_change_password) {
+        setTimeout(() => openPasswordModal(), 100);
     }
 
     return true;
@@ -1377,17 +1465,18 @@ function logout() {
     if (authText) authText.textContent = "Not signed in";
     const topUserInfo = document.getElementById("topUserInfo");
     if (topUserInfo) topUserInfo.textContent = "User: Not signed in";
+    const topLogout = document.getElementById("btnTopLogout");
+    if (topLogout) topLogout.style.display = "none";
+    const topChangePassword = document.getElementById("btnChangePassword");
+    if (topChangePassword) topChangePassword.style.display = "none";
+    const systemBtn = document.getElementById("btnSystemUsers");
+    if (systemBtn) systemBtn.style.display = "none";
     const authDot = document.getElementById("authDot");
     if (authDot) {
         authDot.classList.remove("green");
         authDot.classList.remove("red");
         authDot.classList.remove("yellow");
     }
-
-    const logoutBtn = document.getElementById("logoutBtn");
-    if (logoutBtn) logoutBtn.classList.add("hidden");
-    const btnLogout2 = document.getElementById("btnLogout");
-    if (btnLogout2) btnLogout2.style.display = "none";
 
     showLoginModal();
 }
@@ -1449,4 +1538,6 @@ window.addEventListener("load", async () => {
     // Set default tab (will load tickets).
     setTab(currentTab);
 });
+
+
 

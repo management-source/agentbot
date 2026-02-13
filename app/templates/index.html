@@ -33,6 +33,7 @@
     #usersModal:not(.hidden){display:flex}
     #aiReplyModal:not(.hidden){display:flex}
     #blacklistModal:not(.hidden){display:flex}
+    #passwordModal:not(.hidden){display:flex}
     html,body{height:100%}
     body{
       margin:0;
@@ -150,6 +151,16 @@
       font-size:12px;
     }
     .topbar-actions{display:flex; gap:8px; flex-wrap:wrap}
+    .top-user-stack{
+      display:flex;
+      flex-direction:column;
+      align-items:flex-end;
+      gap:6px;
+    }
+    .top-user-actions{
+      display:flex;
+      gap:6px;
+    }
     .chip{
       padding:8px 10px;
       border:1px solid #d7e1ed;
@@ -569,7 +580,7 @@
                     <a href="javascript:void(0)">Rules</a>
                     <a href="javascript:void(0)">Reports</a>
                     <a href="javascript:void(0)">Automation</a>
-                    <a href="javascript:void(0)">Settings</a>
+                    <a id="btnSystemUsers" href="javascript:void(0)" style="display:none" onclick="openUsersModal()">System</a>
                 </nav>
             </aside>
             <div class="main-wrap">
@@ -582,7 +593,13 @@
                 <span class="chip">Mode: Live</span>
                 <span class="chip">Queue: <span id="queueViewMode">Awaiting Reply</span></span>
                 <span class="chip">Mailbox: <span id="queueMailboxMode">-</span></span>
-                <span class="chip" id="topUserInfo">User: Not signed in</span>
+                <div class="top-user-stack">
+                    <span class="chip" id="topUserInfo">User: Not signed in</span>
+                    <div class="top-user-actions">
+                        <button class="btn" id="btnChangePassword" style="display:none" onclick="openPasswordModal()">Change Password</button>
+                        <button class="btn" id="btnTopLogout" style="display:none" onclick="logout()">Logout</button>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -595,8 +612,6 @@
                         <div class="pill"><span class="dot"
                                 id="authDot"></span><span id="authText">Not
                                 signed in</span></div>
-                        <button class="btn" id="btnLogout" style="display:none"
-                            onclick="logout()">Logout</button>
                     </div>
 
                     <div style="margin-top:10px" class="row">
@@ -606,9 +621,6 @@
                             onclick="googleConnectOrManage()">Connect to
                             Google</button>
                         <!-- Autopilot / Query rules removed -->
-                        <button class="btn" id="btnManageUsers"
-                            style="display:none"
-                            onclick="openUsersModal()">Manage Users</button>
                         <button class="btn" id="btnBlacklist" onclick="openBlacklistModal()">Blacklist</button>
                     </div>
 
@@ -718,8 +730,8 @@
                                 <img src="https://ik.imagekit.io/donspremier/Banner%20-%20Logo.png?updatedAt=1767844482007" alt="Dons Premier Estate Agents" style="width:100%;height:100%;object-fit:contain;background:#000" />
                             </div>
                             <div class="login-brand" style="margin-top:14px">Dons Premier Estate Agents</div>
-                            <div class="login-sub" style="color:rgba(255,255,255,.78)">Email Agent</div>
-                            <div class="small" style="margin-top:12px;color:rgba(255,255,255,.70)">Sign in to access tickets, drafts, and Gmail sync controls.</div>
+                            <div class="login-sub" style="color:rgba(255,255,255,.78)">Secure Account Access</div>
+                            <div class="small" style="margin-top:12px;color:rgba(255,255,255,.70)">Sign in with your user account. Password and profile are managed in System.</div>
                         </div>
                         <div class="login-right">
                             <div class="field">
@@ -774,6 +786,10 @@
                             <div class="label">Password</div>
                             <input type="password" id="newUserPassword" />
                         </div>
+                        <label class="checkbox">
+                            <input type="checkbox" id="newUserForcePassword" checked />
+                            Force password change at next login
+                        </label>
                         <button class="btn primary"
                             id="btnCreateUser"
                             onclick="createUserFromForm()">Create</button>
@@ -791,6 +807,36 @@
                 <div class="modal-foot">
                     <button class="btn" id="btnUsersRefresh"
                         onclick="renderUsersList()">Refresh</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Change Password Modal -->
+        <div class="modal-backdrop hidden" id="passwordModal">
+            <div class="modal">
+                <div class="modal-head">
+                    <h3>Change Password</h3>
+                    <button class="btn ghost" onclick="closePasswordModal()">Close</button>
+                </div>
+                <div class="modal-body">
+                    <div class="field">
+                        <div class="label">Current Password</div>
+                        <input type="password" id="pwCurrent" autocomplete="current-password" />
+                    </div>
+                    <div class="field" style="margin-top:10px">
+                        <div class="label">New Password</div>
+                        <input type="password" id="pwNew" autocomplete="new-password" />
+                    </div>
+                    <div class="field" style="margin-top:10px">
+                        <div class="label">Confirm New Password</div>
+                        <input type="password" id="pwConfirm" autocomplete="new-password" />
+                    </div>
+                    <div class="small muted" style="margin-top:10px">Use at least 12 characters with upper/lowercase, number, and symbol.</div>
+                    <div class="error" id="pwError" style="display:none"></div>
+                </div>
+                <div class="modal-foot">
+                    <button class="btn" onclick="closePasswordModal()">Cancel</button>
+                    <button class="btn primary" onclick="submitPasswordChange()">Update Password</button>
                 </div>
             </div>
         </div>

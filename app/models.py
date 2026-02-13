@@ -104,6 +104,12 @@ class User(Base):
     role: Mapped[UserRole] = mapped_column(SAEnum(UserRole), default=UserRole.PM, index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     password_hash: Mapped[str] = mapped_column(String)
+    avatar_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    password_changed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    failed_login_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    must_change_password: Mapped[bool] = mapped_column(Boolean, default=False)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)

@@ -12,6 +12,10 @@ class UserOut(BaseModel):
     name: str
     role: UserRole
     is_active: bool
+    avatar_url: str | None = None
+    password_changed_at: datetime | None = None
+    last_login_at: datetime | None = None
+    must_change_password: bool = False
 
 
 class TicketNoteOut(BaseModel):

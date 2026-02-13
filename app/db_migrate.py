@@ -233,3 +233,38 @@ def migrate(engine: Engine) -> None:
                 conn.execute(text(f"CREATE INDEX IF NOT EXISTS ix_blacklisted_senders_mailbox ON {bl}(mailbox)"))
             except Exception:
                 pass
+
+    # -------------------------------------------------------------------------
+    # 3) User security/profile fields (added 2026-02)
+    # -------------------------------------------------------------------------
+    users = "users"
+    if _table_exists(engine, users):
+        stmts: list[str] = []
+        if not _column_exists(engine, users, "avatar_url"):
+            stmts.append(f"ALTER TABLE {users} ADD COLUMN avatar_url VARCHAR")
+        if not _column_exists(engine, users, "password_changed_at"):
+            stmts.append(f"ALTER TABLE {users} ADD COLUMN password_changed_at TIMESTAMP")
+        if not _column_exists(engine, users, "last_login_at"):
+            stmts.append(f"ALTER TABLE {users} ADD COLUMN last_login_at TIMESTAMP")
+        if not _column_exists(engine, users, "failed_login_attempts"):
+            stmts.append(f"ALTER TABLE {users} ADD COLUMN failed_login_attempts INTEGER DEFAULT 0")
+        if not _column_exists(engine, users, "locked_until"):
+            stmts.append(f"ALTER TABLE {users} ADD COLUMN locked_until TIMESTAMP")
+        if not _column_exists(engine, users, "must_change_password"):
+            stmts.append(f"ALTER TABLE {users} ADD COLUMN must_change_password BOOLEAN DEFAULT FALSE")
+        _exec_statements(engine, stmts)
+
+        with engine.begin() as conn:
+            try:
+                conn.execute(text(f"UPDATE {users} SET failed_login_attempts = COALESCE(failed_login_attempts, 0)"))
+            except Exception:
+                pass
+            for stmt in (
+                f"CREATE INDEX IF NOT EXISTS ix_users_last_login_at ON {users}(last_login_at)",
+                f"CREATE INDEX IF NOT EXISTS ix_users_locked_until ON {users}(locked_until)",
+                f"CREATE INDEX IF NOT EXISTS ix_users_password_changed_at ON {users}(password_changed_at)",
+            ):
+                try:
+                    conn.execute(text(stmt))
+                except Exception:
+                    pass
