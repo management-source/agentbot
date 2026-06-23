@@ -42,7 +42,11 @@
       color:var(--text);
       background: radial-gradient(circle at top right, #f0f7ff 0%, #f6f7fb 38%, #eef4f0 100%);
     }
-    body.auth-locked{overflow:hidden}
+    body.auth-locked{
+      overflow-x:hidden;
+      overflow-y:auto;
+      -webkit-overflow-scrolling:touch;
+    }
     #appShell[hidden]{display:none !important}
 
     .app-shell{
@@ -95,18 +99,30 @@
       border:1px solid rgba(255,255,255,.1);
     }
     .side-collapse{
-      width:100%;
+      width:40px;
+      height:40px;
+      align-self:flex-end;
       border:1px solid rgba(255,255,255,.12);
       background:rgba(255,255,255,.06);
       color:#e5edf7;
       border-radius:12px;
-      padding:9px 10px;
-      font-size:12px;
-      font-weight:800;
+      padding:0;
       cursor:pointer;
-      text-align:left;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
     }
     .side-collapse:hover{background:rgba(255,255,255,.10)}
+    .side-collapse svg{
+      width:20px;
+      height:20px;
+      stroke:currentColor;
+      stroke-width:2;
+      fill:none;
+      stroke-linecap:round;
+      stroke-linejoin:round;
+      transition:transform .2s ease;
+    }
     .side-brand h2{
       margin:0;
       font-size:15px;
@@ -132,6 +148,32 @@
       padding:10px 11px;
       border-radius:10px;
       border:1px solid transparent;
+      display:flex;
+      align-items:center;
+      gap:10px;
+    }
+    .nav-icon{
+      width:20px;
+      height:20px;
+      flex:0 0 20px;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+    }
+    .nav-icon svg{
+      width:20px;
+      height:20px;
+      stroke:currentColor;
+      stroke-width:2;
+      fill:none;
+      stroke-linecap:round;
+      stroke-linejoin:round;
+    }
+    .nav-label{
+      min-width:0;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      white-space:nowrap;
     }
     .side-nav a.active{
       background: linear-gradient(180deg, #b08a2a 0%, #8f6f1d 100%);
@@ -164,33 +206,27 @@
       object-fit:cover;
     }
     .app-shell.sidebar-collapsed .side-collapse{
-      text-align:center;
-      font-size:0;
-      padding:10px 6px;
+      align-self:center;
     }
-    .app-shell.sidebar-collapsed .side-collapse::before{
-      content:"Menu";
-      font-size:11px;
+    .app-shell.sidebar-collapsed .side-collapse svg{
+      transform:rotate(180deg);
     }
     .app-shell.sidebar-collapsed .side-section-label{
       display:none;
     }
     .app-shell.sidebar-collapsed .side-nav a{
-      font-size:0;
-      text-align:center;
+      justify-content:center;
       padding:11px 8px;
     }
-    .app-shell.sidebar-collapsed .side-nav a::before{
-      content:attr(data-short);
-      font-size:12px;
-      font-weight:900;
+    .app-shell.sidebar-collapsed .nav-label{
+      display:none;
     }
     @media (max-width: 1040px){
-      .app-shell.sidebar-collapsed .side-nav a{font-size:13px;text-align:left}
-      .app-shell.sidebar-collapsed .side-nav a::before{content:""}
+      .app-shell.sidebar-collapsed .side-nav a{justify-content:flex-start}
+      .app-shell.sidebar-collapsed .nav-label{display:inline}
       .app-shell.sidebar-collapsed .side-section-label{display:block}
-      .app-shell.sidebar-collapsed .side-collapse{font-size:12px;text-align:left}
-      .app-shell.sidebar-collapsed .side-collapse::before{content:""}
+      .app-shell.sidebar-collapsed .side-collapse{align-self:flex-end}
+      .app-shell.sidebar-collapsed .side-collapse svg{transform:none}
     }
 
     .main-wrap{
@@ -827,6 +863,7 @@
     /* Full-page login */
     .login-screen{
       min-height:100vh;
+      min-height:100dvh;
       display:grid;
       grid-template-columns:minmax(0, 1.05fr) minmax(360px, .95fr);
       background:
@@ -842,6 +879,7 @@
       justify-content:space-between;
       padding:34px 28px 20px;
       min-height:100vh;
+      min-height:100dvh;
     }
     .login-panel-inner{
       width:min(560px, 100%);
@@ -1118,19 +1156,25 @@
                 <div class="side-brand">
                     <img src="https://ik.imagekit.io/donspremier/Banner%20-%20Logo.png?updatedAt=1767844482007" alt="Dons Premier Estate Agents" loading="lazy" />
                 </div>
-                <button class="side-collapse" id="sidebarToggle" onclick="toggleSidebar()">Collapse Menu</button>
+                <button class="side-collapse" id="sidebarToggle" type="button" onclick="toggleSidebar()" aria-label="Collapse menu" title="Collapse menu">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <rect x="3" y="4" width="18" height="16" rx="2"></rect>
+                        <path d="M9 4v16"></path>
+                        <path d="m16 9-3 3 3 3"></path>
+                    </svg>
+                </button>
                 <nav class="side-nav">
-                    <a id="navPortal" class="active" data-short="Hub" href="javascript:void(0)" onclick="switchDashboardTab('portal')">Portal Hub</a>
-                    <a id="navInbox" data-short="Mail" href="javascript:void(0)" onclick="switchDashboardTab('inbox')">Email Manager</a>
-                    <a id="navRentTracker" data-short="Rent" href="javascript:void(0)" onclick="switchDashboardTab('rent')">Rent Tracker</a>
-                    <a id="navCompliance" data-short="Comp" href="javascript:void(0)" onclick="switchDashboardTab('compliance')">Compliance</a>
-                    <a id="navComplianceCoverage" data-short="Rpt" href="javascript:void(0)" onclick="switchDashboardTab('coverage')">Compliance Report</a>
+                    <a id="navPortal" class="active" href="javascript:void(0)" onclick="switchDashboardTab('portal')" title="Portal Hub"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1"></rect><rect x="13" y="4" width="7" height="5" rx="1"></rect><rect x="13" y="11" width="7" height="9" rx="1"></rect><rect x="4" y="13" width="7" height="7" rx="1"></rect></svg></span><span class="nav-label">Portal Hub</span></a>
+                    <a id="navInbox" href="javascript:void(0)" onclick="switchDashboardTab('inbox')" title="Email Manager"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="6" width="16" height="12" rx="2"></rect><path d="m4 8 8 6 8-6"></path></svg></span><span class="nav-label">Email Manager</span></a>
+                    <a id="navRentTracker" href="javascript:void(0)" onclick="switchDashboardTab('rent')" title="Rent Tracker"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11 12 4l8 7"></path><path d="M6 10v10h12V10"></path><path d="M10 20v-5h4v5"></path></svg></span><span class="nav-label">Rent Tracker</span></a>
+                    <a id="navCompliance" href="javascript:void(0)" onclick="switchDashboardTab('compliance')" title="Compliance"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"></circle><path d="m8.5 12.5 2.2 2.2 4.8-5.2"></path></svg></span><span class="nav-label">Compliance</span></a>
+                    <a id="navComplianceCoverage" href="javascript:void(0)" onclick="switchDashboardTab('coverage')" title="Compliance Report"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V4h14v16"></path><path d="M8 16v-4"></path><path d="M12 16V8"></path><path d="M16 16v-6"></path></svg></span><span class="nav-label">Compliance Report</span></a>
                 </nav>
                 <div class="side-bottom">
                     <div class="side-section-label">Setup</div>
                     <nav class="side-nav">
-                        <a id="navProperties" data-short="Prop" href="javascript:void(0)" onclick="switchDashboardTab('properties')">Properties</a>
-                        <a id="btnSystemUsers" data-short="Sys" href="javascript:void(0)" style="display:none" onclick="openUsersModal()">System</a>
+                        <a id="navProperties" href="javascript:void(0)" onclick="switchDashboardTab('properties')" title="Properties"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h16"></path><path d="M6 20V7l6-3 6 3v13"></path><path d="M9 10h2"></path><path d="M13 10h2"></path><path d="M9 14h2"></path><path d="M13 14h2"></path></svg></span><span class="nav-label">Properties</span></a>
+                        <a id="btnSystemUsers" href="javascript:void(0)" style="display:none" onclick="openUsersModal()" title="System"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M12 3v3"></path><path d="M12 18v3"></path><path d="m4.8 4.8 2.1 2.1"></path><path d="m17.1 17.1 2.1 2.1"></path><path d="M3 12h3"></path><path d="M18 12h3"></path><path d="m4.8 19.2 2.1-2.1"></path><path d="m17.1 6.9 2.1-2.1"></path></svg></span><span class="nav-label">System</span></a>
                     </nav>
                 </div>
             </aside>
@@ -1242,8 +1286,8 @@
             <div id="portalPanel">
                 <div class="hub-hero">
                     <div class="login-kicker" style="color:#f9e7a7;margin-bottom:12px">Dons Premier Estate Agents Portal</div>
-                    <h2>Everything important, one confident click away.</h2>
-                    <p>Jump straight into email operations, rent tracking, compliance work, reporting, and the property register without digging through menus.</p>
+                    <h2>Portal Dashboard</h2>
+                    <p>Integrated tools for property management and compliance.</p>
                 </div>
                 <div class="hub-grid">
                     <div class="hub-tile" onclick="switchDashboardTab('inbox')">

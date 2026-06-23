@@ -703,7 +703,12 @@ function applySidebarState() {
     const btn = document.getElementById("sidebarToggle");
     const collapsed = localStorage.getItem("agent_sidebar_collapsed") === "1";
     if (shell) shell.classList.toggle("sidebar-collapsed", collapsed);
-    if (btn) btn.textContent = collapsed ? "Expand Menu" : "Collapse Menu";
+    if (btn) {
+        const label = collapsed ? "Expand menu" : "Collapse menu";
+        btn.setAttribute("aria-label", label);
+        btn.setAttribute("title", label);
+        btn.setAttribute("aria-expanded", String(!collapsed));
+    }
 }
 
 function toggleSidebar() {
@@ -3046,7 +3051,7 @@ async function ensureAuthenticated() {
         authDot.classList.add("green");
     }
     const systemBtn = document.getElementById("btnSystemUsers");
-    if (systemBtn) systemBtn.style.display = (String(currentUser.role || "").toUpperCase() === "ADMIN") ? "block" : "none";
+    if (systemBtn) systemBtn.style.display = (String(currentUser.role || "").toUpperCase() === "ADMIN") ? "flex" : "none";
     const portalSystemTile = document.getElementById("portalSystemTile");
     if (portalSystemTile) portalSystemTile.classList.toggle("hidden", String(currentUser.role || "").toUpperCase() !== "ADMIN");
 
