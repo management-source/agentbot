@@ -34,6 +34,7 @@
     #aiReplyModal:not(.hidden){display:flex}
     #blacklistModal:not(.hidden){display:flex}
     #passwordModal:not(.hidden){display:flex}
+    #complianceEditModal:not(.hidden){display:flex}
     html,body{height:100%}
     body{
       margin:0;
@@ -246,11 +247,15 @@
     .dashboard-shell.compliance-mode{
       grid-template-columns: 1fr;
     }
+    .dashboard-shell.coverage-mode{
+      grid-template-columns: 1fr;
+    }
     .dashboard-shell.properties-mode{
       grid-template-columns: 1fr;
     }
     .dashboard-shell.rent-mode .left-rail,
     .dashboard-shell.compliance-mode .left-rail,
+    .dashboard-shell.coverage-mode .left-rail,
     .dashboard-shell.properties-mode .left-rail{
       display:none;
     }
@@ -546,6 +551,8 @@
     .compliance-status.unknown{background:rgba(100,116,139,.12); border-color:rgba(100,116,139,.24); color:#334155}
     .compliance-status.open{background:rgba(100,116,139,.12); border-color:rgba(100,116,139,.24); color:#334155}
     .compliance-status.waived{background:rgba(79,70,229,.10); border-color:rgba(79,70,229,.25); color:#3730a3}
+    .compliance-status.missing{background:rgba(220,38,38,.08); border-color:rgba(220,38,38,.25); color:#991b1b}
+    .compliance-status.incomplete{background:rgba(245,158,11,.12); border-color:rgba(245,158,11,.28); color:#92400e}
 
     /* Ticket list */
     .ticket{
@@ -950,6 +957,7 @@
                     <a id="navRentTracker" href="javascript:void(0)" onclick="switchDashboardTab('rent')">Rent Tracker</a>
                     <a id="navProperties" href="javascript:void(0)" onclick="switchDashboardTab('properties')">Properties</a>
                     <a id="navCompliance" href="javascript:void(0)" onclick="switchDashboardTab('compliance')">Compliance</a>
+                    <a id="navComplianceCoverage" href="javascript:void(0)" onclick="switchDashboardTab('coverage')">Compliance Gaps</a>
                     <a id="btnSystemUsers" href="javascript:void(0)" style="display:none" onclick="openUsersModal()">System</a>
                 </nav>
             </aside>
@@ -1306,7 +1314,7 @@
                         <div class="num warn" id="complianceKpiSoon">0</div>
                     </div>
                     <div class="card kpi">
-                        <h3>Completed</h3>
+                        <h3>Current</h3>
                         <div class="num ok" id="complianceKpiCurrent">0</div>
                     </div>
                 </div>
@@ -1331,19 +1339,16 @@
                             </select>
                         </div>
                         <div class="field" style="min-width:150px">
-                            <div class="label">Due Date</div>
-                            <input type="date" id="complianceDueDateInput" />
+                            <div class="label">Date Done</div>
+                            <input type="date" id="complianceCompletedDateInput" />
                         </div>
                         <div class="field" style="min-width:180px">
                             <div class="label">Provider</div>
                             <input type="text" id="complianceProviderInput" />
                         </div>
-                        <div class="field" style="min-width:180px">
-                            <div class="label">Result / Finding</div>
-                            <input type="text" id="complianceResultInput" placeholder="Pass, pending, fault found..." />
-                        </div>
                         <button class="btn primary" onclick="createComplianceRecord()">Add Record</button>
                     </div>
+                    <div class="small muted" style="margin-top:8px">If Date Done is entered, the record is marked completed and the next due date is calculated automatically. Smoke: 12 months. Gas/Electrical: 2 years.</div>
                     <div class="field" style="margin-top:10px">
                         <div class="label">Notes</div>
                         <input type="text" id="complianceNotesInput" placeholder="Owner approval, fault details, report notes..." />
@@ -1393,15 +1398,16 @@
                                 <th>Property</th>
                                 <th>Type</th>
                                 <th>Status</th>
-                                <th>Due Date</th>
-                                <th>Completed</th>
+                                <th>Date Done</th>
+                                <th>Next Due</th>
                                 <th>Provider</th>
                                 <th>Result</th>
                                 <th>Notes</th>
+                                <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody id="complianceTableBody">
-                            <tr><td colspan="8" class="muted">No compliance records loaded.</td></tr>
+                            <tr><td colspan="9" class="muted">No compliance records loaded.</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -1409,6 +1415,78 @@
                 <div class="row space" style="margin-top:10px">
                     <button class="btn" id="complianceBtnPrev" onclick="prevCompliancePage()">Prev</button>
                     <button class="btn" id="complianceBtnNext" onclick="nextCompliancePage()">Next</button>
+                </div>
+            </div>
+
+            <div id="coveragePanel" class="hidden">
+                <div class="card">
+                    <div class="row space">
+                        <div>
+                            <p class="panel-title">Compliance Gaps</p>
+                            <p class="panel-sub">Check which managed properties are missing or have incomplete MRS, Smoke, Gas, and Electrical records.</p>
+                        </div>
+                        <button class="btn" onclick="loadComplianceCoverage(1)">Refresh</button>
+                    </div>
+                </div>
+
+                <div class="kpi-row">
+                    <div class="card kpi">
+                        <h3>Properties</h3>
+                        <div class="num" id="coverageKpiTotal">0</div>
+                    </div>
+                    <div class="card kpi">
+                        <h3>Needs Attention</h3>
+                        <div class="num accent" id="coverageKpiAttention">0</div>
+                    </div>
+                    <div class="card kpi">
+                        <h3>Missing Checks</h3>
+                        <div class="num danger" id="coverageKpiMissing">0</div>
+                    </div>
+                    <div class="card kpi">
+                        <h3>Incomplete</h3>
+                        <div class="num warn" id="coverageKpiIncomplete">0</div>
+                    </div>
+                    <div class="card kpi">
+                        <h3>Fully Current</h3>
+                        <div class="num ok" id="coverageKpiCurrent">0</div>
+                    </div>
+                </div>
+
+                <div class="filters-row">
+                    <div class="field" style="min-width:300px">
+                        <div class="label">Search</div>
+                        <input type="text" id="coverageSearchBox" placeholder="Address, suburb, postcode..." />
+                    </div>
+                    <label class="checkbox" style="align-self:flex-end">
+                        <input type="checkbox" id="coverageIncludeCurrent" />
+                        Include current properties
+                    </label>
+                    <div class="row" style="align-self:flex-end">
+                        <button class="btn" onclick="loadComplianceCoverage(1)">Apply</button>
+                    </div>
+                </div>
+
+                <div class="rent-table-wrap">
+                    <table class="rent-table" style="min-width:1200px">
+                        <thead>
+                            <tr>
+                                <th>Property</th>
+                                <th>Missing</th>
+                                <th>Incomplete</th>
+                                <th>Overdue</th>
+                                <th>Due Soon</th>
+                                <th>Check Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="coverageTableBody">
+                            <tr><td colspan="6" class="muted">No compliance gap data loaded.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="small muted" id="coveragePageInfo" style="margin-top:8px"></div>
+                <div class="row space" style="margin-top:10px">
+                    <button class="btn" id="coverageBtnPrev" onclick="prevCoveragePage()">Prev</button>
+                    <button class="btn" id="coverageBtnNext" onclick="nextCoveragePage()">Next</button>
                 </div>
             </div>
 
@@ -1523,7 +1601,56 @@
             </div>
         </div>
 
-        <script src="/static/app.js?v=3"></script>
+        <div class="modal-backdrop hidden" id="complianceEditModal">
+            <div class="modal">
+                <div class="modal-head">
+                    <h3>Edit Compliance Record</h3>
+                    <button class="btn ghost" onclick="closeComplianceEditModal()">Close</button>
+                </div>
+                <div class="modal-body">
+                    <div class="small muted" id="complianceEditTitle" style="margin-bottom:12px"></div>
+                    <div class="row" style="align-items:flex-end">
+                        <div class="field" style="min-width:180px">
+                            <div class="label">Status</div>
+                            <select id="editComplianceStatus">
+                                <option value="OPEN">Open</option>
+                                <option value="ACTION_REQUIRED">Action Required</option>
+                                <option value="COMPLETED">Completed</option>
+                                <option value="WAIVED">Waived</option>
+                            </select>
+                        </div>
+                        <div class="field" style="min-width:180px">
+                            <div class="label">Date Done</div>
+                            <input type="date" id="editComplianceCompletedAt" />
+                        </div>
+                        <div class="field" style="min-width:180px">
+                            <div class="label">Next Due</div>
+                            <input type="text" id="editComplianceNextDue" disabled />
+                        </div>
+                    </div>
+                    <div class="row" style="align-items:flex-end;margin-top:10px">
+                        <div class="field" style="min-width:220px;flex:1">
+                            <div class="label">Provider</div>
+                            <input type="text" id="editComplianceProvider" />
+                        </div>
+                        <div class="field" style="min-width:220px;flex:1">
+                            <div class="label">Result / Finding</div>
+                            <input type="text" id="editComplianceResult" placeholder="No fault, fault found, pending report..." />
+                        </div>
+                    </div>
+                    <div class="field" style="margin-top:10px">
+                        <div class="label">Notes</div>
+                        <input type="text" id="editComplianceNotes" />
+                    </div>
+                </div>
+                <div class="modal-foot">
+                    <button class="btn danger" onclick="deleteComplianceRecordFromModal()">Delete</button>
+                    <button class="btn primary" onclick="saveComplianceEdit()">Save Changes</button>
+                </div>
+            </div>
+        </div>
+
+        <script src="/static/app.js?v=4"></script>
 
         <script>
   // Wire segmented status buttons to existing tab logic

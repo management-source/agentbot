@@ -44,6 +44,62 @@ def _normalize_state_code(value: str | None) -> str | None:
     return text or None
 
 
+def _property_identity_key(
+    property_address: str | None,
+    suburb: str | None = None,
+    state_code: str | None = None,
+    postcode: str | None = None,
+) -> str:
+    return _normalize_address_key(" ".join([x for x in [property_address, suburb, state_code, postcode] if x]))
+
+
+def _split_full_address(value: str | None) -> dict[str, str | None]:
+    text = _normalize_text(value)
+    parts = [_normalize_text(part) for part in text.split(",") if _normalize_text(part)]
+    if len(parts) < 2:
+        return {
+            "property_address": text,
+            "suburb": None,
+            "state_code": None,
+            "postcode": None,
+        }
+
+    postcode = None
+    state_code = None
+    suburb = None
+    remaining = parts[:]
+
+    last = remaining[-1]
+    postcode_match = re.search(r"\b(\d{4})\b$", last)
+    if postcode_match:
+        postcode = postcode_match.group(1)
+        prefix = _normalize_text(last[: postcode_match.start()])
+        remaining.pop()
+        if prefix:
+            prefix_upper = prefix.upper()
+            if re.fullmatch(r"[A-Z]{2,3}", prefix_upper):
+                state_code = prefix_upper
+            else:
+                suburb = prefix
+
+    if remaining:
+        maybe_state = remaining[-1].upper()
+        if not state_code and re.fullmatch(r"[A-Z]{2,3}", maybe_state):
+            state_code = maybe_state
+            remaining.pop()
+
+    if remaining and not suburb and len(remaining) >= 2:
+        suburb = remaining.pop()
+
+    property_address = ", ".join(remaining) if remaining else text
+    return {
+        "property_address": property_address,
+        "suburb": suburb,
+        "state_code": state_code,
+        "postcode": postcode,
+    }
+
+
 def _read_shared_strings(zf: zipfile.ZipFile) -> list[str]:
     if "xl/sharedStrings.xml" not in zf.namelist():
         return []
@@ -86,7 +142,7 @@ def _sheet_rows(zf: zipfile.ZipFile, path: str, sst: list[str]) -> list[dict[str
 
 def _header_map(rows: list[dict[str, str]]) -> tuple[int, dict[str, str]]:
     aliases = {
-        "property_address": {"property address", "address", "property", "address 1", "street address"},
+        "property_address": {"property address", "address", "property", "property name", "address 1", "street address"},
         "address_line_2": {"address 2", "address2", "unit", "line 2"},
         "suburb": {"suburb", "city", "town"},
         "state_code": {"state", "province"},
@@ -102,6 +158,26 @@ def _header_map(rows: list[dict[str, str]]) -> tuple[int, dict[str, str]]:
         if "property_address" in mapping:
             return idx, mapping
     raise ValueError("Could not detect property address columns in the uploaded workbook.")
+
+
+def _detect_address_only_column(rows: list[dict[str, str]]) -> str:
+    scores: dict[str, int] = {}
+    for row in rows[:200]:
+        for col, value in row.items():
+            text = _normalize_text(value)
+            if len(text) < 5:
+                continue
+            score = 1
+            if re.search(r"\d", text):
+                score += 2
+            if "," in text:
+                score += 2
+            if re.search(r"\b\d{4}\b", text):
+                score += 2
+            scores[col] = scores.get(col, 0) + score
+    if not scores:
+        raise ValueError("Could not detect property address columns in the uploaded workbook.")
+    return max(scores, key=scores.get)
 
 
 def _parse_property_workbook(content: bytes) -> list[dict[str, str | None]]:
@@ -120,14 +196,25 @@ def _parse_property_workbook(content: bytes) -> list[dict[str, str | None]]:
             return []
         rows = _sheet_rows(zf, first_sheet_path, shared_strings)
 
-    header_idx, mapping = _header_map(rows)
+    try:
+        header_idx, mapping = _header_map(rows)
+        data_rows = rows[header_idx + 1:]
+    except ValueError:
+        mapping = {"property_address": _detect_address_only_column(rows)}
+        data_rows = rows
+
     items: list[dict[str, str | None]] = []
     seen: set[str] = set()
-    for row in rows[header_idx + 1:]:
-        address = _normalize_text(row.get(mapping["property_address"]))
+    for row in data_rows:
+        raw_address = _normalize_text(row.get(mapping["property_address"]))
+        parsed = _split_full_address(raw_address)
+        address = parsed["property_address"] or raw_address
+        suburb = _normalize_text(row.get(mapping.get("suburb", ""))) or parsed["suburb"]
+        state_code = _normalize_state_code(row.get(mapping.get("state_code", ""))) or parsed["state_code"]
+        postcode = _normalize_text(row.get(mapping.get("postcode", ""))) or parsed["postcode"]
         if not address:
             continue
-        key = _normalize_address_key(address)
+        key = _property_identity_key(address, suburb, state_code, postcode)
         if key in seen:
             continue
         seen.add(key)
@@ -135,9 +222,9 @@ def _parse_property_workbook(content: bytes) -> list[dict[str, str | None]]:
             {
                 "property_address": address,
                 "address_line_2": _normalize_text(row.get(mapping.get("address_line_2", ""))) or None,
-                "suburb": _normalize_text(row.get(mapping.get("suburb", ""))) or None,
-                "state_code": _normalize_state_code(row.get(mapping.get("state_code", ""))),
-                "postcode": _normalize_text(row.get(mapping.get("postcode", ""))) or None,
+                "suburb": suburb,
+                "state_code": state_code,
+                "postcode": postcode,
             }
         )
     return items
@@ -185,9 +272,17 @@ async def import_xlsx(
     now = datetime.utcnow()
     imported = 0
     existing = db.query(ManagedProperty).filter(ManagedProperty.mailbox == mailbox).all()
-    existing_by_key = {_normalize_address_key(prop.property_address): prop for prop in existing}
+    existing_by_key = {
+        _property_identity_key(prop.property_address, prop.suburb, prop.state_code, prop.postcode): prop
+        for prop in existing
+    }
     for item in rows:
-        address_key = _normalize_address_key(item["property_address"])
+        address_key = _property_identity_key(
+            item["property_address"],
+            item["suburb"],
+            item["state_code"],
+            item["postcode"],
+        )
         match = existing_by_key.get(address_key)
         if match:
             match.address_line_2 = item["address_line_2"]
@@ -227,10 +322,13 @@ def create_property(
     address = _normalize_text(payload.property_address)
     if not address:
         raise HTTPException(status_code=400, detail="Property address is required.")
-    target_key = _normalize_address_key(address)
+    suburb = _normalize_text(payload.suburb) or None
+    state_code = _normalize_state_code(payload.state_code)
+    postcode = _normalize_text(payload.postcode) or None
+    target_key = _property_identity_key(address, suburb, state_code, postcode)
     existing = db.query(ManagedProperty).filter(ManagedProperty.mailbox == mailbox).all()
     for row in existing:
-        if _normalize_address_key(row.property_address) == target_key:
+        if _property_identity_key(row.property_address, row.suburb, row.state_code, row.postcode) == target_key:
             raise HTTPException(status_code=400, detail="This property already exists.")
 
     now = datetime.utcnow()
@@ -238,9 +336,9 @@ def create_property(
         mailbox=mailbox,
         property_address=address,
         address_line_2=_normalize_text(payload.address_line_2) or None,
-        suburb=_normalize_text(payload.suburb) or None,
-        state_code=_normalize_state_code(payload.state_code),
-        postcode=_normalize_text(payload.postcode) or None,
+        suburb=suburb,
+        state_code=state_code,
+        postcode=postcode,
         is_active=True,
         source="manual",
         created_at=now,

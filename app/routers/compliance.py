@@ -21,6 +21,17 @@ from app.models import (
 
 router = APIRouter()
 DUE_SOON_DAYS = 30
+MAIN_CHECK_TYPES = (
+    ComplianceType.MRS,
+    ComplianceType.SMOKE,
+    ComplianceType.GAS,
+    ComplianceType.ELECTRICAL,
+)
+CYCLE_YEARS = {
+    ComplianceType.GAS: 2,
+    ComplianceType.ELECTRICAL: 2,
+    ComplianceType.SMOKE: 1,
+}
 
 
 class ComplianceRecordCreateIn(BaseModel):
@@ -44,8 +55,6 @@ class ComplianceRecordUpdateIn(BaseModel):
 
 
 def _record_state(row: ComplianceRecord) -> str:
-    if row.status == ComplianceRecordStatus.COMPLETED:
-        return "CURRENT"
     if row.status == ComplianceRecordStatus.WAIVED:
         return "WAIVED"
     if row.status == ComplianceRecordStatus.ACTION_REQUIRED:
@@ -57,7 +66,40 @@ def _record_state(row: ComplianceRecord) -> str:
             return "OVERDUE"
         if due <= today + timedelta(days=DUE_SOON_DAYS):
             return "DUE_SOON"
+    if row.status == ComplianceRecordStatus.COMPLETED:
+        return "CURRENT"
     return "OPEN"
+
+
+def _add_years(value: datetime, years: int) -> datetime:
+    try:
+        return value.replace(year=value.year + years)
+    except ValueError:
+        # Handles 29 February on non-leap target years.
+        return value.replace(month=2, day=28, year=value.year + years)
+
+
+def _calculated_due_date(compliance_type: ComplianceType, completed_at: datetime | None) -> datetime | None:
+    if not completed_at:
+        return None
+    years = CYCLE_YEARS.get(compliance_type)
+    if not years:
+        return None
+    return _add_years(completed_at, years)
+
+
+def _fields_set(payload: BaseModel) -> set[str]:
+    return set(getattr(payload, "model_fields_set", getattr(payload, "__fields_set__", set())))
+
+
+def _check_label(compliance_type: ComplianceType) -> str:
+    labels = {
+        ComplianceType.MRS: "MRS",
+        ComplianceType.SMOKE: "Smoke",
+        ComplianceType.GAS: "Gas",
+        ComplianceType.ELECTRICAL: "Electrical",
+    }
+    return labels.get(compliance_type, compliance_type.value.title())
 
 
 def _record_to_dict(row: ComplianceRecord) -> dict[str, Any]:
@@ -79,6 +121,30 @@ def _record_to_dict(row: ComplianceRecord) -> dict[str, Any]:
         "notes": row.notes,
         "created_at": row.created_at,
         "updated_at": row.updated_at,
+    }
+
+
+def _coverage_record_to_dict(row: ComplianceRecord | None, compliance_type: ComplianceType) -> dict[str, Any]:
+    if not row:
+        return {
+            "type": compliance_type.value,
+            "label": _check_label(compliance_type),
+            "state": "MISSING",
+            "status": None,
+            "record_id": None,
+            "completed_at": None,
+            "due_date": None,
+            "provider_name": None,
+        }
+    return {
+        "type": compliance_type.value,
+        "label": _check_label(compliance_type),
+        "state": _record_state(row),
+        "status": row.status.value,
+        "record_id": row.id,
+        "completed_at": row.completed_at,
+        "due_date": row.due_date,
+        "provider_name": row.provider_name,
     }
 
 
@@ -104,13 +170,17 @@ def create_record(
 ):
     _get_property(db, mailbox, payload.property_id)
     now = datetime.utcnow()
+    completed_at = payload.completed_at
+    status = payload.status
+    if completed_at and status == ComplianceRecordStatus.OPEN:
+        status = ComplianceRecordStatus.COMPLETED
     row = ComplianceRecord(
         mailbox=mailbox,
         property_id=payload.property_id,
         compliance_type=payload.compliance_type,
-        status=payload.status,
-        due_date=payload.due_date,
-        completed_at=payload.completed_at,
+        status=status,
+        due_date=payload.due_date or _calculated_due_date(payload.compliance_type, completed_at),
+        completed_at=completed_at,
         provider_name=(payload.provider_name or "").strip() or None,
         result_text=(payload.result_text or "").strip() or None,
         notes=(payload.notes or "").strip() or None,
@@ -140,27 +210,58 @@ def update_record(
     if not row:
         raise HTTPException(status_code=404, detail="Compliance record not found.")
 
+    fields_set = _fields_set(payload)
     if payload.status is not None:
         row.status = payload.status
         if payload.status == ComplianceRecordStatus.COMPLETED and not row.completed_at:
             row.completed_at = datetime.utcnow()
         elif payload.status != ComplianceRecordStatus.COMPLETED:
             row.completed_at = None
-    if payload.due_date is not None:
-        row.due_date = payload.due_date
-    if payload.completed_at is not None:
+
+    if "completed_at" in fields_set:
         row.completed_at = payload.completed_at
-    if payload.provider_name is not None:
-        row.provider_name = payload.provider_name.strip() or None
-    if payload.result_text is not None:
-        row.result_text = payload.result_text.strip() or None
-    if payload.notes is not None:
-        row.notes = payload.notes.strip() or None
+        if payload.completed_at and row.status == ComplianceRecordStatus.OPEN:
+            row.status = ComplianceRecordStatus.COMPLETED
+    if row.status == ComplianceRecordStatus.COMPLETED and not row.completed_at:
+        row.completed_at = datetime.utcnow()
+    if "due_date" in fields_set:
+        row.due_date = payload.due_date
+    elif row.completed_at:
+        row.due_date = _calculated_due_date(row.compliance_type, row.completed_at)
+    elif payload.status is not None and payload.status != ComplianceRecordStatus.COMPLETED:
+        row.due_date = None
+
+    if "provider_name" in fields_set:
+        row.provider_name = (payload.provider_name or "").strip() or None
+    if "result_text" in fields_set:
+        row.result_text = (payload.result_text or "").strip() or None
+    if "notes" in fields_set:
+        row.notes = (payload.notes or "").strip() or None
 
     row.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(row)
     return _record_to_dict(row)
+
+
+@router.delete("/records/{record_id}")
+def delete_record(
+    record_id: int,
+    mailbox: str = Depends(get_current_mailbox),
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    row = (
+        db.query(ComplianceRecord)
+        .filter(ComplianceRecord.mailbox == mailbox)
+        .filter(ComplianceRecord.id == record_id)
+        .first()
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Compliance record not found.")
+    db.delete(row)
+    db.commit()
+    return {"ok": True}
 
 
 @router.get("/records")
@@ -258,4 +359,134 @@ def summary(
         "current_records": state_counts.get("CURRENT", 0),
         "waived_records": state_counts.get("WAIVED", 0),
         "state_counts": state_counts,
+    }
+
+
+@router.get("/coverage")
+def coverage(
+    query: str | None = None,
+    page: int = 1,
+    page_size: int = 25,
+    include_current: bool = False,
+    mailbox: str = Depends(get_current_mailbox),
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    props_q = (
+        db.query(ManagedProperty)
+        .filter(ManagedProperty.mailbox == mailbox)
+        .filter(ManagedProperty.is_active == True)
+    )
+    if query and query.strip():
+        like = f"%{query.strip()}%"
+        props_q = props_q.filter(
+            or_(
+                ManagedProperty.property_address.ilike(like),
+                ManagedProperty.suburb.ilike(like),
+                ManagedProperty.postcode.ilike(like),
+            )
+        )
+    props = props_q.order_by(ManagedProperty.property_address.asc()).all()
+    prop_ids = [p.id for p in props]
+
+    records = []
+    if prop_ids:
+        records = (
+            db.query(ComplianceRecord)
+            .filter(ComplianceRecord.mailbox == mailbox)
+            .filter(ComplianceRecord.property_id.in_(prop_ids))
+            .filter(ComplianceRecord.compliance_type.in_(MAIN_CHECK_TYPES))
+            .all()
+        )
+
+    latest_by_key: dict[tuple[int, ComplianceType], ComplianceRecord] = {}
+
+    def sort_key(row: ComplianceRecord) -> tuple[datetime, datetime, int]:
+        return (
+            row.updated_at or datetime.min,
+            row.created_at or datetime.min,
+            row.id or 0,
+        )
+
+    for row in records:
+        key = (row.property_id, row.compliance_type)
+        existing = latest_by_key.get(key)
+        if not existing or sort_key(row) > sort_key(existing):
+            latest_by_key[key] = row
+
+    items: list[dict[str, Any]] = []
+    summary_counts = {
+        "total_properties": len(props),
+        "fully_current": 0,
+        "with_missing": 0,
+        "with_incomplete": 0,
+        "with_overdue": 0,
+        "with_due_soon": 0,
+        "needs_attention": 0,
+    }
+
+    for prop in props:
+        missing: list[str] = []
+        incomplete: list[str] = []
+        overdue: list[str] = []
+        due_soon: list[str] = []
+        checks: list[dict[str, Any]] = []
+        for check_type in MAIN_CHECK_TYPES:
+            row = latest_by_key.get((prop.id, check_type))
+            check = _coverage_record_to_dict(row, check_type)
+            checks.append(check)
+            if not row:
+                missing.append(_check_label(check_type))
+                continue
+            state = _record_state(row)
+            if row.status not in {ComplianceRecordStatus.COMPLETED, ComplianceRecordStatus.WAIVED}:
+                incomplete.append(_check_label(check_type))
+            if state == "OVERDUE":
+                overdue.append(_check_label(check_type))
+            elif state == "DUE_SOON":
+                due_soon.append(_check_label(check_type))
+
+        has_issue = bool(missing or incomplete or overdue or due_soon)
+        if not has_issue:
+            summary_counts["fully_current"] += 1
+        else:
+            summary_counts["needs_attention"] += 1
+        if missing:
+            summary_counts["with_missing"] += 1
+        if incomplete:
+            summary_counts["with_incomplete"] += 1
+        if overdue:
+            summary_counts["with_overdue"] += 1
+        if due_soon:
+            summary_counts["with_due_soon"] += 1
+
+        if include_current or has_issue:
+            items.append(
+                {
+                    "property_id": prop.id,
+                    "property_address": prop.property_address,
+                    "suburb": prop.suburb,
+                    "state_code": prop.state_code,
+                    "postcode": prop.postcode,
+                    "missing": missing,
+                    "incomplete": incomplete,
+                    "overdue": overdue,
+                    "due_soon": due_soon,
+                    "checks": checks,
+                }
+            )
+
+    page = max(int(page or 1), 1)
+    page_size = max(10, min(int(page_size or 25), 200))
+    total = len(items)
+    start = (page - 1) * page_size
+    rows = items[start:start + page_size]
+    return {
+        "items": rows,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "has_more": (page * page_size) < total,
+        "summary": summary_counts,
+        "required_checks": [x.value for x in MAIN_CHECK_TYPES],
     }

@@ -64,7 +64,11 @@ let currentPropertiesPage = 1;
 let propertiesLoadedOnce = false;
 let currentCompliancePage = 1;
 let complianceLoadedOnce = false;
+let currentCoveragePage = 1;
+let coverageLoadedOnce = false;
 let propertyOptionsCache = [];
+let complianceRecordsCache = {};
+let editingComplianceRecordId = null;
 
 function isAllEmailsTab() {
     return String(currentTab || "").toLowerCase() === "all";
@@ -83,6 +87,11 @@ function updateSyncContextUI() {
     if (currentDashboardTab === "compliance") {
         if (viewBadge) viewBadge.textContent = "Compliance";
         if (info) info.textContent = "Inbox sync controls are hidden while you are on the compliance tab.";
+        return;
+    }
+    if (currentDashboardTab === "coverage") {
+        if (viewBadge) viewBadge.textContent = "Compliance Gaps";
+        if (info) info.textContent = "Inbox sync controls are hidden while you are on the compliance gaps tab.";
         return;
     }
     if (currentDashboardTab === "properties") {
@@ -599,28 +608,33 @@ function formatDateShort(dt) {
 }
 
 function switchDashboardTab(tab) {
-    currentDashboardTab = tab === "rent" ? "rent" : (tab === "compliance" ? "compliance" : (tab === "properties" ? "properties" : "inbox"));
+    currentDashboardTab = ["rent", "compliance", "coverage", "properties"].includes(tab) ? tab : "inbox";
     const inboxPanel = document.getElementById("inboxPanel");
     const rentPanel = document.getElementById("rentPanel");
     const propertiesPanel = document.getElementById("propertiesPanel");
     const compliancePanel = document.getElementById("compliancePanel");
+    const coveragePanel = document.getElementById("coveragePanel");
     const navInbox = document.getElementById("navInbox");
     const navRent = document.getElementById("navRentTracker");
     const navProperties = document.getElementById("navProperties");
     const navCompliance = document.getElementById("navCompliance");
+    const navCoverage = document.getElementById("navComplianceCoverage");
     const shell = document.getElementById("dashboardShell");
 
     if (inboxPanel) inboxPanel.classList.toggle("hidden", currentDashboardTab !== "inbox");
     if (rentPanel) rentPanel.classList.toggle("hidden", currentDashboardTab !== "rent");
     if (propertiesPanel) propertiesPanel.classList.toggle("hidden", currentDashboardTab !== "properties");
     if (compliancePanel) compliancePanel.classList.toggle("hidden", currentDashboardTab !== "compliance");
+    if (coveragePanel) coveragePanel.classList.toggle("hidden", currentDashboardTab !== "coverage");
     if (navInbox) navInbox.classList.toggle("active", currentDashboardTab === "inbox");
     if (navRent) navRent.classList.toggle("active", currentDashboardTab === "rent");
     if (navProperties) navProperties.classList.toggle("active", currentDashboardTab === "properties");
     if (navCompliance) navCompliance.classList.toggle("active", currentDashboardTab === "compliance");
+    if (navCoverage) navCoverage.classList.toggle("active", currentDashboardTab === "coverage");
     if (shell) {
         shell.classList.toggle("rent-mode", currentDashboardTab === "rent");
         shell.classList.toggle("compliance-mode", currentDashboardTab === "compliance");
+        shell.classList.toggle("coverage-mode", currentDashboardTab === "coverage");
         shell.classList.toggle("properties-mode", currentDashboardTab === "properties");
     }
 
@@ -634,6 +648,9 @@ function switchDashboardTab(tab) {
     if (currentDashboardTab === "compliance" && !complianceLoadedOnce) {
         refreshPropertyOptions();
         loadComplianceDashboard();
+    }
+    if (currentDashboardTab === "coverage" && !coverageLoadedOnce) {
+        loadComplianceCoverage();
     }
 }
 
@@ -1012,6 +1029,50 @@ function complianceTypeLabel(type) {
     return labels[String(type || "OTHER").toUpperCase()] || String(type || "-");
 }
 
+function complianceCycleHint(type) {
+    const key = String(type || "").toUpperCase();
+    if (key === "SMOKE") return "12 months";
+    if (key === "GAS" || key === "ELECTRICAL") return "2 years";
+    return "Tracked manually";
+}
+
+function dateInputValue(dt) {
+    if (!dt) return "";
+    const d = new Date(dt);
+    if (Number.isNaN(d.getTime())) return String(dt).slice(0, 10);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function isoDateOrNull(dateValue) {
+    const value = String(dateValue || "").trim();
+    return value ? `${value}T00:00:00` : null;
+}
+
+function addYearsToDateInput(dateValue, years) {
+    if (!dateValue || !years) return "";
+    const [year, month, day] = dateValue.split("-").map((x) => Number(x));
+    if (!year || !month || !day) return "";
+    const d = new Date(year + years, month - 1, day);
+    if (d.getMonth() !== month - 1) {
+        d.setDate(0);
+    }
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function calculatedNextDueInput(type, doneDate) {
+    const key = String(type || "").toUpperCase();
+    if (key === "SMOKE") return addYearsToDateInput(doneDate, 1);
+    if (key === "GAS" || key === "ELECTRICAL") return addYearsToDateInput(doneDate, 2);
+    return "";
+}
+
+function coverageStatusChip(state) {
+    const key = String(state || "MISSING").toUpperCase();
+    if (key === "MISSING") return `<span class="compliance-status missing">Missing</span>`;
+    if (key === "OPEN") return `<span class="compliance-status incomplete">Open</span>`;
+    return complianceStatusChip(key);
+}
+
 function getPropertyFilters() {
     return { query: (document.getElementById("propertySearchBox")?.value || "").trim() };
 }
@@ -1175,7 +1236,7 @@ async function loadComplianceDashboard(page = null) {
     if (query) itemsUrl.searchParams.set("query", query);
 
     const body = document.getElementById("complianceTableBody");
-    if (body) body.innerHTML = `<tr><td colspan="8" class="muted">Loading...</td></tr>`;
+    if (body) body.innerHTML = `<tr><td colspan="9" class="muted">Loading...</td></tr>`;
 
     const [itemsResp, summaryResp] = await Promise.all([
         apiFetch(itemsUrl.toString()),
@@ -1183,12 +1244,12 @@ async function loadComplianceDashboard(page = null) {
     ]);
     if (!itemsResp.ok) {
         const t = await itemsResp.text();
-        if (body) body.innerHTML = `<tr><td colspan="8" class="muted">Failed to load compliance: ${escapeHtml(t)}</td></tr>`;
+        if (body) body.innerHTML = `<tr><td colspan="9" class="muted">Failed to load compliance: ${escapeHtml(t)}</td></tr>`;
         return;
     }
     if (!summaryResp.ok) {
         const t = await summaryResp.text();
-        if (body) body.innerHTML = `<tr><td colspan="8" class="muted">Failed to load summary: ${escapeHtml(t)}</td></tr>`;
+        if (body) body.innerHTML = `<tr><td colspan="9" class="muted">Failed to load summary: ${escapeHtml(t)}</td></tr>`;
         return;
     }
 
@@ -1207,9 +1268,13 @@ async function loadComplianceDashboard(page = null) {
     setText("complianceKpiCurrent", summary.current_records || 0);
 
     const items = Array.isArray(data.items) ? data.items : [];
+    complianceRecordsCache = {};
+    items.forEach((row) => {
+        complianceRecordsCache[row.id] = row;
+    });
     if (body) {
         if (!items.length) {
-            body.innerHTML = `<tr><td colspan="8" class="muted">No compliance records found for this filter.</td></tr>`;
+            body.innerHTML = `<tr><td colspan="9" class="muted">No compliance records found for this filter.</td></tr>`;
         } else {
             body.innerHTML = items.map((row) => `
                 <tr>
@@ -1220,17 +1285,24 @@ async function loadComplianceDashboard(page = null) {
                     <td>${escapeHtml(complianceTypeLabel(row.compliance_type))}</td>
                     <td>
                         ${complianceStatusChip(row.state)}
+                        <div class="small muted" style="margin-top:4px">${escapeHtml(complianceCycleHint(row.compliance_type))}</div>
                         <div style="margin-top:6px">
                           <select onchange="updateComplianceRecordStatus(${row.id}, this.value)">
                             ${["OPEN", "ACTION_REQUIRED", "COMPLETED", "WAIVED"].map((s) => `<option value="${s}" ${s === row.status ? "selected" : ""}>${s.replace("_", " ")}</option>`).join("")}
                           </select>
                         </div>
                     </td>
-                    <td>${escapeHtml(formatDateShort(row.due_date))}</td>
                     <td>${escapeHtml(formatDateShort(row.completed_at))}</td>
+                    <td>${escapeHtml(formatDateShort(row.due_date))}</td>
                     <td>${escapeHtml(row.provider_name || "-")}</td>
                     <td>${escapeHtml(row.result_text || "-")}</td>
                     <td class="small">${escapeHtml(row.notes || "-")}</td>
+                    <td>
+                        <div class="row">
+                            <button class="btn" onclick="openComplianceEditModal(${row.id})">Edit</button>
+                            <button class="btn danger" onclick="deleteComplianceRecord(${row.id})">Delete</button>
+                        </div>
+                    </td>
                 </tr>
             `).join("");
         }
@@ -1269,17 +1341,15 @@ async function createComplianceRecord() {
         return;
     }
     const compliance_type = (document.getElementById("complianceTypeInput")?.value || "OTHER").trim();
-    const dueDate = (document.getElementById("complianceDueDateInput")?.value || "").trim();
+    const completedDate = (document.getElementById("complianceCompletedDateInput")?.value || "").trim();
     const provider_name = (document.getElementById("complianceProviderInput")?.value || "").trim();
-    const result_text = (document.getElementById("complianceResultInput")?.value || "").trim();
     const notes = (document.getElementById("complianceNotesInput")?.value || "").trim();
     const payload = {
         property_id: propertyId,
         compliance_type,
-        status: "OPEN",
-        due_date: dueDate ? `${dueDate}T00:00:00` : null,
+        status: completedDate ? "COMPLETED" : "OPEN",
+        completed_at: isoDateOrNull(completedDate),
         provider_name: provider_name || null,
-        result_text: result_text || null,
         notes: notes || null,
     };
     const r = await apiFetch("/compliance/records", {
@@ -1292,12 +1362,13 @@ async function createComplianceRecord() {
         alert(`Failed to add compliance record (${r.status}):\n\n${t}`);
         return;
     }
-    ["complianceDueDateInput", "complianceProviderInput", "complianceResultInput", "complianceNotesInput"].forEach((id) => {
+    ["complianceCompletedDateInput", "complianceProviderInput", "complianceNotesInput"].forEach((id) => {
         const el = document.getElementById(id);
         if (el) el.value = "";
     });
     currentCompliancePage = 1;
     await loadComplianceDashboard();
+    if (coverageLoadedOnce) await loadComplianceCoverage();
 }
 
 async function updateComplianceRecordStatus(recordId, status) {
@@ -1317,6 +1388,203 @@ async function updateComplianceRecordStatus(recordId, status) {
         return;
     }
     await loadComplianceDashboard();
+    if (coverageLoadedOnce) await loadComplianceCoverage();
+}
+
+function updateComplianceEditNextDuePreview() {
+    const record = complianceRecordsCache[editingComplianceRecordId] || {};
+    const doneDate = document.getElementById("editComplianceCompletedAt")?.value || "";
+    const nextDue = calculatedNextDueInput(record.compliance_type, doneDate);
+    const el = document.getElementById("editComplianceNextDue");
+    if (el) el.value = nextDue || "No automatic cycle";
+}
+
+function openComplianceEditModal(recordId) {
+    const record = complianceRecordsCache[recordId];
+    if (!record) {
+        alert("This record is not loaded anymore. Please refresh the compliance dashboard.");
+        return;
+    }
+    editingComplianceRecordId = recordId;
+    const title = document.getElementById("complianceEditTitle");
+    if (title) {
+        title.textContent = `${record.property_address || "Property"} - ${complianceTypeLabel(record.compliance_type)} (${complianceCycleHint(record.compliance_type)})`;
+    }
+    const status = document.getElementById("editComplianceStatus");
+    const completedAt = document.getElementById("editComplianceCompletedAt");
+    const provider = document.getElementById("editComplianceProvider");
+    const result = document.getElementById("editComplianceResult");
+    const notes = document.getElementById("editComplianceNotes");
+    if (status) status.value = record.status || "OPEN";
+    if (completedAt) completedAt.value = dateInputValue(record.completed_at);
+    if (provider) provider.value = record.provider_name || "";
+    if (result) result.value = record.result_text || "";
+    if (notes) notes.value = record.notes || "";
+    updateComplianceEditNextDuePreview();
+    const modal = document.getElementById("complianceEditModal");
+    if (modal) modal.classList.remove("hidden");
+}
+
+function closeComplianceEditModal() {
+    editingComplianceRecordId = null;
+    const modal = document.getElementById("complianceEditModal");
+    if (modal) modal.classList.add("hidden");
+}
+
+async function saveComplianceEdit() {
+    if (!editingComplianceRecordId) return;
+    const status = (document.getElementById("editComplianceStatus")?.value || "OPEN").trim();
+    const completedDate = (document.getElementById("editComplianceCompletedAt")?.value || "").trim();
+    const provider_name = (document.getElementById("editComplianceProvider")?.value || "").trim();
+    const result_text = (document.getElementById("editComplianceResult")?.value || "").trim();
+    const notes = (document.getElementById("editComplianceNotes")?.value || "").trim();
+    const payload = {
+        status,
+        completed_at: isoDateOrNull(completedDate),
+        provider_name: provider_name || null,
+        result_text: result_text || null,
+        notes: notes || null,
+    };
+    const r = await apiFetch(`/compliance/records/${editingComplianceRecordId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+    });
+    const t = await r.text();
+    if (!r.ok) {
+        alert(`Failed to save compliance record (${r.status}):\n\n${t}`);
+        return;
+    }
+    closeComplianceEditModal();
+    await loadComplianceDashboard();
+    if (coverageLoadedOnce) await loadComplianceCoverage();
+}
+
+async function deleteComplianceRecord(recordId) {
+    const record = complianceRecordsCache[recordId] || {};
+    const label = `${record.property_address || "this property"} - ${complianceTypeLabel(record.compliance_type)}`;
+    if (!confirm(`Delete compliance record for ${label}?`)) return false;
+    const r = await apiFetch(`/compliance/records/${recordId}`, { method: "DELETE" });
+    const t = await r.text();
+    if (!r.ok) {
+        alert(`Failed to delete compliance record (${r.status}):\n\n${t}`);
+        return false;
+    }
+    await loadComplianceDashboard();
+    if (coverageLoadedOnce) await loadComplianceCoverage();
+    return true;
+}
+
+async function deleteComplianceRecordFromModal() {
+    if (!editingComplianceRecordId) return;
+    const recordId = editingComplianceRecordId;
+    const deleted = await deleteComplianceRecord(recordId);
+    if (deleted) closeComplianceEditModal();
+}
+
+function getCoverageFilters() {
+    return {
+        query: (document.getElementById("coverageSearchBox")?.value || "").trim(),
+        includeCurrent: !!document.getElementById("coverageIncludeCurrent")?.checked,
+    };
+}
+
+function formatCheckList(items) {
+    if (!Array.isArray(items) || !items.length) return `<span class="muted">-</span>`;
+    return items.map((x) => `<span class="badge">${escapeHtml(x)}</span>`).join(" ");
+}
+
+function formatCoverageChecks(checks) {
+    if (!Array.isArray(checks) || !checks.length) return `<span class="muted">-</span>`;
+    return checks.map((check) => {
+        const dates = [
+            check.completed_at ? `Done ${formatDateShort(check.completed_at)}` : "",
+            check.due_date ? `Due ${formatDateShort(check.due_date)}` : "",
+        ].filter(Boolean).join(" - ");
+        return `
+            <div style="margin-bottom:8px">
+                ${coverageStatusChip(check.state)}
+                <b style="margin-left:6px">${escapeHtml(check.label || check.type || "")}</b>
+                <div class="small muted" style="margin-top:3px">${escapeHtml(dates || "No completed record")}</div>
+            </div>
+        `;
+    }).join("");
+}
+
+async function loadComplianceCoverage(page = null) {
+    if (page !== null) currentCoveragePage = page;
+    const p = currentCoveragePage || 1;
+    const { query, includeCurrent } = getCoverageFilters();
+    const url = new URL("/compliance/coverage", window.location.origin);
+    url.searchParams.set("page", String(p));
+    url.searchParams.set("page_size", "25");
+    if (query) url.searchParams.set("query", query);
+    if (includeCurrent) url.searchParams.set("include_current", "true");
+
+    const body = document.getElementById("coverageTableBody");
+    if (body) body.innerHTML = `<tr><td colspan="6" class="muted">Loading...</td></tr>`;
+    const r = await apiFetch(url.toString());
+    const t = await r.text();
+    if (!r.ok) {
+        if (body) body.innerHTML = `<tr><td colspan="6" class="muted">Failed to load compliance gaps: ${escapeHtml(t)}</td></tr>`;
+        return;
+    }
+    const data = JSON.parse(t);
+    coverageLoadedOnce = true;
+    const summary = data.summary || {};
+    const setText = (id, val) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = String(val || 0);
+    };
+    setText("coverageKpiTotal", summary.total_properties || 0);
+    setText("coverageKpiAttention", summary.needs_attention || 0);
+    setText("coverageKpiMissing", summary.with_missing || 0);
+    setText("coverageKpiIncomplete", summary.with_incomplete || 0);
+    setText("coverageKpiCurrent", summary.fully_current || 0);
+
+    const items = Array.isArray(data.items) ? data.items : [];
+    if (body) {
+        if (!items.length) {
+            body.innerHTML = `<tr><td colspan="6" class="muted">No compliance gaps found for this filter.</td></tr>`;
+        } else {
+            body.innerHTML = items.map((row) => `
+                <tr>
+                    <td>
+                        <div style="font-weight:700">${escapeHtml(row.property_address || "")}</div>
+                        <div class="small muted">${escapeHtml([row.suburb, row.state_code, row.postcode].filter(Boolean).join(", ") || "-")}</div>
+                    </td>
+                    <td>${formatCheckList(row.missing)}</td>
+                    <td>${formatCheckList(row.incomplete)}</td>
+                    <td>${formatCheckList(row.overdue)}</td>
+                    <td>${formatCheckList(row.due_soon)}</td>
+                    <td>${formatCoverageChecks(row.checks)}</td>
+                </tr>
+            `).join("");
+        }
+    }
+    const pi = document.getElementById("coveragePageInfo");
+    if (pi) {
+        const total = Number(data.total || 0);
+        const pageNow = Number(data.page || 1);
+        const sizeNow = Number(data.page_size || 25);
+        const pages = sizeNow > 0 ? Math.max(1, Math.ceil(total / sizeNow)) : 1;
+        pi.textContent = `Page ${pageNow} of ${pages} - ${total} properties needing review`;
+    }
+    const btnPrev = document.getElementById("coverageBtnPrev");
+    const btnNext = document.getElementById("coverageBtnNext");
+    if (btnPrev) btnPrev.disabled = Number(data.page || 1) <= 1;
+    if (btnNext) btnNext.disabled = !Boolean(data.has_more);
+}
+
+function prevCoveragePage() {
+    if (currentCoveragePage <= 1) return;
+    currentCoveragePage -= 1;
+    loadComplianceCoverage();
+}
+
+function nextCoveragePage() {
+    currentCoveragePage += 1;
+    loadComplianceCoverage();
 }
 
 function setTab(tab) {
@@ -2725,6 +2993,43 @@ window.addEventListener("load", async () => {
                     loadComplianceDashboard();
                 }
             }, 250);
+        });
+    }
+    const coverageSearch = document.getElementById("coverageSearchBox");
+    if (coverageSearch) {
+        let tmr = null;
+        coverageSearch.addEventListener("input", () => {
+            if (tmr) clearTimeout(tmr);
+            tmr = setTimeout(() => {
+                if (currentDashboardTab === "coverage") {
+                    currentCoveragePage = 1;
+                    loadComplianceCoverage();
+                }
+            }, 250);
+        });
+    }
+    const coverageIncludeCurrent = document.getElementById("coverageIncludeCurrent");
+    if (coverageIncludeCurrent) {
+        coverageIncludeCurrent.addEventListener("change", () => {
+            if (currentDashboardTab === "coverage") {
+                currentCoveragePage = 1;
+                loadComplianceCoverage();
+            }
+        });
+    }
+    const editCompleted = document.getElementById("editComplianceCompletedAt");
+    if (editCompleted) {
+        editCompleted.addEventListener("change", updateComplianceEditNextDuePreview);
+    }
+    const editStatus = document.getElementById("editComplianceStatus");
+    if (editStatus) {
+        editStatus.addEventListener("change", () => {
+            if (editStatus.value === "COMPLETED" && !document.getElementById("editComplianceCompletedAt")?.value) {
+                const d = new Date();
+                const done = document.getElementById("editComplianceCompletedAt");
+                if (done) done.value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+            }
+            updateComplianceEditNextDuePreview();
         });
     }
 
