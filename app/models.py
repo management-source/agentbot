@@ -49,6 +49,14 @@ class RentTrackStatus(str, Enum):
     AWAITING_CLEARANCE = "AWAITING_CLEARANCE"
 
 
+class ComplianceState(str, Enum):
+    CURRENT = "CURRENT"
+    DUE_SOON = "DUE_SOON"
+    OVERDUE = "OVERDUE"
+    ACTION_REQUIRED = "ACTION_REQUIRED"
+    UNKNOWN = "UNKNOWN"
+
+
 class AuditAction(str, Enum):
     CREATED = "CREATED"
     UPDATED = "UPDATED"
@@ -255,6 +263,57 @@ class RentDueTracker(Base):
     paid_on: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
     partial_amount: Mapped[float | None] = mapped_column(Float, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class ComplianceProperty(Base):
+    __tablename__ = "compliance_properties"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    mailbox: Mapped[str] = mapped_column(String, index=True)
+
+    property_address: Mapped[str] = mapped_column(String, index=True)
+    address_line_2: Mapped[str | None] = mapped_column(String, nullable=True)
+    suburb: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    state_code: Mapped[str | None] = mapped_column(String, nullable=True)
+    postcode: Mapped[str | None] = mapped_column(String, nullable=True)
+    source_sheet: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    mrs_raw: Mapped[str | None] = mapped_column(Text, nullable=True)
+    gas_raw: Mapped[str | None] = mapped_column(Text, nullable=True)
+    smoke_raw: Mapped[str | None] = mapped_column(Text, nullable=True)
+    electrical_raw: Mapped[str | None] = mapped_column(Text, nullable=True)
+    pool_raw: Mapped[str | None] = mapped_column(Text, nullable=True)
+    powerband_raw: Mapped[str | None] = mapped_column(Text, nullable=True)
+    disclosure_raw: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    gas_last_checked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    gas_next_due_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    smoke_last_checked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    smoke_next_due_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    electrical_last_checked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    electrical_next_due_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+
+    work_order_requested_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    completed_raw: Mapped[str | None] = mapped_column(Text, nullable=True)
+    report_received_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    report_result: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    invoice_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    invoice_payment_status: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+
+    electrical_faults_raw: Mapped[str | None] = mapped_column(Text, nullable=True)
+    gas_faults_raw: Mapped[str | None] = mapped_column(Text, nullable=True)
+    smoke_faults_raw: Mapped[str | None] = mapped_column(Text, nullable=True)
+    mrs_faults_raw: Mapped[str | None] = mapped_column(Text, nullable=True)
+    quoted_electrical_payment_raw: Mapped[str | None] = mapped_column(Text, nullable=True)
+    quoted_gas_payment_raw: Mapped[str | None] = mapped_column(Text, nullable=True)
+    quoted_smoke_payment_raw: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    compliance_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    overall_state: Mapped[ComplianceState] = mapped_column(SAEnum(ComplianceState), default=ComplianceState.UNKNOWN, index=True)
+    overall_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)

@@ -60,6 +60,8 @@ let currentSearch = "";
 let currentRentPage = 1;
 let rentLoadedOnce = false;
 let rentViewMode = "tracker";
+let currentCompliancePage = 1;
+let complianceLoadedOnce = false;
 
 function isAllEmailsTab() {
     return String(currentTab || "").toLowerCase() === "all";
@@ -73,6 +75,11 @@ function updateSyncContextUI() {
     if (currentDashboardTab === "rent") {
         if (viewBadge) viewBadge.textContent = "Rent Tracker";
         if (info) info.textContent = "Inbox sync controls are hidden while you are on the rent tracker tab.";
+        return;
+    }
+    if (currentDashboardTab === "compliance") {
+        if (viewBadge) viewBadge.textContent = "Compliance";
+        if (info) info.textContent = "Inbox sync controls are hidden while you are on the compliance tab.";
         return;
     }
     if (!info) return;
@@ -584,22 +591,32 @@ function formatDateShort(dt) {
 }
 
 function switchDashboardTab(tab) {
-    currentDashboardTab = tab === "rent" ? "rent" : "inbox";
+    currentDashboardTab = tab === "rent" ? "rent" : (tab === "compliance" ? "compliance" : "inbox");
     const inboxPanel = document.getElementById("inboxPanel");
     const rentPanel = document.getElementById("rentPanel");
+    const compliancePanel = document.getElementById("compliancePanel");
     const navInbox = document.getElementById("navInbox");
     const navRent = document.getElementById("navRentTracker");
+    const navCompliance = document.getElementById("navCompliance");
     const shell = document.getElementById("dashboardShell");
 
     if (inboxPanel) inboxPanel.classList.toggle("hidden", currentDashboardTab !== "inbox");
     if (rentPanel) rentPanel.classList.toggle("hidden", currentDashboardTab !== "rent");
+    if (compliancePanel) compliancePanel.classList.toggle("hidden", currentDashboardTab !== "compliance");
     if (navInbox) navInbox.classList.toggle("active", currentDashboardTab === "inbox");
     if (navRent) navRent.classList.toggle("active", currentDashboardTab === "rent");
-    if (shell) shell.classList.toggle("rent-mode", currentDashboardTab === "rent");
+    if (navCompliance) navCompliance.classList.toggle("active", currentDashboardTab === "compliance");
+    if (shell) {
+        shell.classList.toggle("rent-mode", currentDashboardTab === "rent");
+        shell.classList.toggle("compliance-mode", currentDashboardTab === "compliance");
+    }
 
     updateSyncContextUI();
     if (currentDashboardTab === "rent" && !rentLoadedOnce) {
         loadActiveRentView();
+    }
+    if (currentDashboardTab === "compliance" && !complianceLoadedOnce) {
+        loadComplianceDashboard();
     }
 }
 
@@ -952,6 +969,175 @@ async function importRentWorkbook() {
     }
     currentRentPage = 1;
     await loadActiveRentView();
+}
+
+function complianceStatusChip(status) {
+    const key = String(status || "UNKNOWN").toUpperCase();
+    if (key === "CURRENT") return `<span class="compliance-status current">Current</span>`;
+    if (key === "DUE_SOON") return `<span class="compliance-status due-soon">Due Soon</span>`;
+    if (key === "OVERDUE") return `<span class="compliance-status overdue">Overdue</span>`;
+    if (key === "ACTION_REQUIRED") return `<span class="compliance-status action">Action Required</span>`;
+    return `<span class="compliance-status unknown">Unknown</span>`;
+}
+
+function complianceDateLine(label, rawValue, lastAt, nextAt) {
+    const last = formatDateShort(lastAt);
+    const next = formatDateShort(nextAt);
+    const raw = escapeHtml(rawValue || "-");
+    return `<div class="small"><b>${label}:</b> ${raw}</div><div class="small muted">Last ${last} • Next ${next}</div>`;
+}
+
+function complianceFaultSummary(row) {
+    const parts = [];
+    if (row.electrical_faults_raw && row.electrical_faults_raw !== "-") parts.push(`Electrical: ${escapeHtml(row.electrical_faults_raw)}`);
+    if (row.gas_faults_raw && row.gas_faults_raw !== "-") parts.push(`Gas: ${escapeHtml(row.gas_faults_raw)}`);
+    if (row.smoke_faults_raw && row.smoke_faults_raw !== "-") parts.push(`Smoke: ${escapeHtml(row.smoke_faults_raw)}`);
+    if (row.mrs_faults_raw && row.mrs_faults_raw !== "-") parts.push(`MRS: ${escapeHtml(row.mrs_faults_raw)}`);
+    return parts.length ? parts.join("<br />") : `<span class="muted">No fault flags in workbook.</span>`;
+}
+
+function getComplianceFilters() {
+    return {
+        state: (document.getElementById("complianceStateFilter")?.value || "").trim(),
+        query: (document.getElementById("complianceSearchBox")?.value || "").trim(),
+    };
+}
+
+async function loadComplianceDashboard(page = null) {
+    if (page !== null) currentCompliancePage = page;
+    const p = currentCompliancePage || 1;
+    const { state, query } = getComplianceFilters();
+
+    const itemsUrl = new URL("/compliance/properties", window.location.origin);
+    const summaryUrl = new URL("/compliance/summary", window.location.origin);
+    itemsUrl.searchParams.set("page", String(p));
+    itemsUrl.searchParams.set("page_size", "25");
+    if (state) itemsUrl.searchParams.set("state", state);
+    if (query) itemsUrl.searchParams.set("query", query);
+
+    const body = document.getElementById("complianceTableBody");
+    if (body) body.innerHTML = `<tr><td colspan="8" class="muted">Loading...</td></tr>`;
+
+    const [itemsResp, summaryResp] = await Promise.all([
+        apiFetch(itemsUrl.toString()),
+        apiFetch(summaryUrl.toString()),
+    ]);
+    if (!itemsResp.ok) {
+        const t = await itemsResp.text();
+        if (body) body.innerHTML = `<tr><td colspan="8" class="muted">Failed to load compliance: ${escapeHtml(t)}</td></tr>`;
+        return;
+    }
+    if (!summaryResp.ok) {
+        const t = await summaryResp.text();
+        if (body) body.innerHTML = `<tr><td colspan="8" class="muted">Failed to load summary: ${escapeHtml(t)}</td></tr>`;
+        return;
+    }
+
+    const data = await itemsResp.json();
+    const summary = await summaryResp.json();
+    complianceLoadedOnce = true;
+
+    const setText = (id, val) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = String(val || 0);
+    };
+    setText("complianceKpiTotal", summary.total || 0);
+    setText("complianceKpiAction", summary.action_required_properties || 0);
+    setText("complianceKpiOverdue", summary.overdue_properties || 0);
+    setText("complianceKpiSoon", summary.due_soon_properties || 0);
+    setText("complianceKpiCurrent", summary.current_properties || 0);
+
+    const items = Array.isArray(data.items) ? data.items : [];
+    if (body) {
+        if (!items.length) {
+            body.innerHTML = `<tr><td colspan="8" class="muted">No compliance properties found for this filter.</td></tr>`;
+        } else {
+            body.innerHTML = items.map((row) => `
+                <tr>
+                    <td>
+                        <div style="font-weight:700">${escapeHtml(row.property_address || "")}</div>
+                        <div class="small muted">${escapeHtml([row.suburb, row.state_code, row.postcode].filter(Boolean).join(", ") || "-")}</div>
+                    </td>
+                    <td>
+                        ${complianceStatusChip(row.overall_state)}
+                        <div class="small muted" style="margin-top:6px">${escapeHtml(row.overall_reason || "-")}</div>
+                    </td>
+                    <td>${complianceDateLine("Gas", row.gas_raw, row.gas_last_checked_at, row.gas_next_due_at)}</td>
+                    <td>${complianceDateLine("Smoke", row.smoke_raw, row.smoke_last_checked_at, row.smoke_next_due_at)}</td>
+                    <td>${complianceDateLine("Electrical", row.electrical_raw, row.electrical_last_checked_at, row.electrical_next_due_at)}</td>
+                    <td>
+                        <div class="small"><b>Work order:</b> ${escapeHtml(formatDateShort(row.work_order_requested_at))}</div>
+                        <div class="small"><b>Report:</b> ${escapeHtml(row.report_result || "-")}</div>
+                        <div class="small"><b>Invoice:</b> ${escapeHtml(row.invoice_payment_status || "-")}</div>
+                    </td>
+                    <td class="small">${complianceFaultSummary(row)}</td>
+                    <td>
+                        <div class="small">${escapeHtml(row.compliance_notes || "-")}</div>
+                        <div class="small muted" style="margin-top:6px">Source: ${escapeHtml(row.source_sheet || "-")}</div>
+                    </td>
+                </tr>
+            `).join("");
+        }
+    }
+
+    const pi = document.getElementById("compliancePageInfo");
+    if (pi) {
+        const total = Number(data.total || 0);
+        const pageNow = Number(data.page || 1);
+        const sizeNow = Number(data.page_size || 25);
+        const pages = sizeNow > 0 ? Math.max(1, Math.ceil(total / sizeNow)) : 1;
+        pi.textContent = `Page ${pageNow} of ${pages} • ${total} properties • Due soon window ${Number(summary.due_soon_window_days || 30)} days`;
+    }
+
+    const btnPrev = document.getElementById("complianceBtnPrev");
+    const btnNext = document.getElementById("complianceBtnNext");
+    if (btnPrev) btnPrev.disabled = Number(data.page || 1) <= 1;
+    if (btnNext) btnNext.disabled = !Boolean(data.has_more);
+}
+
+function prevCompliancePage() {
+    if (currentCompliancePage <= 1) return;
+    currentCompliancePage -= 1;
+    loadComplianceDashboard();
+}
+
+function nextCompliancePage() {
+    currentCompliancePage += 1;
+    loadComplianceDashboard();
+}
+
+async function importComplianceWorkbook() {
+    const fileInput = document.getElementById("complianceImportFile");
+    const f = fileInput && fileInput.files ? fileInput.files[0] : null;
+    if (!f) {
+        alert("Choose a compliance .xlsx workbook first.");
+        return;
+    }
+
+    const form = new FormData();
+    form.append("file", f, f.name);
+
+    const meta = document.getElementById("complianceImportMeta");
+    if (meta) meta.textContent = "Importing workbook...";
+
+    const r = await apiFetch("/compliance/import-xlsx", {
+        method: "POST",
+        body: form,
+    });
+    const t = await r.text();
+    if (!r.ok) {
+        if (meta) meta.textContent = "Import failed.";
+        alert(`Compliance import failed (${r.status}):\n\n${t}`);
+        return;
+    }
+    let j = null;
+    try { j = JSON.parse(t); } catch { j = null; }
+    if (meta) {
+        const rows = j && j.imported_rows ? j.imported_rows : "-";
+        meta.textContent = `Imported ${rows} properties from ${escapeHtml(f.name)} at ${new Date().toLocaleString()}.`;
+    }
+    currentCompliancePage = 1;
+    await loadComplianceDashboard();
 }
 
 function setTab(tab) {
@@ -2326,6 +2512,29 @@ window.addEventListener("load", async () => {
             }
         });
     });
+    ["complianceStateFilter"].forEach((id) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.addEventListener("change", () => {
+            if (currentDashboardTab === "compliance") {
+                currentCompliancePage = 1;
+                loadComplianceDashboard();
+            }
+        });
+    });
+    const complianceSearch = document.getElementById("complianceSearchBox");
+    if (complianceSearch) {
+        let tmr = null;
+        complianceSearch.addEventListener("input", () => {
+            if (tmr) clearTimeout(tmr);
+            tmr = setTimeout(() => {
+                if (currentDashboardTab === "compliance") {
+                    currentCompliancePage = 1;
+                    loadComplianceDashboard();
+                }
+            }, 250);
+        });
+    }
 
     // Assignment / category filters removed.
 

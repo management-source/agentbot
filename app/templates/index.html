@@ -243,7 +243,11 @@
     .dashboard-shell.rent-mode{
       grid-template-columns: 1fr;
     }
-    .dashboard-shell.rent-mode .left-rail{
+    .dashboard-shell.compliance-mode{
+      grid-template-columns: 1fr;
+    }
+    .dashboard-shell.rent-mode .left-rail,
+    .dashboard-shell.compliance-mode .left-rail{
       display:none;
     }
     @media (max-width: 1080px){
@@ -520,6 +524,22 @@
     .rent-status.partial{background:rgba(245,158,11,.12); border-color:rgba(245,158,11,.28); color:#92400e}
     .rent-status.vacant{background:rgba(100,116,139,.12); border-color:rgba(100,116,139,.24); color:#334155}
     .rent-status.awaiting{background:rgba(59,130,246,.1); border-color:rgba(59,130,246,.25); color:#1e40af}
+    .compliance-status{
+      display:inline-flex;
+      align-items:center;
+      padding:4px 8px;
+      border-radius:999px;
+      font-size:11px;
+      font-weight:800;
+      border:1px solid var(--border);
+      background:#fff;
+      color:#334155;
+    }
+    .compliance-status.current{background:rgba(22,163,74,.1); border-color:rgba(22,163,74,.25); color:#166534}
+    .compliance-status.due-soon{background:rgba(245,158,11,.12); border-color:rgba(245,158,11,.28); color:#92400e}
+    .compliance-status.overdue{background:rgba(220,38,38,.08); border-color:rgba(220,38,38,.25); color:#991b1b}
+    .compliance-status.action{background:rgba(59,130,246,.1); border-color:rgba(59,130,246,.25); color:#1e40af}
+    .compliance-status.unknown{background:rgba(100,116,139,.12); border-color:rgba(100,116,139,.24); color:#334155}
 
     /* Ticket list */
     .ticket{
@@ -922,6 +942,7 @@
                 <nav class="side-nav">
                     <a id="navInbox" class="active" href="javascript:void(0)" onclick="switchDashboardTab('inbox')">Inbox Dashboard</a>
                     <a id="navRentTracker" href="javascript:void(0)" onclick="switchDashboardTab('rent')">Rent Tracker</a>
+                    <a id="navCompliance" href="javascript:void(0)" onclick="switchDashboardTab('compliance')">Compliance</a>
                     <a id="btnSystemUsers" href="javascript:void(0)" style="display:none" onclick="openUsersModal()">System</a>
                 </nav>
             </aside>
@@ -1176,6 +1197,91 @@
                 <div class="row space" style="margin-top:10px">
                     <button class="btn" id="rentBtnPrev" onclick="prevRentPage()">Prev</button>
                     <button class="btn" id="rentBtnNext" onclick="nextRentPage()">Next</button>
+                </div>
+            </div>
+
+            <div id="compliancePanel" class="hidden">
+                <div class="card">
+                    <div class="row space">
+                        <div>
+                            <p class="panel-title">Compliance Dashboard</p>
+                            <p class="panel-sub">Upload your compliance workbook, track due dates, and surface properties that need action.</p>
+                        </div>
+                        <div class="row">
+                            <input type="file" id="complianceImportFile" accept=".xlsx" />
+                            <button class="btn primary" onclick="importComplianceWorkbook()">Import Workbook</button>
+                        </div>
+                    </div>
+                    <div class="small muted" id="complianceImportMeta" style="margin-top:8px">No compliance workbook imported yet.</div>
+                </div>
+
+                <div class="kpi-row">
+                    <div class="card kpi">
+                        <h3>Total Properties</h3>
+                        <div class="num" id="complianceKpiTotal">0</div>
+                    </div>
+                    <div class="card kpi">
+                        <h3>Action Required</h3>
+                        <div class="num accent" id="complianceKpiAction">0</div>
+                    </div>
+                    <div class="card kpi">
+                        <h3>Overdue</h3>
+                        <div class="num danger" id="complianceKpiOverdue">0</div>
+                    </div>
+                    <div class="card kpi">
+                        <h3>Due Soon</h3>
+                        <div class="num warn" id="complianceKpiSoon">0</div>
+                    </div>
+                    <div class="card kpi">
+                        <h3>Current</h3>
+                        <div class="num ok" id="complianceKpiCurrent">0</div>
+                    </div>
+                </div>
+
+                <div class="filters-row">
+                    <div class="field">
+                        <div class="label">Status</div>
+                        <select id="complianceStateFilter">
+                            <option value="">All</option>
+                            <option value="ACTION_REQUIRED">Action Required</option>
+                            <option value="OVERDUE">Overdue</option>
+                            <option value="DUE_SOON">Due Soon</option>
+                            <option value="CURRENT">Current</option>
+                            <option value="UNKNOWN">Unknown</option>
+                        </select>
+                    </div>
+                    <div class="field" style="min-width:280px">
+                        <div class="label">Search</div>
+                        <input type="text" id="complianceSearchBox" placeholder="Property, suburb, notes..." />
+                    </div>
+                    <div class="row" style="align-self:flex-end">
+                        <button class="btn" onclick="loadComplianceDashboard(1)">Apply</button>
+                    </div>
+                </div>
+
+                <div class="rent-table-wrap">
+                    <table class="rent-table" style="min-width:1400px">
+                        <thead>
+                            <tr>
+                                <th>Property</th>
+                                <th>Status</th>
+                                <th>Gas</th>
+                                <th>Smoke</th>
+                                <th>Electrical</th>
+                                <th>Workflow</th>
+                                <th>Faults</th>
+                                <th>Notes</th>
+                            </tr>
+                        </thead>
+                        <tbody id="complianceTableBody">
+                            <tr><td colspan="8" class="muted">No data loaded.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="small muted" id="compliancePageInfo" style="margin-top:8px"></div>
+                <div class="row space" style="margin-top:10px">
+                    <button class="btn" id="complianceBtnPrev" onclick="prevCompliancePage()">Prev</button>
+                    <button class="btn" id="complianceBtnNext" onclick="nextCompliancePage()">Next</button>
                 </div>
             </div>
 

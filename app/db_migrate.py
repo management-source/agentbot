@@ -278,3 +278,13 @@ def migrate(engine: Engine) -> None:
         if not _column_exists(engine, rt, "partial_amount"):
             stmts.append(f"ALTER TABLE {rt} ADD COLUMN partial_amount FLOAT")
         _exec_statements(engine, stmts)
+
+    # -------------------------------------------------------------------------
+    # 5) Compliance dashboard fields (added 2026-06)
+    # -------------------------------------------------------------------------
+    cp = "compliance_properties"
+    if _table_exists(engine, cp):
+        stmts = []
+        if not _column_exists(engine, cp, "overall_reason"):
+            stmts.append(f"ALTER TABLE {cp} ADD COLUMN overall_reason TEXT")
+        _exec_statements(engine, stmts)
