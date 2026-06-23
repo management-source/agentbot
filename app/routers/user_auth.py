@@ -6,7 +6,8 @@ import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+import httpx
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel, EmailStr
 from sqlalchemy import and_, func
 from sqlalchemy.orm import Session
@@ -28,6 +29,7 @@ LOCKOUT_MINUTES = 15
 class LoginIn(BaseModel):
     email: EmailStr
     password: str
+    recaptcha_token: str | None = None
 
 
 class LoginOut(BaseModel):
@@ -99,6 +101,33 @@ def _active_admin_count(db: Session) -> int:
     )
 
 
+def _verify_recaptcha(token: str | None, remote_ip: str | None) -> None:
+    if not settings.recaptcha_enabled():
+        return
+
+    value = (token or "").strip()
+    if not value:
+        raise HTTPException(status_code=400, detail="Please complete the reCAPTCHA check.")
+
+    try:
+        resp = httpx.post(
+            settings.RECAPTCHA_VERIFY_URL,
+            data={
+                "secret": settings.RECAPTCHA_SECRET_KEY or "",
+                "response": value,
+                "remoteip": remote_ip or "",
+            },
+            timeout=settings.RECAPTCHA_TIMEOUT_SECONDS,
+        )
+        resp.raise_for_status()
+        payload = resp.json()
+    except httpx.HTTPError:
+        raise HTTPException(status_code=503, detail="reCAPTCHA verification is temporarily unavailable.")
+
+    if not payload.get("success"):
+        raise HTTPException(status_code=400, detail="reCAPTCHA verification failed. Please try again.")
+
+
 def _delete_local_avatar(old_avatar_url: str | None) -> None:
     if not old_avatar_url:
         return
@@ -133,8 +162,9 @@ def _save_avatar(user_id: int, file: UploadFile) -> str:
 
 
 @router.post("/login", response_model=LoginOut)
-def login(payload: LoginIn, db: Session = Depends(get_db)):
+def login(payload: LoginIn, request: Request, db: Session = Depends(get_db)):
     now = datetime.utcnow()
+    _verify_recaptcha(payload.recaptcha_token, request.client.host if request.client else None)
     user = db.query(User).filter(User.email == payload.email.lower().strip()).first()
     if not user or not user.is_active:
         raise HTTPException(status_code=401, detail="Invalid credentials")

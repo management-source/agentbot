@@ -23,6 +23,10 @@ class Settings(BaseSettings):
 
     # App auth (local users). For production you MUST set JWT_SECRET.
     JWT_SECRET: str = "dev-insecure-change-me"
+    RECAPTCHA_SITE_KEY: Optional[str] = None
+    RECAPTCHA_SECRET_KEY: Optional[str] = None
+    RECAPTCHA_VERIFY_URL: str = "https://www.google.com/recaptcha/api/siteverify"
+    RECAPTCHA_TIMEOUT_SECONDS: float = 8.0
 
     # Bootstrap admin (created on startup if no users exist)
     BOOTSTRAP_ADMIN_EMAIL: str = "admin@example.com"
@@ -90,6 +94,9 @@ class Settings(BaseSettings):
 
     def my_emails_list(self) -> List[str]:
         return [e.strip().lower() for e in self.MY_EMAILS.split(",") if e.strip()]
+
+    def recaptcha_enabled(self) -> bool:
+        return bool((self.RECAPTCHA_SITE_KEY or "").strip() and (self.RECAPTCHA_SECRET_KEY or "").strip())
 
     def service_account_info(self) -> Optional[dict]:
         """Return service account JSON dict (if configured), else None."""

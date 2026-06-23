@@ -13,9 +13,12 @@ let currentMailbox = localStorage.getItem("agent_mailbox") || "";
 
 
 // Local user auth (JWT)
+const APP_CONFIG = window.AGENTBOT_CONFIG || {};
+const recaptchaEnabled = !!APP_CONFIG.recaptcha_enabled;
 let authToken = localStorage.getItem("agent_auth_token") || "";
 let currentUser = null;
 let usersCache = [];
+let loginRecaptchaWidgetId = null;
 
 async function apiFetch(url, options = {}) {
     const opts = { ...options, headers: { ...(options.headers || {}) } };
@@ -2018,18 +2021,100 @@ async function unblacklistSender(email) {
     await loadTickets();
 }
 
+function setAuthLayout(isAuthenticated) {
+    const loginScreen = document.getElementById("loginScreen");
+    const appShell = document.getElementById("appShell");
+    if (loginScreen) loginScreen.classList.toggle("hidden", !!isAuthenticated);
+    if (appShell) {
+        if (isAuthenticated) appShell.removeAttribute("hidden");
+        else appShell.setAttribute("hidden", "hidden");
+    }
+    document.body.classList.toggle("auth-locked", !isAuthenticated);
+}
+
+function setLoginError(message) {
+    const err = document.getElementById("loginError");
+    if (!err) return;
+    const text = String(message || "").trim();
+    err.textContent = text;
+    err.style.display = text ? "block" : "none";
+}
+
+function resetLoginRecaptcha() {
+    if (!recaptchaEnabled || loginRecaptchaWidgetId === null || !window.grecaptcha) return;
+    window.grecaptcha.reset(loginRecaptchaWidgetId);
+}
+
+async function waitForRecaptchaLibrary(timeoutMs = 10000) {
+    if (!recaptchaEnabled) return true;
+    const started = Date.now();
+    while (Date.now() - started < timeoutMs) {
+        if (window.grecaptcha && typeof window.grecaptcha.render === "function") {
+            return true;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 120));
+    }
+    return false;
+}
+
+async function ensureLoginRecaptcha() {
+    const slot = document.getElementById("loginRecaptcha");
+    if (!recaptchaEnabled || !slot) return true;
+    if (loginRecaptchaWidgetId !== null) return true;
+
+    const ready = await waitForRecaptchaLibrary();
+    if (!ready) {
+        setLoginError("reCAPTCHA could not load. Please refresh and try again.");
+        return false;
+    }
+
+    loginRecaptchaWidgetId = window.grecaptcha.render("loginRecaptcha", {
+        sitekey: APP_CONFIG.recaptcha_site_key,
+        theme: "light",
+    });
+    return true;
+}
+
+async function getLoginRecaptchaToken() {
+    if (!recaptchaEnabled) return null;
+    const ready = await ensureLoginRecaptcha();
+    if (!ready || loginRecaptchaWidgetId === null || !window.grecaptcha) return null;
+    const token = String(window.grecaptcha.getResponse(loginRecaptchaWidgetId) || "").trim();
+    if (!token) {
+        setLoginError("Please complete the reCAPTCHA check.");
+        return null;
+    }
+    return token;
+}
+
+async function extractErrorMessage(response) {
+    const raw = await response.text();
+    if (!raw) return response.statusText || "Request failed";
+    try {
+        const parsed = JSON.parse(raw);
+        if (typeof parsed.detail === "string" && parsed.detail.trim()) return parsed.detail.trim();
+    } catch {
+        // Fall through to raw response text.
+    }
+    return raw;
+}
+
 function showLoginModal() {
-    const m1 = document.getElementById("loginModal");
-    if (m1) m1.classList.remove("hidden");
-    const m2 = document.getElementById("loginBackdrop");
-    if (m2) m2.classList.add("show");
+    setAuthLayout(false);
+    const password = document.getElementById("loginPassword");
+    if (password) password.value = "";
+    setLoginError("");
+    setTimeout(() => {
+        const email = document.getElementById("loginEmail");
+        if (email) email.focus();
+    }, 50);
+    ensureLoginRecaptcha().catch(() => {
+        setLoginError("reCAPTCHA could not load. Please refresh and try again.");
+    });
 }
 
 function hideLoginModal() {
-    const m1 = document.getElementById("loginModal");
-    if (m1) m1.classList.add("hidden");
-    const m2 = document.getElementById("loginBackdrop");
-    if (m2) m2.classList.remove("show");
+    setAuthLayout(true);
 }
 
 async function ensureAuthenticated() {
@@ -2045,6 +2130,7 @@ async function ensureAuthenticated() {
         return false;
     }
     currentUser = await r.json();
+    hideLoginModal();
     await loadUsersCache();
 
     // Legacy badge
@@ -2087,27 +2173,43 @@ async function loadUsersCache() {
 async function doLogin() {
     const email = (document.getElementById("loginEmail").value || "").trim();
     const password = document.getElementById("loginPassword").value || "";
-    const err = document.getElementById("loginError");
-    if (err) err.textContent = "";
+    const btn = document.getElementById("btnLogin");
+    const btnText = btn ? btn.textContent : "";
+    setLoginError("");
 
-    const r = await fetch("/user-auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-    });
-    if (!r.ok) {
-        const t = await r.text();
-        if (err) err.textContent = t || "Login failed";
-        return;
+    const recaptchaToken = await getLoginRecaptchaToken();
+    if (recaptchaEnabled && !recaptchaToken) return;
+
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = "Signing in...";
     }
-    const j = await r.json();
-    authToken = j.access_token;
-    localStorage.setItem("agent_auth_token", authToken);
-    hideLoginModal();
-    await ensureAuthenticated();
-    await refreshGoogleStatus();
-    // Autopilot feature removed.
-    await loadTickets();
+
+    try {
+        const r = await fetch("/user-auth/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email, password, recaptcha_token: recaptchaToken }),
+        });
+        if (!r.ok) {
+            setLoginError(await extractErrorMessage(r));
+            resetLoginRecaptcha();
+            return;
+        }
+        const j = await r.json();
+        authToken = j.access_token;
+        localStorage.setItem("agent_auth_token", authToken);
+        hideLoginModal();
+        await ensureAuthenticated();
+        await refreshGoogleStatus();
+        // Autopilot feature removed.
+        await loadTickets();
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = btnText || "Sign in";
+        }
+    }
 }
 
 function logout() {
@@ -2134,6 +2236,7 @@ function logout() {
         authDot.classList.remove("yellow");
     }
 
+    resetLoginRecaptcha();
     showLoginModal();
 }
 
@@ -2226,6 +2329,4 @@ window.addEventListener("load", async () => {
     // Set default tab (will load tickets).
     setTab(currentTab);
 });
-
-
 

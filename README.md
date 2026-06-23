@@ -32,6 +32,8 @@ Set these in Render (Environment tab):
 Also required for multi-user login:
 
 - `JWT_SECRET` (strong random string)
+- `RECAPTCHA_SITE_KEY` (Google reCAPTCHA v2 checkbox site key)
+- `RECAPTCHA_SECRET_KEY` (matching Google reCAPTCHA secret key)
 
 Optional bootstrap admin (created on first start if no users exist):
 
@@ -80,6 +82,8 @@ For production, protect the UI/API with HTTP Basic Auth:
 - `UI_BASIC_AUTH_PASSWORD`
 
 This is especially important if you deploy on a public Render URL.
+
+The user login screen now supports full-page email/password authentication with optional Google reCAPTCHA enforcement. reCAPTCHA is enforced automatically when both `RECAPTCHA_SITE_KEY` and `RECAPTCHA_SECRET_KEY` are configured.
 
 ## Email HTML images / icons
 

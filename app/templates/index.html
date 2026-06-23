@@ -41,6 +41,8 @@
       color:var(--text);
       background: radial-gradient(circle at top right, #f0f7ff 0%, #f6f7fb 38%, #eef4f0 100%);
     }
+    body.auth-locked{overflow:hidden}
+    #appShell[hidden]{display:none !important}
 
     .app-shell{
       min-height:100vh;
@@ -623,36 +625,185 @@
       font-weight:700;
     }
 
-    /* Login modal layout */
-    .login-split{
+    /* Full-page login */
+    .login-screen{
+      min-height:100vh;
       display:grid;
-      grid-template-columns: 1fr 1fr;
-      gap:16px;
-      align-items:stretch;
+      grid-template-columns:minmax(0, 1.05fr) minmax(360px, .95fr);
+      background:
+        radial-gradient(circle at top left, rgba(255,255,255,.95) 0%, rgba(255,255,255,.88) 36%, rgba(239,246,255,.82) 100%),
+        linear-gradient(135deg, #f8fbff 0%, #edf6f0 100%);
     }
-    @media (max-width: 720px){
-      .login-split{grid-template-columns:1fr}
+    @media (max-width: 980px){
+      .login-screen{grid-template-columns:1fr}
     }
-    .login-left{
-      border:1px solid var(--border);
-      border-radius:16px;
-      padding:16px;
-      background: linear-gradient(180deg, #fafbff, #ffffff);
+    .login-panel{
+      display:flex;
+      flex-direction:column;
+      justify-content:space-between;
+      padding:34px 28px 20px;
+      min-height:100vh;
     }
-    .login-logo{
-      width:54px;
-      height:54px;
-      border-radius:16px;
-      border:1px solid var(--border);
+    .login-panel-inner{
+      width:min(560px, 100%);
+      margin:0 auto;
+      padding-top:18px;
+    }
+    .login-panel-head{
+      display:flex;
+      align-items:center;
+      gap:14px;
+      margin-bottom:72px;
+    }
+    .login-mark{
+      width:190px;
+      max-width:100%;
+      height:auto;
+      display:block;
+    }
+    .login-copy h1{
+      margin:0;
+      font-size:clamp(34px, 4vw, 56px);
+      line-height:1.02;
+      letter-spacing:-.045em;
+      font-weight:900;
+      max-width:680px;
+    }
+    .login-copy p{
+      margin:18px 0 0 0;
+      font-size:clamp(17px, 1.65vw, 24px);
+      line-height:1.45;
+      color:#123a70;
+      max-width:700px;
+    }
+    .login-form-shell{
+      width:min(380px, 100%);
+      margin:56px auto 0;
+    }
+    .login-form{
+      display:flex;
+      flex-direction:column;
+      gap:18px;
+    }
+    .login-field{
+      display:flex;
+      flex-direction:column;
+      gap:8px;
+    }
+    .login-field label{
+      font-size:13px;
+      color:#7b8698;
+      font-weight:600;
+    }
+    .login-field input{
+      width:100%;
+      border:none;
+      border-bottom:1px solid #b7c2d3;
+      border-radius:0;
+      background:transparent;
+      padding:10px 2px 12px;
+      font-size:17px;
+      color:#0b1220;
+      box-shadow:none;
+    }
+    .login-field input:focus{
+      border-color:#4e88eb;
+      box-shadow:none;
+    }
+    .login-recaptcha-wrap{
+      margin-top:14px;
+      display:flex;
+      justify-content:center;
+    }
+    .login-submit{
+      width:100%;
+      border:none;
+      border-radius:999px;
+      padding:15px 22px;
+      font-size:27px;
+      font-weight:400;
+      color:#fff;
+      cursor:pointer;
+      background:linear-gradient(180deg, #6fa4ff 0%, #4e88eb 100%);
+      box-shadow:0 18px 34px rgba(78,136,235,.26);
+    }
+    .login-submit:hover{filter:brightness(.98)}
+    .login-helper{
+      text-align:center;
+      margin-top:16px;
+      font-size:14px;
+      color:#184f93;
+    }
+    .login-helper a{
+      color:#184f93;
+      text-decoration:none;
+    }
+    .login-helper a:hover{text-decoration:underline}
+    .login-notice{
+      margin-top:10px;
+      text-align:center;
+      font-size:12px;
+      color:#6b7280;
+    }
+    .login-footer{
+      display:flex;
+      gap:18px;
+      flex-wrap:wrap;
+      align-items:center;
+      justify-content:flex-start;
+      margin-top:24px;
+      font-size:13px;
+      color:#1f4f8f;
+    }
+    .login-footer a{
+      color:#1f4f8f;
+      text-decoration:none;
+    }
+    .login-footer a:hover{text-decoration:underline}
+    .login-hero{
+      padding:36px 22px 24px 0;
       display:flex;
       align-items:center;
       justify-content:center;
-      background:#fff;
-      margin-bottom:12px;
-      box-shadow: 0 4px 12px rgba(16,24,40,.06);
     }
-    .login-brand{font-size:18px; font-weight:800; margin:0}
-    .login-sub{margin:6px 0 0 0; color:var(--muted); font-size:13px; line-height:1.35}
+    @media (max-width: 980px){
+      .login-panel{
+        min-height:auto;
+        padding-bottom:0;
+      }
+      .login-panel-head{margin-bottom:42px}
+      .login-hero{
+        padding:0 20px 28px;
+      }
+    }
+    .login-hero-card{
+      width:100%;
+      max-width:760px;
+      min-height:calc(100vh - 72px);
+      border-radius:34px;
+      overflow:hidden;
+      border:1px solid rgba(255,255,255,.55);
+      box-shadow:0 28px 60px rgba(15,23,42,.14);
+      background:
+        linear-gradient(rgba(255,255,255,.08), rgba(255,255,255,.08)),
+        url('https://images.unsplash.com/photo-1511818966892-d7d671e672a2?auto=format&fit=crop&w=1400&q=80') center/cover no-repeat;
+      position:relative;
+    }
+    .login-hero-card::after{
+      content:"";
+      position:absolute;
+      inset:0;
+      background:
+        linear-gradient(90deg, rgba(255,255,255,.14) 0 1px, transparent 1px 46px),
+        linear-gradient(180deg, transparent, rgba(255,255,255,.06));
+      opacity:.42;
+      pointer-events:none;
+    }
+    @media (max-width: 980px){
+      .login-hero-card{
+        min-height:320px;
+      }
+    }
 
     /* iframe email viewer */
     .viewer-backdrop{
@@ -686,8 +837,56 @@
   </style>
     </head>
 
-    <body>
-        <div class="app-shell">
+    <body class="auth-locked">
+        <script>
+          window.AGENTBOT_CONFIG = {{ app_config | tojson }};
+        </script>
+        {% if app_config.recaptcha_enabled %}
+        <script src="https://www.google.com/recaptcha/api.js?render=explicit" async defer></script>
+        {% endif %}
+        <section class="login-screen" id="loginScreen">
+            <div class="login-panel">
+                <div class="login-panel-inner">
+                    <div class="login-panel-head">
+                        <img class="login-mark" src="https://ik.imagekit.io/donspremier/Banner%20-%20Logo.png?updatedAt=1767844482007" alt="Dons Premier Estate Agents" />
+                    </div>
+                    <div class="login-copy">
+                        <h1>The professional workspace for property managers</h1>
+                        <p>Secure sign-in for your team with work email access, protected passwords, and bot-safe verification.</p>
+                    </div>
+                    <div class="login-form-shell">
+                        <form class="login-form" onsubmit="event.preventDefault(); doLogin();">
+                            <div class="login-field">
+                                <label for="loginEmail">Email</label>
+                                <input type="email" id="loginEmail" autocomplete="username" inputmode="email" required />
+                            </div>
+                            <div class="login-field">
+                                <label for="loginPassword">Password</label>
+                                <input type="password" id="loginPassword" autocomplete="current-password" required />
+                            </div>
+                            <div class="login-recaptcha-wrap{% if not app_config.recaptcha_enabled %} hidden{% endif %}">
+                                <div id="loginRecaptcha"></div>
+                            </div>
+                            <div class="error" id="loginError" style="display:none"></div>
+                            <button class="login-submit" id="btnLogin" type="submit">Log in</button>
+                        </form>
+                        <div class="login-helper">
+                            <a href="javascript:void(0)" onclick="alert('Please contact your system administrator to reset your password.')">Forgot your password?</a>
+                        </div>
+                        <div class="login-notice">Use your approved company email address and password to access the system.</div>
+                    </div>
+                </div>
+                <div class="login-footer">
+                    <a href="javascript:void(0)">Privacy</a>
+                    <a href="javascript:void(0)">Legal</a>
+                    <span>By logging in, you agree to Dons Premier Estate Agents system access terms.</span>
+                </div>
+            </div>
+            <div class="login-hero">
+                <div class="login-hero-card" aria-hidden="true"></div>
+            </div>
+        </section>
+        <div class="app-shell" id="appShell" hidden>
             <aside class="sidebar">
                 <div class="side-brand">
                     <img src="https://ik.imagekit.io/donspremier/Banner%20-%20Logo.png?updatedAt=1767844482007" alt="Dons Premier Estate Agents" loading="lazy" />
@@ -959,44 +1158,6 @@
             </div>
         </div>
 
-        <!-- Login Modal -->
-        <div class="modal-backdrop" id="loginBackdrop">
-            <div class="modal">
-                <div class="modal-head">
-                    <h3>Sign in</h3>
-                    <button class="btn ghost" id="btnLoginClose"
-                        onclick="hideLoginModal()">Close</button>
-                </div>
-                <div class="modal-body">
-                    <div class="login-split">
-                        <div class="login-left" style="background:#000;color:#fff;border-radius:16px;padding:18px;min-height:180px">
-                            <div class="login-logo" aria-hidden="true" style="width:100%;height:56px;display:flex;align-items:center;justify-content:center;border-radius:12px;overflow:hidden;background:#000;border:1px solid rgba(255,255,255,.10)">
-                                <img src="https://ik.imagekit.io/donspremier/Banner%20-%20Logo.png?updatedAt=1767844482007" alt="Dons Premier Estate Agents" style="width:100%;height:100%;object-fit:contain;background:#000" />
-                            </div>
-                            <div class="login-brand" style="margin-top:14px">Dons Premier Estate Agents</div>
-                            <div class="login-sub" style="color:rgba(255,255,255,.78)">Secure Account Access</div>
-                            <div class="small" style="margin-top:12px;color:rgba(255,255,255,.70)">Sign in with your user account. Password and profile are managed in System.</div>
-                        </div>
-                        <div class="login-right">
-                            <div class="field">
-                                <div class="label">Email</div>
-                                <input type="text" id="loginEmail" autocomplete="username" />
-                            </div>
-                            <div class="field" style="margin-top:10px">
-                                <div class="label">Password</div>
-                                <input type="password" id="loginPassword" autocomplete="current-password" />
-                            </div>
-                            <div class="error" id="loginError" style="display:none"></div>
-                        </div>
-                    </div>
-                </div>
-                <div class="modal-foot">
-                    <button class="btn primary" id="btnLogin"
-                        onclick="doLogin()">Sign in</button>
-                </div>
-            </div>
-        </div>
-
         <!-- Manage Users Modal (Admin) -->
         <div class="modal-backdrop hidden" id="usersModal">
             <div class="modal">
@@ -1101,7 +1262,7 @@
             </div>
         </div>
 
-        <script src="/static/app.js?v=1"></script>
+        <script src="/static/app.js?v=2"></script>
 
         <script>
   // Wire segmented status buttons to existing tab logic
@@ -1315,4 +1476,3 @@
 
     </body>
 </html>
-
