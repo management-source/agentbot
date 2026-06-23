@@ -1,9 +1,10 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from typing import Optional
 from app.services.gmail_sync import sync_inbox_threads
 from app.scheduler import scheduler
 from fastapi import HTTPException
 from app.config import settings
+from app.deps import get_current_mailbox
 
 router = APIRouter()
 
@@ -16,6 +17,7 @@ def fetch_now(
     include_anywhere: bool = False,
     awaiting_only: bool = True,
     auto_triage: bool = False,
+    mailbox: str = Depends(get_current_mailbox),
 ):
     """Manual sync endpoint.
 
@@ -23,17 +25,38 @@ def fetch_now(
     - Otherwise: performs an incremental sync using Gmail historyId (accurate),
       falling back to a small recent window on first run.
     """
-    return sync_inbox_threads(max_threads=max_threads, start=start, end=end, incremental=incremental, include_anywhere=include_anywhere, awaiting_only=awaiting_only, auto_triage=auto_triage)
+    return sync_inbox_threads(
+        mailbox=mailbox,
+        max_threads=max_threads,
+        start=start,
+        end=end,
+        incremental=incremental,
+        include_anywhere=include_anywhere,
+        awaiting_only=awaiting_only,
+        auto_triage=auto_triage,
+    )
 
 
 @router.post("/check-updates")
-def check_updates(max_threads: int = 200):
+def check_updates(
+    max_threads: int = 200,
+    mailbox: str = Depends(get_current_mailbox),
+):
     """Fetch only new/changed threads since the last sync.
 
     This endpoint is intended for frequent use. It always uses Gmail historyId
     incremental sync (when available) and only upserts affected threads.
     """
-    return sync_inbox_threads(max_threads=max_threads, start=None, end=None, incremental=True, include_anywhere=False, awaiting_only=True, auto_triage=False)
+    return sync_inbox_threads(
+        mailbox=mailbox,
+        max_threads=max_threads,
+        start=None,
+        end=None,
+        incremental=True,
+        include_anywhere=False,
+        awaiting_only=True,
+        auto_triage=False,
+    )
 
 @router.post("/start")
 def start_autopilot():

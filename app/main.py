@@ -27,6 +27,7 @@ from app.routers import auth, tickets, ui, threads
 from app.routers import sync
 from app.routers import blacklist
 from app.routers import assets
+from app.routers import rent_tracker
 from app.routers import settings as app_settings
 from app.routers import user_auth
 from app.models import User, UserRole
@@ -171,7 +172,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         resp.headers.setdefault('X-Content-Type-Options', 'nosniff')
         resp.headers.setdefault('Referrer-Policy', 'no-referrer')
         resp.headers.setdefault('X-Frame-Options', 'SAMEORIGIN')
-        resp.headers.setdefault('Permissions-Policy', 'geolocation=(), microphone=(), camera=()')
+        # Allow microphone on same-origin pages (needed for AI Draft voice input).
+        resp.headers.setdefault('Permissions-Policy', 'geolocation=(), microphone=(self), camera=()')
         return resp
 
 
@@ -207,6 +209,7 @@ app.include_router(assets.router, prefix="/assets", tags=["assets"])
 app.include_router(tasks.router, prefix="/tasks", tags=["tasks"])
 app.include_router(app_settings.router, prefix="/settings", tags=["settings"])
 app.include_router(blacklist.router, prefix="/blacklist", tags=["blacklist"])
+app.include_router(rent_tracker.router, prefix="/rent-tracker", tags=["rent-tracker"])
 
 @app.on_event("startup")
 def on_startup():
@@ -238,9 +241,16 @@ def on_startup():
     # For free-hosting deployments (e.g., Render free tier), we typically disable
     # background schedulers and rely on manual sync.
     if settings.ENABLE_SCHEDULER:
+        def _poll_mailboxes():
+            for mb in settings.monitored_mailboxes_list():
+                try:
+                    sync_inbox_threads(mailbox=mb)
+                except Exception:
+                    logging.getLogger("scheduler").exception("Scheduled sync failed for mailbox=%s", mb)
+
         # IMPORTANT: job id must match what endpoints look for
         scheduler.add_job(
-            func=sync_inbox_threads,
+            func=_poll_mailboxes,
             trigger="interval",
             seconds=settings.POLL_INTERVAL_SECONDS,
             id="gmail_poll",

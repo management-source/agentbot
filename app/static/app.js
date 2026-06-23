@@ -1,6 +1,16 @@
 let currentTab = "awaiting_reply";
 let currentAckThreadId = null;
 let currentAiThreadId = null;
+let aiVoiceRecorder = null;
+let aiVoiceStream = null;
+let aiVoiceChunks = [];
+let aiSpeechRecognition = null;
+let aiSpeechTranscript = "";
+let currentDashboardTab = "inbox";
+
+// Mailbox context (multi-inbox)
+let currentMailbox = localStorage.getItem("agent_mailbox") || "";
+
 
 // Local user auth (JWT)
 let authToken = localStorage.getItem("agent_auth_token") || "";
@@ -11,6 +21,9 @@ async function apiFetch(url, options = {}) {
     const opts = { ...options, headers: { ...(options.headers || {}) } };
     if (authToken) {
         opts.headers["Authorization"] = `Bearer ${authToken}`;
+    }
+    if (currentMailbox) {
+        opts.headers["X-Mailbox"] = currentMailbox;
     }
     return fetch(url, opts);
 }
@@ -35,8 +48,78 @@ let pageSize = 25;
 // UI filters
 let currentSearch = "";
 // Category filtering removed (we avoid AI-based categorization and UI filters for now).
+let currentRentPage = 1;
+let rentLoadedOnce = false;
+let rentViewMode = "tracker";
+
+function isAllEmailsTab() {
+    return String(currentTab || "").toLowerCase() === "all";
+}
+
+function updateSyncContextUI() {
+    const info = document.getElementById("syncInfo");
+    const viewBadge = document.getElementById("queueViewMode");
+    const mailboxBadge = document.getElementById("queueMailboxMode");
+    if (mailboxBadge) mailboxBadge.textContent = currentMailbox || "-";
+    if (currentDashboardTab === "rent") {
+        if (viewBadge) viewBadge.textContent = "Rent Tracker";
+        if (info) info.textContent = "Inbox sync controls are hidden while you are on the rent tracker tab.";
+        return;
+    }
+    if (!info) return;
+    if (isAllEmailsTab()) {
+        if (viewBadge) viewBadge.textContent = "All Emails";
+        info.textContent = "All Emails mode: choose a From/To date range, then Fetch or Check updates for that range.";
+    } else {
+        if (viewBadge) viewBadge.textContent = "Awaiting Reply";
+        info.textContent = "Awaiting Reply mode: incremental updates focus on active inbox threads that need a response.";
+    }
+}
 
 let googleConnected = false;
+async function initMailboxes() {
+    const sel = document.getElementById("mailboxSelect");
+    if (!sel) return;
+    try {
+        const r = await apiFetch("/settings/mailboxes");
+        const j = await r.json();
+        const mbs = Array.isArray(j.mailboxes) ? j.mailboxes : [];
+        sel.innerHTML = "";
+        for (const mb of mbs) {
+            const opt = document.createElement("option");
+            opt.value = mb;
+            opt.textContent = mb;
+            sel.appendChild(opt);
+        }
+        if (!currentMailbox && mbs.length) currentMailbox = mbs[0];
+        if (currentMailbox) {
+            localStorage.setItem("agent_mailbox", currentMailbox);
+            sel.value = currentMailbox;
+        }
+        sel.addEventListener("change", () => {
+            currentMailbox = sel.value;
+            localStorage.setItem("agent_mailbox", currentMailbox);
+            // refresh UI data under new mailbox
+            currentPage = 1;
+            updateSyncContextUI();
+            loadTickets();
+            if (currentDashboardTab === "rent") {
+                currentRentPage = 1;
+                loadActiveRentView();
+            }
+            refreshGoogleStatus();
+        });
+
+        const lbl = document.getElementById("mailboxLabel");
+        if (lbl) lbl.textContent = currentMailbox || "-";
+        const mailboxBadge = document.getElementById("queueMailboxMode");
+        if (mailboxBadge) mailboxBadge.textContent = currentMailbox || "-";
+        updateSyncContextUI();
+    } catch (e) {
+        // If auth isn't ready yet, we'll retry after login.
+    }
+}
+
 
 async function refreshGoogleStatus() {
     const btn = document.getElementById("googleBtn");
@@ -60,13 +143,13 @@ async function refreshGoogleStatus() {
         const j = await r.json();
         googleConnected = !!j.connected;
 
-        const target = (j.target_mailbox || j.delegated_mailbox || "me");
+        const target = (currentMailbox || j.target_mailbox || j.delegated_mailbox || "me");
 
         const mb = document.getElementById("mailboxBadge");
         if (mb) mb.textContent = googleConnected ? (`Mailbox: ${target}`) : "";
 
         const mb2 = document.getElementById("mailboxLabel");
-        if (mb2) mb2.textContent = googleConnected ? target : "—";
+        if (mb2) mb2.textContent = googleConnected ? target : "-";
 
         const pill = document.getElementById("googlePill");
         if (pill) pill.style.display = googleConnected ? "inline-flex" : "none";
@@ -173,21 +256,36 @@ async function renderUsersList() {
     list.innerHTML = "";
     for (const u of usersCache) {
         const row = document.createElement("div");
-        row.className = "flex items-center justify-between gap-3 p-2 rounded-lg border bg-white";
+        row.className = "p-2 rounded-lg border bg-white";
+        const avatar = u.avatar_url ? `<img src="${escapeHtml(u.avatar_url)}" style="width:40px;height:40px;border-radius:999px;object-fit:cover;border:1px solid #ddd" />` : `<div style="width:40px;height:40px;border-radius:999px;background:#eef2f7;border:1px solid #ddd"></div>`;
         row.innerHTML = `
-            <div class="min-w-0">
-              <div class="font-medium text-slate-900 truncate">${escapeHtml(u.name)}</div>
-              <div class="text-xs text-slate-500 truncate">${escapeHtml(u.email)} • ${escapeHtml(u.role)}${u.is_active ? "" : " • Inactive"}</div>
+            <div class="row space" style="align-items:flex-start">
+              <div class="row" style="align-items:flex-start">
+                ${avatar}
+                <div class="min-w-0">
+                  <div class="font-medium text-slate-900 truncate">${escapeHtml(u.name)}</div>
+                  <div class="text-xs text-slate-500 truncate">${escapeHtml(u.email)} • ${escapeHtml(u.role)}${u.is_active ? "" : " • Inactive"}</div>
+                </div>
+              </div>
+              <div class="row" style="align-items:center">
+                <label class="btn" style="cursor:pointer">
+                  Avatar
+                  <input type="file" accept="image/*" style="display:none" onchange="uploadUserAvatar(${u.id}, this)" />
+                </label>
+              </div>
             </div>
-            <div class="flex items-center gap-2">
+            <div class="row" style="margin-top:8px;align-items:flex-end">
               <select class="px-2 py-1 rounded-md border bg-white text-sm" data-user-role="${u.id}">
                 ${["ADMIN", "PM", "LEASING", "SALES", "ACCOUNTS", "READONLY"].map(r => `<option value="${r}" ${r === u.role ? "selected" : ""}>${r}</option>`).join("")}
               </select>
-              <label class="text-sm text-slate-600 flex items-center gap-1">
+              <label class="text-sm text-slate-600 flex items-center gap-1 checkbox" style="padding:6px 10px">
                 <input type="checkbox" ${u.is_active ? "checked" : ""} data-user-active="${u.id}" />
                 Active
               </label>
+              <input type="password" data-user-password="${u.id}" placeholder="Reset password" style="max-width:220px" />
+              <button class="px-3 py-1.5 rounded-md border text-sm" onclick="adminResetPassword(${u.id})">Reset Password</button>
               <button class="px-3 py-1.5 rounded-md border text-sm" onclick="saveUserEdits(${u.id})">Save</button>
+              <button class="px-3 py-1.5 rounded-md border text-sm" style="color:#b91c1c" onclick="deleteUser(${u.id})">Delete</button>
             </div>
         `;
         list.appendChild(row);
@@ -215,6 +313,7 @@ async function createUserFromForm() {
     const name = document.getElementById("newUserName").value.trim();
     const role = document.getElementById("newUserRole").value;
     const password = document.getElementById("newUserPassword").value;
+    const force = !!document.getElementById("newUserForcePassword")?.checked;
     if (!email || !name || !password) {
         alert("Email, name and password are required.");
         return;
@@ -222,7 +321,7 @@ async function createUserFromForm() {
     const r = await apiFetch("/user-auth/users", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, name, role, password, is_active: true }),
+        body: JSON.stringify({ email, name, role, password, is_active: true, must_change_password: force }),
     });
     if (!r.ok) {
         const msg = await r.text();
@@ -232,7 +331,104 @@ async function createUserFromForm() {
     document.getElementById("newUserEmail").value = "";
     document.getElementById("newUserName").value = "";
     document.getElementById("newUserPassword").value = "";
+    if (document.getElementById("newUserForcePassword")) document.getElementById("newUserForcePassword").checked = true;
     await renderUsersList();
+}
+
+async function uploadUserAvatar(userId, input) {
+    const file = input && input.files ? input.files[0] : null;
+    if (!file) return;
+    const form = new FormData();
+    form.append("file", file);
+    const r = await apiFetch(`/user-auth/users/${userId}/avatar`, { method: "POST", body: form });
+    if (!r.ok) {
+        alert("Failed to upload avatar.");
+        return;
+    }
+    await renderUsersList();
+}
+
+async function adminResetPassword(userId) {
+    const el = document.querySelector(`[data-user-password="${userId}"]`);
+    const pw = el ? String(el.value || "") : "";
+    if (!pw) {
+        alert("Enter a new password first.");
+        return;
+    }
+    const r = await apiFetch(`/user-auth/users/${userId}/password`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ new_password: pw, force_change_on_next_login: true }),
+    });
+    if (!r.ok) {
+        const t = await r.text();
+        alert("Password reset failed: " + t);
+        return;
+    }
+    if (el) el.value = "";
+    alert("Password reset successfully.");
+}
+
+async function deleteUser(userId) {
+    if (!confirm("Delete this user permanently? This cannot be undone.")) return;
+    const r = await apiFetch(`/user-auth/users/${userId}`, { method: "DELETE" });
+    if (!r.ok) {
+        const t = await r.text();
+        alert("Delete failed: " + t);
+        return;
+    }
+    await renderUsersList();
+}
+
+function toggleAccountMenu() {
+    const dd = document.getElementById("accountMenuDropdown");
+    if (!dd) return;
+    dd.classList.toggle("show");
+}
+
+function closeAccountMenu() {
+    const dd = document.getElementById("accountMenuDropdown");
+    if (dd) dd.classList.remove("show");
+}
+
+function openPasswordModal() {
+    const m = document.getElementById("passwordModal");
+    if (!m) return;
+    const e = document.getElementById("pwError");
+    if (e) { e.style.display = "none"; e.textContent = ""; }
+    ["pwCurrent", "pwNew", "pwConfirm"].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = "";
+    });
+    m.classList.remove("hidden");
+}
+
+function closePasswordModal() {
+    const m = document.getElementById("passwordModal");
+    if (m) m.classList.add("hidden");
+}
+
+async function submitPasswordChange() {
+    const curr = document.getElementById("pwCurrent")?.value || "";
+    const next = document.getElementById("pwNew")?.value || "";
+    const confirm = document.getElementById("pwConfirm")?.value || "";
+    const err = document.getElementById("pwError");
+    if (next !== confirm) {
+        if (err) { err.style.display = "block"; err.textContent = "New password confirmation does not match."; }
+        return;
+    }
+    const r = await apiFetch("/user-auth/me/password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ current_password: curr, new_password: next }),
+    });
+    if (!r.ok) {
+        const t = await r.text();
+        if (err) { err.style.display = "block"; err.textContent = t; }
+        return;
+    }
+    closePasswordModal();
+    alert("Password updated successfully.");
 }
 
 function openSettings() {
@@ -280,7 +476,7 @@ async function refreshSignaturePreview() {
             const sa = (j && j.send_as) ? j.send_as : "";
             meta.textContent = src === "gmail" ? `Source: Gmail (${sa || ""})` : (src ? `Source: ${src}` : "");
         }
-        iframe.srcdoc = html || "<div style='font-family:Arial; padding:10px; color:#666'>No HTML signature set yet. Click “Fetch from Gmail”.</div>";
+        iframe.srcdoc = html || "<div style='font-family:Arial; padding:10px; color:#666'>No HTML signature set yet. Click Fetch from Gmail.</div>";
     } catch {
         // ignore
     }
@@ -370,13 +566,389 @@ async function flushDatabase() {
 // Autopilot / query rules removed.
 
 function formatDate(dt) {
-    if (!dt) return "—";
+    if (!dt) return "-";
     try { return new Date(dt).toLocaleString(); } catch { return dt; }
+}
+function formatDateShort(dt) {
+    if (!dt) return "-";
+    try { return new Date(dt).toLocaleDateString(); } catch { return dt; }
+}
+
+function switchDashboardTab(tab) {
+    currentDashboardTab = tab === "rent" ? "rent" : "inbox";
+    const inboxPanel = document.getElementById("inboxPanel");
+    const rentPanel = document.getElementById("rentPanel");
+    const navInbox = document.getElementById("navInbox");
+    const navRent = document.getElementById("navRentTracker");
+    const shell = document.getElementById("dashboardShell");
+
+    if (inboxPanel) inboxPanel.classList.toggle("hidden", currentDashboardTab !== "inbox");
+    if (rentPanel) rentPanel.classList.toggle("hidden", currentDashboardTab !== "rent");
+    if (navInbox) navInbox.classList.toggle("active", currentDashboardTab === "inbox");
+    if (navRent) navRent.classList.toggle("active", currentDashboardTab === "rent");
+    if (shell) shell.classList.toggle("rent-mode", currentDashboardTab === "rent");
+
+    updateSyncContextUI();
+    if (currentDashboardTab === "rent" && !rentLoadedOnce) {
+        loadActiveRentView();
+    }
+}
+
+function rentStatusChip(status) {
+    const key = String(status || "DUE").toUpperCase();
+    if (key === "PAID") return `<span class="rent-status paid">Paid</span>`;
+    if (key === "PARTIAL") return `<span class="rent-status partial">Partial</span>`;
+    if (key === "VACANT") return `<span class="rent-status vacant">Vacant</span>`;
+    if (key === "AWAITING_CLEARANCE") return `<span class="rent-status awaiting">Awaiting Clearance</span>`;
+    return `<span class="rent-status due">Due</span>`;
+}
+
+function getRentFilters() {
+    const status = (document.getElementById("rentStatusFilter")?.value || "").trim();
+    const frequency = (document.getElementById("rentFrequencyFilter")?.value || "").trim();
+    const query = (document.getElementById("rentSearchBox")?.value || "").trim();
+    return { status, frequency, query };
+}
+
+function getRollingMonths() {
+    const base = new Date();
+    return [-1, 0, 1].map((offset) => {
+        const d = new Date(base.getFullYear(), base.getMonth() + offset, 1);
+        const y = d.getFullYear();
+        const m = d.getMonth() + 1;
+        return {
+            key: `${y}-${String(m).padStart(2, "0")}`,
+            label: d.toLocaleDateString(undefined, { month: "short", year: "numeric" }),
+        };
+    });
+}
+
+function getYearMonths() {
+    const year = new Date().getFullYear();
+    const labels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    return labels.map((label, idx) => ({
+        key: `${year}-${String(idx + 1).padStart(2, "0")}`,
+        label,
+    }));
+}
+
+function switchRentViewMode(mode) {
+    rentViewMode = (mode === "year") ? "year" : "tracker";
+    const btnTracker = document.getElementById("rentViewTrackerBtn");
+    const btnYear = document.getElementById("rentViewYearBtn");
+    const trackerGrid = document.getElementById("rentTrackerGrid");
+    const yearGrid = document.getElementById("rentYearReportGrid");
+    if (btnTracker) btnTracker.classList.toggle("active", rentViewMode === "tracker");
+    if (btnYear) btnYear.classList.toggle("active", rentViewMode === "year");
+    if (trackerGrid) trackerGrid.classList.toggle("hidden", rentViewMode !== "tracker");
+    if (yearGrid) yearGrid.classList.toggle("hidden", rentViewMode !== "year");
+    currentRentPage = 1;
+    loadActiveRentView();
+}
+
+function loadActiveRentView(page = null) {
+    if (rentViewMode === "year") return loadRentYearReport(page);
+    return loadRentTracker(page);
+}
+
+function monthCellSelect(item) {
+    if (!item || !item.id) return `<span class="small muted">-</span>`;
+    const status = String(item.status || "DUE").toUpperCase();
+    const extra = Number(item.extra_items || 0);
+    const due = item.due_date ? formatDateShort(item.due_date) : "";
+    const partialAmount = (typeof item.partial_amount === "number" && item.partial_amount > 0) ? Number(item.partial_amount).toFixed(2) : "";
+    return `
+      <div>
+        <select style="min-width:110px" onchange="updateRentMonthCell(${item.id}, this.value, ${item.partial_amount || 0})">
+          <option value="DUE" ${status === "DUE" ? "selected" : ""}>Due</option>
+          <option value="PAID" ${status === "PAID" ? "selected" : ""}>Paid</option>
+          <option value="PARTIAL" ${status === "PARTIAL" ? "selected" : ""}>Partial</option>
+          <option value="AWAITING_CLEARANCE" ${status === "AWAITING_CLEARANCE" ? "selected" : ""}>Awaiting</option>
+          <option value="VACANT" ${status === "VACANT" ? "selected" : ""}>Vacant</option>
+        </select>
+        ${status === "PARTIAL" ? `
+        <div style="margin-top:6px">
+          <input type="number" min="0" step="0.01" placeholder="Amount" value="${partialAmount}" style="width:100px" onchange="updateRentPartialAmount(${item.id}, this.value)" />
+        </div>` : ``}
+        <div style="margin-top:4px">${rentStatusChip(status)}</div>
+        <div class="small muted" style="margin-top:4px">${escapeHtml(due)}${partialAmount ? ` • $${partialAmount}` : ""}${extra > 0 ? ` • +${extra}` : ""}</div>
+      </div>
+    `;
+}
+
+async function loadRentTracker(page = null) {
+    if (page !== null) currentRentPage = page;
+    const p = currentRentPage || 1;
+    const { status, frequency, query } = getRentFilters();
+
+    const itemsUrl = new URL("/rent-tracker/properties", window.location.origin);
+    const summaryUrl = new URL("/rent-tracker/summary", window.location.origin);
+    itemsUrl.searchParams.set("page", String(p));
+    itemsUrl.searchParams.set("page_size", "25");
+    if (status) itemsUrl.searchParams.set("status", status);
+    if (frequency) itemsUrl.searchParams.set("frequency", frequency);
+    if (query) itemsUrl.searchParams.set("query", query);
+
+    const body = document.getElementById("rentTableBody");
+    if (body) body.innerHTML = `<tr><td colspan="6" class="muted">Loading...</td></tr>`;
+
+    const rollingMonths = getRollingMonths();
+    const h1 = document.getElementById("rentMonthHead1");
+    const h2 = document.getElementById("rentMonthHead2");
+    const h3 = document.getElementById("rentMonthHead3");
+    if (h1) h1.textContent = rollingMonths[0].label;
+    if (h2) h2.textContent = rollingMonths[1].label;
+    if (h3) h3.textContent = rollingMonths[2].label;
+
+    const [itemsResp, summaryResp] = await Promise.all([
+        apiFetch(itemsUrl.toString()),
+        apiFetch(summaryUrl.toString()),
+    ]);
+
+    if (!itemsResp.ok) {
+        const t = await itemsResp.text();
+        if (body) body.innerHTML = `<tr><td colspan="6" class="muted">Failed to load rent tracker: ${escapeHtml(t)}</td></tr>`;
+        return;
+    }
+    if (!summaryResp.ok) {
+        const t = await summaryResp.text();
+        if (body) body.innerHTML = `<tr><td colspan="6" class="muted">Failed to load summary: ${escapeHtml(t)}</td></tr>`;
+        return;
+    }
+
+    const data = await itemsResp.json();
+    const summary = await summaryResp.json();
+    rentLoadedOnce = true;
+
+    const items = Array.isArray(data.items) ? data.items : [];
+    const statusCounts = summary.status_counts || {};
+    const setText = (id, val) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = String(val || 0);
+    };
+
+    setText("rentKpiTotal", summary.total || 0);
+    setText("rentKpiOverdue", summary.overdue || 0);
+    setText("rentKpiDueSoon", summary.due_next_7_days || 0);
+    setText("rentKpiPaid", statusCounts.PAID || 0);
+    setText("rentKpiPending", (statusCounts.DUE || 0) + (statusCounts.PARTIAL || 0) + (statusCounts.AWAITING_CLEARANCE || 0));
+
+    if (!body) return;
+    if (items.length === 0) {
+        body.innerHTML = `<tr><td colspan="6" class="muted">No properties found for this filter.</td></tr>`;
+    } else {
+        body.innerHTML = items.map((r) => `
+            <tr>
+                <td><div style="font-weight:700">${escapeHtml(r.property_address || "")}</div><div class="small muted">${escapeHtml(r.source_sheet || "-")}</div></td>
+                <td>${escapeHtml(r.frequency || "-")}</td>
+                <td>
+                    <div class="small muted">Paid ${Number((r.counts || {}).PAID || 0)} / ${Number(r.total_items || 0)}</div>
+                    <div class="small muted">Due ${Number((r.counts || {}).DUE || 0)} • Partial ${Number((r.counts || {}).PARTIAL || 0)}</div>
+                </td>
+                ${rollingMonths.map((mk) => `<td>${monthCellSelect((r.months || {})[mk.key])}</td>`).join("")}
+            </tr>
+        `).join("");
+    }
+
+    const pi = document.getElementById("rentPageInfo");
+    if (pi) {
+        const total = Number(data.total || 0);
+        const pageNow = Number(data.page || 1);
+        const sizeNow = Number(data.page_size || 25);
+        const pages = sizeNow > 0 ? Math.max(1, Math.ceil(total / sizeNow)) : 1;
+        pi.textContent = `Page ${pageNow} of ${pages} • ${total} properties`;
+    }
+
+    const btnPrev = document.getElementById("rentBtnPrev");
+    const btnNext = document.getElementById("rentBtnNext");
+    if (btnPrev) btnPrev.disabled = Number(data.page || 1) <= 1;
+    if (btnNext) btnNext.disabled = !Boolean(data.has_more);
+}
+
+async function loadRentYearReport(page = null) {
+    if (page !== null) currentRentPage = page;
+    const p = currentRentPage || 1;
+    const { status, frequency, query } = getRentFilters();
+
+    const itemsUrl = new URL("/rent-tracker/properties", window.location.origin);
+    const summaryUrl = new URL("/rent-tracker/summary", window.location.origin);
+    itemsUrl.searchParams.set("page", String(p));
+    itemsUrl.searchParams.set("page_size", "25");
+    if (status) itemsUrl.searchParams.set("status", status);
+    if (frequency) itemsUrl.searchParams.set("frequency", frequency);
+    if (query) itemsUrl.searchParams.set("query", query);
+
+    const body = document.getElementById("rentYearTableBody");
+    if (body) body.innerHTML = `<tr><td colspan="15" class="muted">Loading...</td></tr>`;
+
+    const [itemsResp, summaryResp] = await Promise.all([
+        apiFetch(itemsUrl.toString()),
+        apiFetch(summaryUrl.toString()),
+    ]);
+
+    if (!itemsResp.ok) {
+        const t = await itemsResp.text();
+        if (body) body.innerHTML = `<tr><td colspan="15" class="muted">Failed to load report: ${escapeHtml(t)}</td></tr>`;
+        return;
+    }
+    if (!summaryResp.ok) {
+        const t = await summaryResp.text();
+        if (body) body.innerHTML = `<tr><td colspan="15" class="muted">Failed to load summary: ${escapeHtml(t)}</td></tr>`;
+        return;
+    }
+
+    const data = await itemsResp.json();
+    const summary = await summaryResp.json();
+    rentLoadedOnce = true;
+
+    const items = Array.isArray(data.items) ? data.items : [];
+    const statusCounts = summary.status_counts || {};
+    const setText = (id, val) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = String(val || 0);
+    };
+    setText("rentKpiTotal", summary.total || 0);
+    setText("rentKpiOverdue", summary.overdue || 0);
+    setText("rentKpiDueSoon", summary.due_next_7_days || 0);
+    setText("rentKpiPaid", statusCounts.PAID || 0);
+    setText("rentKpiPending", (statusCounts.DUE || 0) + (statusCounts.PARTIAL || 0) + (statusCounts.AWAITING_CLEARANCE || 0));
+
+    if (!body) return;
+    const yearMonths = getYearMonths();
+    if (items.length === 0) {
+        body.innerHTML = `<tr><td colspan="15" class="muted">No properties found for this filter.</td></tr>`;
+    } else {
+        body.innerHTML = items.map((r) => `
+            <tr>
+                <td class="sticky-col"><div style="font-weight:700">${escapeHtml(r.property_address || "")}</div><div class="small muted">${escapeHtml(r.source_sheet || "-")}</div></td>
+                <td>${escapeHtml(r.frequency || "-")}</td>
+                <td>
+                    <div class="small muted">Paid ${Number((r.counts || {}).PAID || 0)} / ${Number(r.total_items || 0)}</div>
+                    <div class="small muted">Due ${Number((r.counts || {}).DUE || 0)} • Partial ${Number((r.counts || {}).PARTIAL || 0)}</div>
+                </td>
+                ${yearMonths.map((mk) => `<td>${monthCellSelect((r.months || {})[mk.key])}</td>`).join("")}
+            </tr>
+        `).join("");
+    }
+
+    const pi = document.getElementById("rentPageInfo");
+    if (pi) {
+        const total = Number(data.total || 0);
+        const pageNow = Number(data.page || 1);
+        const sizeNow = Number(data.page_size || 25);
+        const pages = sizeNow > 0 ? Math.max(1, Math.ceil(total / sizeNow)) : 1;
+        pi.textContent = `Page ${pageNow} of ${pages} • ${total} properties`;
+    }
+
+    const btnPrev = document.getElementById("rentBtnPrev");
+    const btnNext = document.getElementById("rentBtnNext");
+    if (btnPrev) btnPrev.disabled = Number(data.page || 1) <= 1;
+    if (btnNext) btnNext.disabled = !Boolean(data.has_more);
+}
+
+function prevRentPage() {
+    if (currentRentPage <= 1) return;
+    currentRentPage -= 1;
+    loadActiveRentView();
+}
+
+function nextRentPage() {
+    currentRentPage += 1;
+    loadActiveRentView();
+}
+
+async function updateRentMonthCell(itemId, status, existingPartialAmount = 0) {
+    const payload = { status };
+    if (status === "PAID") {
+        const d = new Date();
+        payload.paid_on = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}T00:00:00`;
+    }
+    if (status === "PARTIAL") {
+        let amount = Number(existingPartialAmount || 0);
+        if (!(amount > 0)) {
+            const entered = prompt("Enter partially paid amount:");
+            if (entered === null) return;
+            amount = Number(entered);
+        }
+        if (!(amount > 0)) {
+            alert("Please enter a valid partial amount greater than 0.");
+            return;
+        }
+        payload.partial_amount = amount;
+    } else {
+        payload.partial_amount = null;
+    }
+    const r = await apiFetch(`/rent-tracker/items/${itemId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+    });
+    if (!r.ok) {
+        const t = await r.text();
+        alert(`Failed to update month cell: ${t}`);
+        return;
+    }
+    await loadActiveRentView();
+}
+
+async function updateRentPartialAmount(itemId, value) {
+    const amount = Number(value || 0);
+    if (!(amount > 0)) {
+        alert("Partial amount must be greater than 0.");
+        return;
+    }
+    const r = await apiFetch(`/rent-tracker/items/${itemId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "PARTIAL", partial_amount: amount }),
+    });
+    if (!r.ok) {
+        const t = await r.text();
+        alert(`Failed to update partial amount: ${t}`);
+        return;
+    }
+    await loadActiveRentView();
+}
+
+async function importRentWorkbook() {
+    const fileInput = document.getElementById("rentImportFile");
+    const f = fileInput && fileInput.files ? fileInput.files[0] : null;
+    if (!f) {
+        alert("Choose an .xlsx workbook first.");
+        return;
+    }
+
+    const form = new FormData();
+    form.append("file", f, f.name);
+
+    const meta = document.getElementById("rentImportMeta");
+    if (meta) meta.textContent = "Importing workbook...";
+
+    const r = await apiFetch("/rent-tracker/import-xlsx", {
+        method: "POST",
+        body: form,
+    });
+    const t = await r.text();
+    if (!r.ok) {
+        if (meta) meta.textContent = "Import failed.";
+        alert(`Import failed (${r.status}):\n\n${t}`);
+        return;
+    }
+    let j = null;
+    try { j = JSON.parse(t); } catch { j = null; }
+    if (meta) {
+        const rows = j && j.imported_rows ? j.imported_rows : "-";
+        const y = (j && j.year) ? j.year : new Date().getFullYear();
+        meta.textContent = `Imported ${rows} rows for ${y} from ${escapeHtml(f.name)} at ${new Date().toLocaleString()}.`;
+    }
+    currentRentPage = 1;
+    await loadActiveRentView();
 }
 
 function setTab(tab) {
     currentTab = tab;
     currentPage = 1;
+    updateSyncContextUI();
 
     // Tailwind tabs (legacy)
     document.querySelectorAll(".tabbtn").forEach(btn => {
@@ -422,19 +994,30 @@ async function fetchNow() {
         const maxThreads = parseInt((maxEl && maxEl.value) ? maxEl.value : "500", 10);
         const incremental = !!(incEl && incEl.checked);
         const includeAnywhere = !!(allEl && allEl.checked);
+        const allMode = isAllEmailsTab();
+
+        if (allMode && (!start || !end)) {
+            alert("All Emails mode requires both From and To dates.");
+            return;
+        }
 
         // Persist the selected date filter for the ticket list.
         currentDateFilter = { start: start || "", end: end || "" };
 
         const url = new URL("/sync/fetch-now", window.location.origin);
+        if (currentMailbox) url.searchParams.set("mailbox", currentMailbox);
         if (start) url.searchParams.set("start", start);
         if (end) url.searchParams.set("end", end);
         if (!Number.isNaN(maxThreads) && maxThreads > 0) url.searchParams.set("max_threads", String(maxThreads));
+        url.searchParams.set("awaiting_only", allMode ? "false" : "true");
         // incremental applies only when no date range
         if (!start && !end) url.searchParams.set("incremental", incremental ? "true" : "false");
-        if (start || end) url.searchParams.set("include_anywhere", includeAnywhere ? "true" : "false");
+        if (start || end) {
+            const includeAny = allMode ? true : includeAnywhere;
+            url.searchParams.set("include_anywhere", includeAny ? "true" : "false");
+        }
 
-        const r = await fetch(url.toString(), { method: "POST" });
+        const r = await apiFetch(url.toString(), { method: "POST" });
         const text = await r.text();
         if (!r.ok) {
             alert(`Fetch failed (${r.status}):\n\n${text}`);
@@ -475,11 +1058,36 @@ async function checkUpdates() {
     }
 
     try {
-        const url = new URL("/sync/check-updates", window.location.origin);
-        // Safety cap; frequent use should stay light.
-        url.searchParams.set("max_threads", "200");
+        const allMode = isAllEmailsTab();
+        const startEl = document.getElementById("startDate") || document.getElementById("fromDate");
+        const endEl = document.getElementById("endDate") || document.getElementById("toDate");
+        const maxEl = document.getElementById("maxThreads") || document.getElementById("limit");
+        const start = startEl ? (startEl.value || currentDateFilter.start || "") : (currentDateFilter.start || "");
+        const end = endEl ? (endEl.value || currentDateFilter.end || "") : (currentDateFilter.end || "");
+        const maxThreads = parseInt((maxEl && maxEl.value) ? maxEl.value : "200", 10);
 
-        const r = await fetch(url.toString(), { method: "POST" });
+        let url;
+        if (allMode) {
+            if (!start || !end) {
+                alert("In All Emails mode, choose both From and To dates before checking updates.");
+                return;
+            }
+            currentDateFilter = { start, end };
+            url = new URL("/sync/fetch-now", window.location.origin);
+            url.searchParams.set("start", start);
+            url.searchParams.set("end", end);
+            url.searchParams.set("incremental", "false");
+            url.searchParams.set("include_anywhere", "true");
+            url.searchParams.set("awaiting_only", "false");
+            url.searchParams.set("max_threads", String(!Number.isNaN(maxThreads) && maxThreads > 0 ? maxThreads : 500));
+        } else {
+            url = new URL("/sync/check-updates", window.location.origin);
+            // Safety cap; frequent use should stay light.
+            url.searchParams.set("max_threads", String(!Number.isNaN(maxThreads) && maxThreads > 0 ? maxThreads : 200));
+        }
+        if (currentMailbox) url.searchParams.set("mailbox", currentMailbox);
+
+        const r = await apiFetch(url.toString(), { method: "POST" });
         const text = await r.text();
         if (!r.ok) {
             alert(`Check Updates failed (${r.status}):\n\n${text}`);
@@ -541,15 +1149,15 @@ function statusOptions(selected) {
 function renderTicket(t) {
     const useGoodUi = !!document.querySelector(".page") && !document.querySelector(".tabbtn");
 
-    const due = t.due_at ? `Due: ${formatDate(t.due_at)}` : "Due: —";
-    const last = t.last_message_at ? `Last: ${formatDate(t.last_message_at)}` : "Last: —";
+    const due = t.due_at ? `Due: ${formatDate(t.due_at)}` : "Due: -";
+    const last = t.last_message_at ? `Last: ${formatDate(t.last_message_at)}` : "Last: -";
 
     // Legacy manual category removed from UI; prefer AI category.
     const cat = "";
     // Assignment feature removed.
     const assignee = "";
 
-    let slaText = "SLA: —";
+    let slaText = "SLA: -";
     let slaOverdue = false;
     if (t.sla_due_at) {
         const dueMs = Date.parse(t.sla_due_at);
@@ -574,7 +1182,7 @@ function renderTicket(t) {
         card.innerHTML = `
           <div>
             <h4>${escapeHtml(t.subject || "(no subject)")}</h4>
-            <div class="from">${escapeHtml(t.from_name || t.from_email || "(unknown sender)")} • ${escapeHtml(t.from_email || "")}</div>
+            <div class="from">${escapeHtml(t.from_name || t.from_email || "(unknown sender)")}  •  ${escapeHtml(t.from_email || "")}</div>
             <div class="snippet">${escapeHtml(t.snippet || "")}</div>
 
             <div class="badge-row">
@@ -707,6 +1315,7 @@ async function loadTickets() {
         const el = document.getElementById(id);
         if (el) el.textContent = String(val ?? 0);
     };
+    setText("tabAllCount", c.all ?? 0);
     setText("tabAwaitingCount", c.awaiting_reply ?? 0);
     setText("tabInProgressCount", c.in_progress ?? 0);
     setText("tabRespondedCount", c.responded ?? 0);
@@ -748,7 +1357,7 @@ function renderPagination(data) {
     wrap.style.display = "flex";
     if (btnPrev) btnPrev.disabled = page <= 1;
     if (btnNext) btnNext.disabled = !has_more;
-    if (info) info.textContent = `Page ${page} of ${totalPages} • ${total} tickets`;
+    if (info) info.textContent = `Page ${page} of ${totalPages}  •  ${total} tickets`;
 }
 
 function prevPage() {
@@ -790,10 +1399,10 @@ async function openThread(threadId) {
     if (useViewer) {
         viewerBackdrop.classList.add("show");
         if (viewerTitle) viewerTitle.textContent = "Thread";
-        viewerFrame.srcdoc = `<div style="font-family:system-ui; padding:16px; color:#334155">Loading thread…</div>`;
+        viewerFrame.srcdoc = `<div style="font-family:system-ui; padding:16px; color:#334155">Loading thread...</div>`;
     } else if (modal && content) {
         modal.classList.remove("hidden");
-        content.innerHTML = `<div class="text-sm text-slate-600">Loading thread…</div>`;
+        content.innerHTML = `<div class="text-sm text-slate-600">Loading thread...</div>`;
     } else {
         alert("Thread viewer UI is missing from the page (threadModal/threadContent).");
         return;
@@ -901,7 +1510,7 @@ async function openThread(threadId) {
     if (useViewer) {
         // Populate message iframes after the viewer frame loads its srcdoc.
         viewerFrame.onload = () => {
-            try { populateIframes(viewerFrame.contentDocument); } catch (e) {}
+            try { populateIframes(viewerFrame.contentDocument); } catch (e) { }
         };
         viewerFrame.srcdoc = threadHtml;
     } else {
@@ -952,7 +1561,7 @@ async function openAckModal(threadId) {
     const listEl = document.getElementById("ackAttachList");
     if (fEl) fEl.value = "";
     if (listEl) listEl.innerHTML = "";
-    document.getElementById("ackBody").value = "Loading draft…";
+    document.getElementById("ackBody").value = "Loading draft...";
     document.getElementById("sendAckBtn").disabled = true;
 
     // Quick Reply is deterministic (non-AI). AI is only invoked when you explicitly click AI Draft.
@@ -979,7 +1588,7 @@ async function openAckModal(threadId) {
                 listEl.innerHTML = "";
                 return;
             }
-            listEl.innerHTML = files.map(f => `${escapeHtml(f.name)} <span class="muted">(${Math.round(f.size/1024)} KB)</span>`).join("<br/>");
+            listEl.innerHTML = files.map(f => `${escapeHtml(f.name)} <span class="muted">(${Math.round(f.size / 1024)} KB)</span>`).join("<br/>");
         };
     }
 }
@@ -989,13 +1598,228 @@ async function openAiReplyModal(threadId) {
     const modal = document.getElementById("aiReplyModal");
     if (modal) modal.classList.remove("hidden");
     document.getElementById("aiReplySubject").value = "";
-    document.getElementById("aiReplyBody").value = "Loading draft…";
+    document.getElementById("aiReplyBody").value = "Loading draft...";
     const metaEl = document.getElementById("aiReplyMeta");
     if (metaEl) metaEl.textContent = "";
-    const extraEl = document.getElementById("aiExtraContext");
+    const extraEl = getAiReplyExtraEl();
     if (extraEl) extraEl.value = "";
+    const voiceStatus = document.getElementById("aiVoiceStatus");
+    if (voiceStatus) voiceStatus.textContent = "Voice input idle.";
+    const startBtn = document.getElementById("aiVoiceStartBtn");
+    const stopBtn = document.getElementById("aiVoiceStopBtn");
+    if (startBtn) startBtn.disabled = false;
+    if (stopBtn) stopBtn.disabled = true;
+    aiVoiceChunks = [];
 
     await generateAiDraft(threadId, "neutral", null);
+}
+
+function getAiReplyExtraEl() {
+    return document.getElementById("aiReplyExtra") || document.getElementById("aiExtraContext");
+}
+
+function setAiVoiceStatus(text) {
+    const el = document.getElementById("aiVoiceStatus");
+    if (el) el.textContent = text || "";
+}
+
+function setAiRegenerateBusy(isBusy) {
+    const btn = document.getElementById("aiReplyRegenerateBtn");
+    if (!btn) return;
+    btn.disabled = !!isBusy;
+    btn.textContent = isBusy ? "Regenerating..." : "Regenerate";
+}
+
+async function startAiVoiceCapture() {
+    if (!window.isSecureContext) {
+        setAiVoiceStatus("Mic requires a secure context (HTTPS).");
+        return;
+    }
+    if (aiVoiceRecorder && aiVoiceRecorder.state === "recording") {
+        return;
+    }
+    if (aiSpeechRecognition) {
+        return;
+    }
+
+    try {
+        const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (SR) {
+            aiSpeechTranscript = "";
+            aiSpeechRecognition = new SR();
+            aiSpeechRecognition.lang = "en-US";
+            aiSpeechRecognition.interimResults = true;
+            aiSpeechRecognition.continuous = true;
+            aiSpeechRecognition.onresult = (event) => {
+                let out = "";
+                for (let i = 0; i < event.results.length; i++) {
+                    out += (event.results[i][0]?.transcript || "") + " ";
+                }
+                aiSpeechTranscript = out.trim();
+            };
+            aiSpeechRecognition.onerror = (event) => {
+                setAiVoiceStatus(`Speech recognition error: ${event.error || "unknown"}`);
+            };
+            aiSpeechRecognition.onend = async () => {
+                const transcript = (aiSpeechTranscript || "").trim();
+                aiSpeechRecognition = null;
+                const startBtn = document.getElementById("aiVoiceStartBtn");
+                const stopBtn = document.getElementById("aiVoiceStopBtn");
+                if (startBtn) startBtn.disabled = false;
+                if (stopBtn) stopBtn.disabled = true;
+
+                const weakTranscript = (
+                    !transcript ||
+                    transcript.length < 6 ||
+                    /^(you|yeah|yep|uh|um|hmm|thank you|thanks)[.!?\s]*$/i.test(transcript)
+                );
+                if (weakTranscript) {
+                    setAiVoiceStatus("Low-confidence transcript. Please speak closer to mic and try again.");
+                    return;
+                }
+
+                const extraEl = getAiReplyExtraEl();
+                if (extraEl) {
+                    const cur = String(extraEl.value || "").trim();
+                    extraEl.value = cur ? `${cur}\n${transcript}` : transcript;
+                }
+                setAiVoiceStatus("Voice inserted. Regenerating draft...");
+                if (currentAiThreadId) {
+                    await regenerateAiDraftFromModal();
+                }
+            };
+
+            aiSpeechRecognition.start();
+            setAiVoiceStatus("Listening... click Stop & Insert when done.");
+            const startBtn = document.getElementById("aiVoiceStartBtn");
+            const stopBtn = document.getElementById("aiVoiceStopBtn");
+            if (startBtn) startBtn.disabled = true;
+            if (stopBtn) stopBtn.disabled = false;
+            return;
+        }
+
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
+            alert("Voice capture is not supported in this browser/device.");
+            return;
+        }
+
+        // Fallback path: record audio and transcribe on backend.
+        aiVoiceStream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true,
+                channelCount: 1,
+            }
+        });
+        aiVoiceChunks = [];
+        const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+            ? "audio/webm;codecs=opus"
+            : (MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "");
+        aiVoiceRecorder = mime ? new MediaRecorder(aiVoiceStream, { mimeType: mime }) : new MediaRecorder(aiVoiceStream);
+        aiVoiceRecorder.ondataavailable = (e) => {
+            if (e.data && e.data.size > 0) aiVoiceChunks.push(e.data);
+        };
+        aiVoiceRecorder.start();
+        setAiVoiceStatus("Recording... click Stop & Insert when done.");
+        const startBtn = document.getElementById("aiVoiceStartBtn");
+        const stopBtn = document.getElementById("aiVoiceStopBtn");
+        if (startBtn) startBtn.disabled = true;
+        if (stopBtn) stopBtn.disabled = false;
+    } catch (e) {
+        const name = e && e.name ? e.name : "Error";
+        const msg = e && e.message ? e.message : "";
+        setAiVoiceStatus(`Mic failed: ${name}${msg ? ` - ${msg}` : ""}`);
+    }
+}
+
+async function stopAiVoiceCaptureAndTranscribe() {
+    const startBtn = document.getElementById("aiVoiceStartBtn");
+    const stopBtn = document.getElementById("aiVoiceStopBtn");
+    if (stopBtn) stopBtn.disabled = true;
+    setAiVoiceStatus("Processing voice input...");
+
+    if (aiSpeechRecognition) {
+        try {
+            aiSpeechRecognition.stop();
+            return;
+        } catch {
+            // Continue to fallback/cleanup path below.
+        }
+    }
+
+    if (!aiVoiceRecorder) {
+        setAiVoiceStatus("No recording to process.");
+        if (startBtn) startBtn.disabled = false;
+        return;
+    }
+
+    if (aiVoiceRecorder.state === "recording") {
+        await new Promise((resolve) => {
+            aiVoiceRecorder.onstop = resolve;
+            aiVoiceRecorder.stop();
+        });
+    }
+
+    try {
+        if (aiVoiceStream) {
+            aiVoiceStream.getTracks().forEach(t => t.stop());
+            aiVoiceStream = null;
+        }
+        const blob = new Blob(aiVoiceChunks, { type: (aiVoiceChunks[0] && aiVoiceChunks[0].type) || "audio/webm" });
+        if (!blob || blob.size === 0) {
+            setAiVoiceStatus("No audio captured.");
+            if (startBtn) startBtn.disabled = false;
+            return;
+        }
+        // Too-short clips often produce junk transcripts like "you".
+        if (blob.size < 12000) {
+            setAiVoiceStatus("Recording too short. Please speak for at least 2-3 seconds.");
+            if (startBtn) startBtn.disabled = false;
+            return;
+        }
+
+        const form = new FormData();
+        form.append("file", blob, "voice-note.webm");
+        const r = await apiFetch("/tickets/transcribe-audio", { method: "POST", body: form });
+        const t = await r.text();
+        if (!r.ok) {
+            setAiVoiceStatus("Transcription failed.");
+            alert(`Transcription failed (${r.status}):\n\n${t}`);
+            if (startBtn) startBtn.disabled = false;
+            return;
+        }
+        let j = null;
+        try { j = JSON.parse(t); } catch { j = null; }
+        const transcript = ((j && j.text) ? String(j.text) : "").trim();
+        const weakTranscript = (
+            !transcript ||
+            transcript.length < 6 ||
+            /^(you|yeah|yep|uh|um|hmm|thank you|thanks)[.!?\s]*$/i.test(transcript)
+        );
+        if (weakTranscript) {
+            setAiVoiceStatus("Low-confidence transcript. Please speak closer to mic and try again.");
+            if (startBtn) startBtn.disabled = false;
+            return;
+        }
+        const extraEl = getAiReplyExtraEl();
+        if (extraEl && transcript) {
+            const cur = String(extraEl.value || "").trim();
+            extraEl.value = cur ? `${cur}\n${transcript}` : transcript;
+        }
+        if (transcript) {
+            setAiVoiceStatus("Voice inserted. Regenerating draft...");
+            if (currentAiThreadId) {
+                await regenerateAiDraftFromModal();
+            }
+        } else {
+            setAiVoiceStatus("No speech detected.");
+        }
+    } finally {
+        aiVoiceChunks = [];
+        aiVoiceRecorder = null;
+        if (startBtn) startBtn.disabled = false;
+    }
 }
 
 async function generateAiDraft(threadId, tone, extraContext) {
@@ -1019,21 +1843,47 @@ async function generateAiDraft(threadId, tone, extraContext) {
         const cat = j.meta?.ai_category ? `AI category: ${j.meta.ai_category}` : "";
         const urg = (typeof j.meta?.ai_urgency === "number") ? `Urgency: ${j.meta.ai_urgency}/5` : "";
         const conf = (typeof j.meta?.ai_confidence === "number") ? `Confidence: ${j.meta.ai_confidence}%` : "";
-        metaEl.textContent = [role, cat, urg, conf].filter(Boolean).join(" • ");
+        metaEl.textContent = [role, cat, urg, conf].filter(Boolean).join("  •  ");
     }
 }
 
 async function regenerateAiDraftFromModal() {
-    if (!currentAiThreadId) return;
-    const extraEl = document.getElementById("aiExtraContext");
+    if (!currentAiThreadId) {
+        alert("No active thread selected for regeneration.");
+        return;
+    }
+    const extraEl = getAiReplyExtraEl();
     const extra = extraEl ? (extraEl.value || "").trim() : "";
     document.getElementById("aiReplyBody").value = "Regenerating...";
-    await generateAiDraft(currentAiThreadId, "neutral", extra || null);
+    setAiRegenerateBusy(true);
+    try {
+        await generateAiDraft(currentAiThreadId, "neutral", extra || null);
+    } finally {
+        setAiRegenerateBusy(false);
+    }
+}
+
+async function regenerateAiDraft() {
+    await regenerateAiDraftFromModal();
 }
 
 function closeAiReplyModal() {
     const modal = document.getElementById("aiReplyModal");
     if (modal) modal.classList.add("hidden");
+    if (aiSpeechRecognition) {
+        try { aiSpeechRecognition.stop(); } catch { }
+        aiSpeechRecognition = null;
+    }
+    aiSpeechTranscript = "";
+    if (aiVoiceRecorder && aiVoiceRecorder.state === "recording") {
+        try { aiVoiceRecorder.stop(); } catch { }
+    }
+    if (aiVoiceStream) {
+        try { aiVoiceStream.getTracks().forEach(t => t.stop()); } catch { }
+        aiVoiceStream = null;
+    }
+    aiVoiceRecorder = null;
+    aiVoiceChunks = [];
     currentAiThreadId = null;
 }
 
@@ -1204,21 +2054,21 @@ async function ensureAuthenticated() {
     // Good UI pill
     const authText = document.getElementById("authText");
     if (authText) authText.textContent = `Signed in as ${currentUser.name} (${currentUser.role})`;
+    const accountName = document.getElementById("accountBarUserName");
+    if (accountName) accountName.textContent = `${currentUser.name} (${currentUser.role})`;
+    const accountAvatar = document.getElementById("accountBarAvatar");
+    if (accountAvatar) {
+        accountAvatar.src = currentUser.avatar_url || "/static/logo.png";
+    }
     const authDot = document.getElementById("authDot");
     if (authDot) {
         authDot.classList.add("green");
     }
+    const systemBtn = document.getElementById("btnSystemUsers");
+    if (systemBtn) systemBtn.style.display = (String(currentUser.role || "").toUpperCase() === "ADMIN") ? "block" : "none";
 
-    // Logout buttons
-    const logoutBtn = document.getElementById("logoutBtn");
-    if (logoutBtn) logoutBtn.classList.remove("hidden");
-    const btnLogout2 = document.getElementById("btnLogout");
-    if (btnLogout2) btnLogout2.style.display = "inline-flex";
-
-    // Admin-only UI controls (Good UI)
-    const manageUsersBtn = document.getElementById("btnManageUsers");
-    if (manageUsersBtn) {
-        manageUsersBtn.style.display = (String(currentUser.role || "").toUpperCase() === "ADMIN") ? "inline-flex" : "none";
+    if (currentUser.must_change_password) {
+        setTimeout(() => openPasswordModal(), 100);
     }
 
     return true;
@@ -1270,17 +2120,19 @@ function logout() {
 
     const authText = document.getElementById("authText");
     if (authText) authText.textContent = "Not signed in";
+    const accountName = document.getElementById("accountBarUserName");
+    if (accountName) accountName.textContent = "Not signed in";
+    const accountAvatar = document.getElementById("accountBarAvatar");
+    if (accountAvatar) accountAvatar.src = "/static/logo.png";
+    closeAccountMenu();
+    const systemBtn = document.getElementById("btnSystemUsers");
+    if (systemBtn) systemBtn.style.display = "none";
     const authDot = document.getElementById("authDot");
     if (authDot) {
         authDot.classList.remove("green");
         authDot.classList.remove("red");
         authDot.classList.remove("yellow");
     }
-
-    const logoutBtn = document.getElementById("logoutBtn");
-    if (logoutBtn) logoutBtn.classList.add("hidden");
-    const btnLogout2 = document.getElementById("btnLogout");
-    if (btnLogout2) btnLogout2.style.display = "none";
 
     showLoginModal();
 }
@@ -1295,7 +2147,16 @@ window.addEventListener("load", async () => {
     const ok = await ensureAuthenticated();
     if (!ok) return;
 
+    document.addEventListener("click", (ev) => {
+        const trigger = document.getElementById("accountMenuTrigger");
+        const dd = document.getElementById("accountMenuDropdown");
+        if (!dd || !trigger) return;
+        if (dd.contains(ev.target) || trigger.contains(ev.target)) return;
+        dd.classList.remove("show");
+    });
+
     await refreshGoogleStatus();
+    initMailboxes();
 
     // Small UX: show a one-time confirmation after OAuth callback.
     try {
@@ -1333,9 +2194,38 @@ window.addEventListener("load", async () => {
             tmr = setTimeout(() => loadTickets(), 250);
         });
     }
+    const rentSearch = document.getElementById("rentSearchBox");
+    if (rentSearch) {
+        let tmr = null;
+        rentSearch.addEventListener("input", () => {
+            if (tmr) clearTimeout(tmr);
+            tmr = setTimeout(() => {
+                if (currentDashboardTab === "rent") {
+                    currentRentPage = 1;
+                    loadActiveRentView();
+                }
+            }, 250);
+        });
+    }
+    ["rentStatusFilter", "rentFrequencyFilter"].forEach((id) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.addEventListener("change", () => {
+            if (currentDashboardTab === "rent") {
+                currentRentPage = 1;
+                loadActiveRentView();
+            }
+        });
+    });
 
     // Assignment / category filters removed.
+
+    switchDashboardTab("inbox");
+    updateSyncContextUI();
 
     // Set default tab (will load tickets).
     setTab(currentTab);
 });
+
+
+

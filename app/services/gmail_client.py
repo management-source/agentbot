@@ -43,7 +43,7 @@ def gmail_user_id() -> str:
     return mb if mb else "me"
 
 
-def get_gmail_service(db: Session | None = None, scopes: list[str] | None = None):
+def get_gmail_service(db: Session | None = None, scopes: list[str] | None = None, impersonate_user: str | None = None):
     """Build a Gmail API service using either OAuth or Service Account DWD.
 
     `scopes` lets us request additional scopes for specific endpoints (e.g. signature)
@@ -55,7 +55,7 @@ def get_gmail_service(db: Session | None = None, scopes: list[str] | None = None
         info = settings.service_account_info()
         if not info:
             raise RuntimeError("Service account JSON is not configured.")
-        subject = (settings.IMPERSONATE_USER or "").strip()
+        subject = (impersonate_user or settings.IMPERSONATE_USER or "").strip()
         if not subject:
             raise RuntimeError("IMPERSONATE_USER is not configured.")
         creds = service_account.Credentials.from_service_account_info(info, scopes=scopes).with_subject(subject)
@@ -91,7 +91,7 @@ def get_gmail_service(db: Session | None = None, scopes: list[str] | None = None
     return build("gmail", "v1", credentials=creds, cache_discovery=False)
 
 
-def get_google_credentials(db: Session | None = None, scopes: list[str] | None = None):
+def get_google_credentials(db: Session | None = None, scopes: list[str] | None = None, impersonate_user: str | None = None):
     """Return a google-auth Credentials object for non-Gmail HTTP fetches.
 
     Used for fetching Google-hosted assets (e.g. signature logo URLs) with
@@ -103,7 +103,7 @@ def get_google_credentials(db: Session | None = None, scopes: list[str] | None =
         info = settings.service_account_info()
         if not info:
             raise RuntimeError("Service account JSON is not configured.")
-        subject = (settings.IMPERSONATE_USER or "").strip()
+        subject = (impersonate_user or settings.IMPERSONATE_USER or "").strip()
         if not subject:
             raise RuntimeError("IMPERSONATE_USER is not configured.")
         return service_account.Credentials.from_service_account_info(info, scopes=scopes).with_subject(subject)

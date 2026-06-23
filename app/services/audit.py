@@ -11,12 +11,14 @@ from app.models import AuditAction, ThreadTicketAudit
 
 def add_audit(
     db: Session,
+    mailbox: str,
     thread_id: str,
     action: AuditAction,
     actor_user_id: Optional[int] = None,
     detail: Optional[dict[str, Any]] = None,
 ) -> None:
     row = ThreadTicketAudit(
+        mailbox=mailbox,
         thread_id=thread_id,
         action=action,
         actor_user_id=actor_user_id,

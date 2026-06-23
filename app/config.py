@@ -49,6 +49,11 @@ class Settings(BaseSettings):
     # The mailbox to impersonate (e.g., admin@yourdomain.com)
     IMPERSONATE_USER: Optional[str] = None
 
+    # Optional: monitor multiple mailboxes (comma-separated). When set, the app will
+    # isolate tickets/settings/blacklists per mailbox and impersonate each mailbox as needed.
+    # Example: admin@donspremier.com.au,lushan@donspremier.com.au
+    MONITORED_MAILBOXES: Optional[str] = None
+
     # Optional: Gmail mailbox delegation (OAuth mode only). With DWD, use IMPERSONATE_USER instead.
     DELEGATED_MAILBOX: Optional[str] = None
 
@@ -66,12 +71,22 @@ class Settings(BaseSettings):
 
     OPENAI_API_KEY: Optional[str] = None
     OPENAI_MODEL: str = "gpt-4o-mini"
+    OPENAI_TRANSCRIBE_MODEL: str = "whisper-1"
 
     # Optional default signature if not set via UI
     DEFAULT_SIGNATURE: str = ""
 
     # Observability
     SENTRY_DSN: Optional[str] = None
+
+    def monitored_mailboxes_list(self) -> List[str]:
+        raw = (self.MONITORED_MAILBOXES or "").strip()
+        if raw:
+            return [e.strip().lower() for e in raw.split(",") if e.strip()]
+        # Back-compat: fall back to single impersonation mailbox.
+        if (self.IMPERSONATE_USER or "").strip():
+            return [(self.IMPERSONATE_USER or "").strip().lower()]
+        return []
 
     def my_emails_list(self) -> List[str]:
         return [e.strip().lower() for e in self.MY_EMAILS.split(",") if e.strip()]
@@ -81,7 +96,7 @@ class Settings(BaseSettings):
         raw = self.SERVICE_ACCOUNT_JSON
         if not raw and self.SERVICE_ACCOUNT_JSON_B64:
             try:
-                raw = base64.b64decode(self.SERVICE_ACCOUNT_JSON_B64).decode("utf-8")
+                 raw = base64.b64decode(self.SERVICE_ACCOUNT_JSON_B64).decode("utf-8")
             except Exception:
                 raw = None
         if not raw:
@@ -106,11 +121,16 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "SERVICE_ACCOUNT_JSON (or SERVICE_ACCOUNT_JSON_B64) is required when GMAIL_AUTH_MODE=service_account"
                 )
+            mbs = self.monitored_mailboxes_list()
+            if not mbs:
+                raise ValueError(
+                    "IMPERSONATE_USER (or MONITORED_MAILBOXES) is required when GMAIL_AUTH_MODE=service_account"
+                )
+            # Normalize IMPERSONATE_USER to the first monitored mailbox for backwards compatibility.
             if not (self.IMPERSONATE_USER or "").strip():
-                raise ValueError("IMPERSONATE_USER is required when GMAIL_AUTH_MODE=service_account")
+                object.__setattr__(self, "IMPERSONATE_USER", mbs[0])
 
         return self
-
     class Config:
         env_file = ".env"
         extra = "ignore"

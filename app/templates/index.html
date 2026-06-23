@@ -33,21 +33,236 @@
     #usersModal:not(.hidden){display:flex}
     #aiReplyModal:not(.hidden){display:flex}
     #blacklistModal:not(.hidden){display:flex}
+    #passwordModal:not(.hidden){display:flex}
     html,body{height:100%}
     body{
       margin:0;
-      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+      font-family: "Segoe UI", "Aptos", ui-sans-serif, system-ui, -apple-system, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
       color:var(--text);
-      background:var(--bg);
+      background: radial-gradient(circle at top right, #f0f7ff 0%, #f6f7fb 38%, #eef4f0 100%);
+    }
+
+    .app-shell{
+      min-height:100vh;
+      display:grid;
+      grid-template-columns: 232px minmax(0, 1fr);
+    }
+    @media (max-width: 1040px){
+      .app-shell{grid-template-columns: 1fr}
+    }
+
+    .sidebar{
+      background: linear-gradient(180deg, #060606 0%, #0b0b0b 58%, #121212 100%);
+      color:#d4deea;
+      border-right:1px solid rgba(255,255,255,.08);
+      padding:18px 14px;
+      position:sticky;
+      top:0;
+      height:100vh;
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+    }
+    @media (max-width: 1040px){
+      .sidebar{
+        position:static;
+        height:auto;
+        padding:12px;
+      }
+    }
+    .side-brand{
+      border:1px solid rgba(255,255,255,.12);
+      border-radius:14px;
+      padding:8px;
+      background:rgba(255,255,255,.04);
+    }
+    .side-brand img{
+      width:100%;
+      height:52px;
+      object-fit:contain;
+      border-radius:10px;
+      display:block;
+      background:#000;
+      border:1px solid rgba(255,255,255,.1);
+    }
+    .side-brand h2{
+      margin:0;
+      font-size:15px;
+      color:#fff;
+      letter-spacing:.01em;
+    }
+    .side-brand p{
+      margin:6px 0 0 0;
+      font-size:12px;
+      color:#c4d0de;
+    }
+    .side-nav{
+      display:flex;
+      flex-direction:column;
+      gap:6px;
+      margin-top:8px;
+    }
+    .side-nav a{
+      text-decoration:none;
+      color:#d7e2ef;
+      font-size:13px;
+      font-weight:700;
+      padding:10px 11px;
+      border-radius:10px;
+      border:1px solid transparent;
+    }
+    .side-nav a.active{
+      background: linear-gradient(180deg, #b08a2a 0%, #8f6f1d 100%);
+      color:#fff7df;
+      border-color:#c9a246;
+    }
+    .side-nav a:not(.active):hover{
+      background:rgba(255,255,255,.07);
+      border-color:rgba(255,255,255,.1);
+    }
+
+    .main-wrap{
+      min-width:0;
+      display:flex;
+      flex-direction:column;
+    }
+    .topbar-modern{
+      padding:14px 20px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      border-bottom:1px solid #d6dfeb;
+      background:linear-gradient(180deg,#f7fbff 0%, #f2f8ff 100%);
+      position:sticky;
+      top:0;
+      z-index:4;
+      backdrop-filter: blur(3px);
+    }
+    .account-bar{
+      background:#050505;
+      color:#e5e7eb;
+      border-bottom:1px solid #1f2937;
+      padding:8px 14px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      position:sticky;
+      top:0;
+      z-index:6;
+    }
+    .account-trigger{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      cursor:pointer;
+      padding:6px 10px;
+      border-radius:10px;
+      border:1px solid rgba(255,255,255,.15);
+      background:rgba(255,255,255,.06);
+    }
+    .account-avatar{
+      width:28px;
+      height:28px;
+      border-radius:999px;
+      object-fit:cover;
+      border:1px solid rgba(255,255,255,.25);
+      background:#111827;
+    }
+    .account-name{
+      font-size:13px;
+      font-weight:700;
+      color:#f8fafc;
+      white-space:nowrap;
+    }
+    .account-menu{
+      position:absolute;
+      top:44px;
+      left:14px;
+      background:#111827;
+      border:1px solid #334155;
+      border-radius:12px;
+      padding:8px;
+      min-width:200px;
+      box-shadow:0 12px 28px rgba(0,0,0,.35);
+      display:none;
+    }
+    .account-menu.show{display:block}
+    .account-menu button{
+      width:100%;
+      text-align:left;
+      margin:0;
+      border:none;
+      background:transparent;
+      color:#e2e8f0;
+      padding:8px 10px;
+      border-radius:8px;
+      font-weight:700;
+      cursor:pointer;
+    }
+    .account-menu button:hover{background:#1f2937}
+    .topbar-modern h1{
+      margin:0;
+      font-size:16px;
+      letter-spacing:.01em;
+      font-weight:800;
+    }
+    .topbar-modern p{
+      margin:3px 0 0 0;
+      color:#607086;
+      font-size:12px;
+    }
+    .topbar-actions{display:flex; gap:8px; flex-wrap:wrap}
+    .chip{
+      padding:8px 10px;
+      border:1px solid #d7e1ed;
+      border-radius:999px;
+      background:#fff;
+      font-size:12px;
+      color:#334155;
+      font-weight:700;
     }
 
     .page{
-      max-width: 1200px;
-      margin: 0 auto;
-      padding: 20px;
+      width: 100%;
+      max-width: none;
+      margin: 0;
+      padding: 20px 24px;
       display:flex;
       flex-direction:column;
       gap: var(--gap);
+    }
+    .dashboard-shell{
+      display:grid;
+      grid-template-columns: 340px minmax(0, 1fr);
+      gap: var(--gap);
+      align-items:start;
+    }
+    .dashboard-shell.rent-mode{
+      grid-template-columns: 1fr;
+    }
+    .dashboard-shell.rent-mode .left-rail{
+      display:none;
+    }
+    @media (max-width: 1080px){
+      .dashboard-shell{grid-template-columns: 1fr}
+      .page{padding:16px}
+    }
+    .left-rail{
+      display:flex;
+      flex-direction:column;
+      gap:var(--gap);
+      position:sticky;
+      top:12px;
+    }
+    @media (max-width: 1080px){
+      .left-rail{position:static}
+    }
+    .content-rail{
+      display:flex;
+      flex-direction:column;
+      gap:var(--gap);
+      min-width:0;
     }
 
     .header{
@@ -86,13 +301,31 @@
       gap:var(--gap);
       align-items:start;
     }
+    .workspace-head{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      flex-wrap:wrap;
+    }
+    .workspace-title{
+      margin:0;
+      font-size:18px;
+      font-weight:800;
+      letter-spacing:-.01em;
+    }
+    .workspace-sub{
+      margin:4px 0 0 0;
+      color:var(--muted);
+      font-size:12px;
+    }
 
     .footer{
       margin-top:auto;
       padding: 18px 20px 26px 20px;
-      max-width: 1200px;
-      margin-left:auto;
-      margin-right:auto;
+      max-width: none;
+      margin-left:0;
+      margin-right:0;
       color: var(--muted);
       font-size: 12px;
       text-align:center;
@@ -200,6 +433,7 @@
     .kpi .accent{color:var(--primary)}
     .kpi .warn{color:var(--warn)}
     .kpi .ok{color:var(--success)}
+    .kpi .danger{color:var(--danger)}
 
     .filters-row{
       display:flex;
@@ -228,6 +462,63 @@
     }
     .seg button.active{background:rgba(79,70,229,.10); color:var(--primary)}
 
+    .rent-table-wrap{
+      margin-top:12px;
+      border:1px solid var(--border);
+      border-radius:14px;
+      overflow:auto;
+      background:#fff;
+    }
+    .rent-table{
+      width:100%;
+      border-collapse:collapse;
+      min-width:980px;
+    }
+    .rent-table.year-full{min-width:1700px}
+    .rent-table th, .rent-table td{
+      border-bottom:1px solid var(--border);
+      padding:10px 12px;
+      font-size:12px;
+      text-align:left;
+      vertical-align:top;
+    }
+    .rent-table th{
+      color:#475569;
+      background:#f8fafc;
+      font-weight:800;
+      position:sticky;
+      top:0;
+      z-index:1;
+    }
+    .rent-table .sticky-col{
+      position:sticky;
+      left:0;
+      background:#fff;
+      z-index:2;
+      min-width:280px;
+      max-width:340px;
+    }
+    .rent-table th.sticky-col{
+      background:#f8fafc;
+      z-index:3;
+    }
+    .rent-status{
+      display:inline-flex;
+      align-items:center;
+      padding:4px 8px;
+      border-radius:999px;
+      font-size:11px;
+      font-weight:800;
+      border:1px solid var(--border);
+      background:#fff;
+      color:#334155;
+    }
+    .rent-status.paid{background:rgba(22,163,74,.1); border-color:rgba(22,163,74,.25); color:#166534}
+    .rent-status.due{background:rgba(220,38,38,.08); border-color:rgba(220,38,38,.25); color:#991b1b}
+    .rent-status.partial{background:rgba(245,158,11,.12); border-color:rgba(245,158,11,.28); color:#92400e}
+    .rent-status.vacant{background:rgba(100,116,139,.12); border-color:rgba(100,116,139,.24); color:#334155}
+    .rent-status.awaiting{background:rgba(59,130,246,.1); border-color:rgba(59,130,246,.25); color:#1e40af}
+
     /* Ticket list */
     .ticket{
       margin-top:12px;
@@ -244,6 +535,7 @@
     @media (max-width: 980px){
       .ticket{grid-template-columns:1fr}
     }
+    #ticketList{display:block}
 
     .ticket h4{
       margin:0;
@@ -395,25 +687,52 @@
     </head>
 
     <body>
-        <div class="header">
-            <div class="banner">
-                <img src="https://ik.imagekit.io/donspremier/Banner%20-%20Logo.png?updatedAt=1767844482007" alt="Dons Premier Estate Agents" loading="lazy" />
+        <div class="app-shell">
+            <aside class="sidebar">
+                <div class="side-brand">
+                    <img src="https://ik.imagekit.io/donspremier/Banner%20-%20Logo.png?updatedAt=1767844482007" alt="Dons Premier Estate Agents" loading="lazy" />
+                </div>
+                <nav class="side-nav">
+                    <a id="navInbox" class="active" href="javascript:void(0)" onclick="switchDashboardTab('inbox')">Inbox Dashboard</a>
+                    <a id="navRentTracker" href="javascript:void(0)" onclick="switchDashboardTab('rent')">Rent Tracker</a>
+                    <a id="btnSystemUsers" href="javascript:void(0)" style="display:none" onclick="openUsersModal()">System</a>
+                </nav>
+            </aside>
+            <div class="main-wrap">
+            <div class="account-bar">
+                <div style="position:relative">
+                    <div class="account-trigger" id="accountMenuTrigger" onclick="toggleAccountMenu()">
+                        <img class="account-avatar" id="accountBarAvatar" src="/static/logo.png" alt="profile" />
+                        <span class="account-name" id="accountBarUserName">Not signed in</span>
+                    </div>
+                    <div class="account-menu" id="accountMenuDropdown">
+                        <button onclick="openPasswordModal()">Change Password</button>
+                        <button onclick="logout()">Logout</button>
+                    </div>
+                </div>
+                <div class="small muted">System Access</div>
+            </div>
+            <div class="topbar-modern">
+            <div>
+                <h1>Email Manager</h1>
+                <p>Unified inbox operations with clear action queues and fast follow-up tools.</p>
+            </div>
+            <div class="topbar-actions">
+                <span class="chip">Mode: Live</span>
+                <span class="chip">Queue: <span id="queueViewMode">Awaiting Reply</span></span>
+                <span class="chip">Mailbox: <span id="queueMailboxMode">-</span></span>
             </div>
         </div>
 
         <div class="page">
-            <div class="top-grid">
+            <div class="dashboard-shell" id="dashboardShell">
+                <aside class="left-rail">
+                    <div class="top-grid">
                 <div class="card brand">
-                    <h1>Email Reply Manager</h1>
-                    <p><strong>Dons Premier Estate Agents</strong> · Project: <span class="muted">Email Agent</span></p>
-                    <p>The Knights of Real Estate</p>
-
                     <div style="margin-top:14px" class="row space">
                         <div class="pill"><span class="dot"
                                 id="authDot"></span><span id="authText">Not
                                 signed in</span></div>
-                        <button class="btn" id="btnLogout" style="display:none"
-                            onclick="logout()">Logout</button>
                     </div>
 
                     <div style="margin-top:10px" class="row">
@@ -423,14 +742,12 @@
                             onclick="googleConnectOrManage()">Connect to
                             Google</button>
                         <!-- Autopilot / Query rules removed -->
-                        <button class="btn" id="btnManageUsers"
-                            style="display:none"
-                            onclick="openUsersModal()">Manage Users</button>
                         <button class="btn" id="btnBlacklist" onclick="openBlacklistModal()">Blacklist</button>
                     </div>
 
                     <p class="small muted" style="margin-top:10px">Mailbox:
-                        <span id="mailboxLabel">—</span></p>
+                        <select id="mailboxSelect" style="margin-left:8px; padding:4px 8px; border:1px solid var(--border); border-radius:8px; background:#fff;"></select>
+                        <span id="mailboxLabel" class="hidden">—</span></p>
                     <p class="small muted" style="margin-top:0">Status: <span
                             id="statusLine">—</span></p>
                     <p class="small muted" style="margin-top:0">Last sync: <span
@@ -482,10 +799,15 @@
                             onclick="clearDateFilter()">Clear Dates</button>
                     </div>
                 </div>
-            </div>
+                    </div>
+                </aside>
+
+                <main class="content-rail">
+            <div id="inboxPanel">
 
             <div class="filters-row">
                 <div class="seg" id="statusSeg">
+                    <button data-tab="all">All Emails <span class="pill" style="margin-left:8px" id="tabAllCount">0</span></button>
                     <button data-tab="awaiting_reply" class="active">Awaiting Reply <span class="pill" style="margin-left:8px" id="tabAwaitingCount">0</span></button>
                     <button data-tab="in_progress">In Progress <span class="pill" style="margin-left:8px" id="tabInProgressCount">0</span></button>
                     <button data-tab="responded">Responded <span class="pill" style="margin-left:8px" id="tabRespondedCount">0</span></button>
@@ -507,8 +829,134 @@
                 <div class="small muted" id="pageInfo">Page 1</div>
                 <button class="btn" id="btnNext" onclick="nextPage()">Next</button>
             </div>
+            </div>
 
+            <div id="rentPanel" class="hidden">
+                <div class="card">
+                    <div class="row space">
+                        <div>
+                            <p class="panel-title">Rent Due Tracker</p>
+                            <p class="panel-sub">Import rent due schedules from your Excel sheet and track overdue, due soon, and paid statuses in one place.</p>
+                        </div>
+                        <div class="row">
+                            <input type="file" id="rentImportFile" accept=".xlsx" />
+                            <button class="btn primary" onclick="importRentWorkbook()">Import Workbook</button>
+                        </div>
+                    </div>
+                    <div class="small muted" id="rentImportMeta" style="margin-top:8px">No rent workbook imported yet.</div>
+                </div>
+
+                <div class="kpi-row">
+                    <div class="card kpi">
+                        <h3>Total Rows</h3>
+                        <div class="num" id="rentKpiTotal">0</div>
+                    </div>
+                    <div class="card kpi">
+                        <h3>Overdue</h3>
+                        <div class="num danger" id="rentKpiOverdue">0</div>
+                    </div>
+                    <div class="card kpi">
+                        <h3>Due Next 7 Days</h3>
+                        <div class="num warn" id="rentKpiDueSoon">0</div>
+                    </div>
+                    <div class="card kpi">
+                        <h3>Paid</h3>
+                        <div class="num ok" id="rentKpiPaid">0</div>
+                    </div>
+                    <div class="card kpi">
+                        <h3>Pending</h3>
+                        <div class="num accent" id="rentKpiPending">0</div>
+                    </div>
+                </div>
+
+                <div class="filters-row">
+                    <div class="seg" id="rentViewSeg">
+                        <button id="rentViewTrackerBtn" class="active" onclick="switchRentViewMode('tracker')">Tracker</button>
+                        <button id="rentViewYearBtn" onclick="switchRentViewMode('year')">Year Report</button>
+                    </div>
+                    <div class="field">
+                        <div class="label">Status</div>
+                        <select id="rentStatusFilter">
+                            <option value>All</option>
+                            <option value="DUE">Due</option>
+                            <option value="PAID">Paid</option>
+                            <option value="PARTIAL">Partial</option>
+                            <option value="AWAITING_CLEARANCE">Awaiting clearance</option>
+                            <option value="VACANT">Vacant</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <div class="label">Frequency</div>
+                        <select id="rentFrequencyFilter">
+                            <option value>All</option>
+                            <option value="MONTHLY" selected>Monthly</option>
+                            <option value="FORTNIGHTLY">Fortnightly</option>
+                        </select>
+                    </div>
+                    <div class="field" style="min-width:260px">
+                        <div class="label">Search</div>
+                        <input type="text" id="rentSearchBox" placeholder="Property, notes, raw value..." />
+                    </div>
+                    <div class="row" style="align-self:flex-end">
+                        <button class="btn" onclick="loadActiveRentView(1)">Apply</button>
+                    </div>
+                </div>
+
+                <div class="rent-table-wrap" id="rentTrackerGrid">
+                    <table class="rent-table">
+                        <thead>
+                            <tr>
+                                <th>Property</th>
+                                <th>Frequency</th>
+                                <th>Progress</th>
+                                <th id="rentMonthHead1">Last</th>
+                                <th id="rentMonthHead2">Current</th>
+                                <th id="rentMonthHead3">Next</th>
+                            </tr>
+                        </thead>
+                        <tbody id="rentTableBody">
+                            <tr><td colspan="6" class="muted">No data loaded.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="rent-table-wrap hidden" id="rentYearReportGrid">
+                    <table class="rent-table year-full">
+                        <thead>
+                            <tr>
+                                <th class="sticky-col">Property</th>
+                                <th>Frequency</th>
+                                <th>Progress</th>
+                                <th>Jan</th>
+                                <th>Feb</th>
+                                <th>Mar</th>
+                                <th>Apr</th>
+                                <th>May</th>
+                                <th>Jun</th>
+                                <th>Jul</th>
+                                <th>Aug</th>
+                                <th>Sep</th>
+                                <th>Oct</th>
+                                <th>Nov</th>
+                                <th>Dec</th>
+                            </tr>
+                        </thead>
+                        <tbody id="rentYearTableBody">
+                            <tr><td colspan="15" class="muted">No data loaded.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="small muted" id="rentPageInfo" style="margin-top:8px"></div>
+                <div class="row space" style="margin-top:10px">
+                    <button class="btn" id="rentBtnPrev" onclick="prevRentPage()">Prev</button>
+                    <button class="btn" id="rentBtnNext" onclick="nextRentPage()">Next</button>
+                </div>
+            </div>
+
+                </main>
+            </div>
             <div class="footer">© <span id="year"></span> Dons Premier Estate Agents. Developed by - Kusal Wickremasingha.</div>
+        </div>
+            </div>
         </div>
 
         <!-- Login Modal -->
@@ -526,8 +974,8 @@
                                 <img src="https://ik.imagekit.io/donspremier/Banner%20-%20Logo.png?updatedAt=1767844482007" alt="Dons Premier Estate Agents" style="width:100%;height:100%;object-fit:contain;background:#000" />
                             </div>
                             <div class="login-brand" style="margin-top:14px">Dons Premier Estate Agents</div>
-                            <div class="login-sub" style="color:rgba(255,255,255,.78)">Email Agent</div>
-                            <div class="small" style="margin-top:12px;color:rgba(255,255,255,.70)">Sign in to access tickets, drafts, and Gmail sync controls.</div>
+                            <div class="login-sub" style="color:rgba(255,255,255,.78)">Secure Account Access</div>
+                            <div class="small" style="margin-top:12px;color:rgba(255,255,255,.70)">Sign in with your user account. Password and profile are managed in System.</div>
                         </div>
                         <div class="login-right">
                             <div class="field">
@@ -582,6 +1030,10 @@
                             <div class="label">Password</div>
                             <input type="password" id="newUserPassword" />
                         </div>
+                        <label class="checkbox">
+                            <input type="checkbox" id="newUserForcePassword" checked />
+                            Force password change at next login
+                        </label>
                         <button class="btn primary"
                             id="btnCreateUser"
                             onclick="createUserFromForm()">Create</button>
@@ -599,6 +1051,36 @@
                 <div class="modal-foot">
                     <button class="btn" id="btnUsersRefresh"
                         onclick="renderUsersList()">Refresh</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Change Password Modal -->
+        <div class="modal-backdrop hidden" id="passwordModal">
+            <div class="modal">
+                <div class="modal-head">
+                    <h3>Change Password</h3>
+                    <button class="btn ghost" onclick="closePasswordModal()">Close</button>
+                </div>
+                <div class="modal-body">
+                    <div class="field">
+                        <div class="label">Current Password</div>
+                        <input type="password" id="pwCurrent" autocomplete="current-password" />
+                    </div>
+                    <div class="field" style="margin-top:10px">
+                        <div class="label">New Password</div>
+                        <input type="password" id="pwNew" autocomplete="new-password" />
+                    </div>
+                    <div class="field" style="margin-top:10px">
+                        <div class="label">Confirm New Password</div>
+                        <input type="password" id="pwConfirm" autocomplete="new-password" />
+                    </div>
+                    <div class="small muted" style="margin-top:10px">Use at least 12 characters with upper/lowercase, number, and symbol.</div>
+                    <div class="error" id="pwError" style="display:none"></div>
+                </div>
+                <div class="modal-foot">
+                    <button class="btn" onclick="closePasswordModal()">Cancel</button>
+                    <button class="btn primary" onclick="submitPasswordChange()">Update Password</button>
                 </div>
             </div>
         </div>
@@ -706,6 +1188,11 @@
                         <textarea id="aiReplyExtra"
                             placeholder="e.g., confirm access window, quote requested, landlord approved, attach invoice number..."
                             style="width:100%;min-height:90px;padding:10px 12px;border:1px solid var(--border);border-radius:12px;font-size:13px"></textarea>
+                        <div class="row" style="margin-top:8px">
+                            <button class="btn" id="aiVoiceStartBtn" onclick="startAiVoiceCapture()">Start Voice</button>
+                            <button class="btn" id="aiVoiceStopBtn" onclick="stopAiVoiceCaptureAndTranscribe()" disabled>Stop & Insert</button>
+                            <span class="small muted" id="aiVoiceStatus">Voice input idle.</span>
+                        </div>
                     </div>
                     <div class="small muted" id="aiReplyMeta" style="margin-top:10px"></div>
                 </div>
@@ -828,3 +1315,4 @@
 
     </body>
 </html>
+

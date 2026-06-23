@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.authz import get_current_user
+from app.deps import get_current_mailbox
 from app.config import settings
 from app.db import get_db
 from app.services.state import get_state, set_state
@@ -44,40 +45,40 @@ def _strip_html(s: str) -> str:
 
 
 @router.get("/signature", response_model=SignatureOut)
-def get_signature(db: Session = Depends(get_db), user=Depends(get_current_user)):
-    sig = (get_state(db, "signature_text") or "").strip()
+def get_signature(db: Session = Depends(get_db), mailbox: str = Depends(get_current_mailbox), user=Depends(get_current_user)):
+    sig = (get_state(db, "signature_text", mailbox) or "").strip()
     if not sig:
         sig = (settings.DEFAULT_SIGNATURE or "").strip()
     return SignatureOut(signature=sig)
 
 
 @router.put("/signature", response_model=SignatureOut)
-def set_signature(payload: SignatureIn, db: Session = Depends(get_db), user=Depends(get_current_user)):
+def set_signature(payload: SignatureIn, db: Session = Depends(get_db), mailbox: str = Depends(get_current_mailbox), user=Depends(get_current_user)):
     sig = (payload.signature or "").strip()
-    set_state(db, "signature_text", sig)
+    set_state(db, "signature_text", sig, mailbox)
     safe_html = html.escape(sig).replace("\n", "<br>")
-    set_state(db, "signature_html", safe_html)
-    set_state(db, "signature_source", "manual")
-    set_state(db, "signature_send_as", "")
+    set_state(db, "signature_html", safe_html, mailbox)
+    set_state(db, "signature_source", "manual", mailbox)
+    set_state(db, "signature_send_as", "", mailbox)
     db.commit()
     return SignatureOut(signature=sig)
 
 
 @router.get("/signature/html")
-def get_signature_html(db: Session = Depends(get_db), user=Depends(get_current_user)):
-    sig_html = (get_state(db, "signature_html") or "").strip()
-    source = (get_state(db, "signature_source") or "").strip() or "manual"
-    send_as = (get_state(db, "signature_send_as") or "").strip()
+def get_signature_html(db: Session = Depends(get_db), mailbox: str = Depends(get_current_mailbox), user=Depends(get_current_user)):
+    sig_html = (get_state(db, "signature_html", mailbox) or "").strip()
+    source = (get_state(db, "signature_source", mailbox) or "").strip() or "manual"
+    send_as = (get_state(db, "signature_send_as", mailbox) or "").strip()
     return {"html": sig_html, "source": source, "send_as": send_as}
 
 
 @router.post("/signature/fetch-gmail")
-def fetch_gmail_signature(payload: GmailSignatureIn, db: Session = Depends(get_db), user=Depends(get_current_user)):
+def fetch_gmail_signature(payload: GmailSignatureIn, db: Session = Depends(get_db), mailbox: str = Depends(get_current_mailbox), user=Depends(get_current_user)):
     # Request the settings scope in addition to normal Gmail scopes
     scopes = list(dict.fromkeys(list(GMAIL_SCOPES) + [GMAIL_SIGNATURE_SCOPE]))
 
     try:
-        service = get_gmail_service(db=db, scopes=scopes)
+        service = get_gmail_service(db=db, scopes=scopes, impersonate_user=mailbox)
         user_id = gmail_user_id()
 
         sendas_list = (
@@ -125,10 +126,10 @@ def fetch_gmail_signature(payload: GmailSignatureIn, db: Session = Depends(get_d
 
         sig_text = _strip_html(sig_html)
 
-        set_state(db, "signature_html", sig_html)
-        set_state(db, "signature_text", sig_text)
-        set_state(db, "signature_source", "gmail")
-        set_state(db, "signature_send_as", send_as_email)
+        set_state(db, "signature_html", sig_html, mailbox)
+        set_state(db, "signature_text", sig_text, mailbox)
+        set_state(db, "signature_source", "gmail", mailbox)
+        set_state(db, "signature_send_as", send_as_email, mailbox)
         db.commit()
 
         return {"ok": True, "send_as_email": send_as_email}
@@ -157,3 +158,8 @@ def upload_signature_asset(asset_name: str, file: UploadFile = File(...), user=D
         f.write(content)
 
     return {"ok": True, "path": f"/static/signature/{asset_name}.png"}
+
+
+@router.get("/mailboxes")
+def list_mailboxes(user=Depends(get_current_user)):
+    return {"mailboxes": settings.monitored_mailboxes_list()}

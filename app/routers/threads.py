@@ -20,11 +20,20 @@ from googleapiclient.errors import HttpError
 from sqlalchemy.orm import Session
 
 from app.db import get_db
+from app.authz import get_current_user
+from app.models import ThreadTicket
 from app.services.gmail_client import get_gmail_service, gmail_user_id
 from app.services.gmail_parse import extract_message_body
 
 
 router = APIRouter()
+
+
+def _get_ticket(db: Session, thread_id: str) -> ThreadTicket:
+    ticket = db.query(ThreadTicket).filter(ThreadTicket.thread_id == thread_id).first()
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    return ticket
 
 
 def _normalize_cid(cid: str) -> str:
@@ -200,18 +209,19 @@ def _sanitize_html(html: str) -> str:
 
 
 @router.get("/{thread_id}")
-def get_thread(thread_id: str, db: Session = Depends(get_db)):
+def get_thread(thread_id: str, db: Session = Depends(get_db), user=Depends(get_current_user)):
     """Return a Gmail thread with both text and (when available) HTML bodies.
 
     Frontend can safely render HTML inside a sandboxed iframe.
     """
-    service = get_gmail_service(db)
+    ticket = _get_ticket(db, thread_id)
+    service = get_gmail_service(db, impersonate_user=ticket.mailbox)
 
     try:
         thread = (
             service.users()
             .threads()
-            .get(userId=gmail_user_id(), id=thread_id, format="full")
+            .get(userId=gmail_user_id(), id=ticket.gmail_thread_id, format="full")
             .execute()
         )
     except HttpError as e:

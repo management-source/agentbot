@@ -6,6 +6,7 @@ from sqlalchemy import (
     DateTime,
     Boolean,
     Integer,
+    Float,
     Enum as SAEnum,
     Text,
     ForeignKey,
@@ -40,6 +41,14 @@ class TicketCategory(str, Enum):
     GENERAL = "GENERAL"
 
 
+class RentTrackStatus(str, Enum):
+    DUE = "DUE"
+    PAID = "PAID"
+    PARTIAL = "PARTIAL"
+    VACANT = "VACANT"
+    AWAITING_CLEARANCE = "AWAITING_CLEARANCE"
+
+
 class AuditAction(str, Enum):
     CREATED = "CREATED"
     UPDATED = "UPDATED"
@@ -55,7 +64,8 @@ class BlacklistedSender(Base):
     __tablename__ = "blacklisted_senders"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    email: Mapped[str] = mapped_column(String, unique=True, index=True)
+    mailbox: Mapped[str] = mapped_column(String, index=True)
+    email: Mapped[str] = mapped_column(String, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
@@ -103,6 +113,12 @@ class User(Base):
     role: Mapped[UserRole] = mapped_column(SAEnum(UserRole), default=UserRole.PM, index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     password_hash: Mapped[str] = mapped_column(String)
+    avatar_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    password_changed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    failed_login_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    must_change_password: Mapped[bool] = mapped_column(Boolean, default=False)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
@@ -118,6 +134,7 @@ class ThreadTicketNote(Base):
     __tablename__ = "thread_ticket_notes"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    mailbox: Mapped[str] = mapped_column(String, index=True)
     thread_id: Mapped[str] = mapped_column(String, index=True)
     author_user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), index=True)
 
@@ -131,6 +148,7 @@ class ThreadTicketAudit(Base):
     __tablename__ = "thread_ticket_audit"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    mailbox: Mapped[str] = mapped_column(String, index=True)
     thread_id: Mapped[str] = mapped_column(String, index=True)
     action: Mapped[AuditAction] = mapped_column(SAEnum(AuditAction), index=True)
     actor_user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True, index=True)
@@ -145,7 +163,12 @@ class ThreadTicketAudit(Base):
 class ThreadTicket(Base):
     __tablename__ = "thread_tickets"
 
+    # Internal unique ticket identifier. We namespace by mailbox to prevent cross-mailbox collisions.
     thread_id: Mapped[str] = mapped_column(String, primary_key=True)
+    # Original Gmail thread id (without mailbox namespace)
+    gmail_thread_id: Mapped[str] = mapped_column(String, index=True)
+    mailbox: Mapped[str] = mapped_column(String, index=True)
+
     last_message_id: Mapped[str | None] = mapped_column(String, nullable=True)
 
     subject: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -211,3 +234,27 @@ class ThreadTicket(Base):
 
     owner = relationship("User", foreign_keys=[owner_user_id], back_populates="owned_tickets")
     assignee = relationship("User", foreign_keys=[assignee_user_id], back_populates="assigned_tickets")
+
+
+class RentDueTracker(Base):
+    __tablename__ = "rent_due_tracker"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    mailbox: Mapped[str] = mapped_column(String, index=True)
+
+    property_address: Mapped[str] = mapped_column(String, index=True)
+    frequency: Mapped[str] = mapped_column(String, default="MONTHLY", index=True)  # MONTHLY / FORTNIGHTLY
+
+    due_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    due_day: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    period_label: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    source_sheet: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    status: Mapped[RentTrackStatus] = mapped_column(SAEnum(RentTrackStatus), default=RentTrackStatus.DUE, index=True)
+    raw_value: Mapped[str | None] = mapped_column(Text, nullable=True)
+    paid_on: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    partial_amount: Mapped[float | None] = mapped_column(Float, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)

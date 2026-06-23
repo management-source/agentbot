@@ -30,8 +30,10 @@ def auth_status(db: Session = Depends(get_db)):
             "provider": "google_service_account",
             "mode": "service_account",
             "impersonate_user": settings.IMPERSONATE_USER,
+            "monitored_mailboxes": settings.monitored_mailboxes_list(),
             "scopes": SCOPES,
             "target_mailbox": settings.IMPERSONATE_USER,
+            "monitored_mailboxes": settings.monitored_mailboxes_list(),
         }
     token = db.query(OAuthToken).filter(OAuthToken.provider == "google").first()
     return {

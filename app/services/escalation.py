@@ -28,6 +28,7 @@ def run_sla_escalations(db: Session) -> int:
         t.updated_at = now
         add_audit(
             db,
+            mailbox=t.mailbox,
             thread_id=t.thread_id,
             action=AuditAction.ESCALATED,
             actor_user_id=None,
