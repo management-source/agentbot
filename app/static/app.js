@@ -706,7 +706,6 @@ function applySidebarState() {
     if (btn) {
         const label = collapsed ? "Expand menu" : "Collapse menu";
         btn.setAttribute("aria-label", label);
-        btn.setAttribute("title", label);
         btn.setAttribute("aria-expanded", String(!collapsed));
     }
 }
