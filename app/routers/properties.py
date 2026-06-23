@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import re
 import zipfile
+import json
 from datetime import datetime
 from io import BytesIO
+from urllib.parse import urlencode
+from urllib.request import urlopen
 import xml.etree.ElementTree as ET
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
@@ -19,6 +22,7 @@ from app.models import ManagedProperty, User
 router = APIRouter()
 
 NS = {"a": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+VICMAP_ADDRESS_QUERY_URL = "https://services-ap1.arcgis.com/P744lA0wf4LlBZ84/ArcGIS/rest/services/Vicmap_Address/FeatureServer/0/query"
 
 
 class PropertyCreateIn(BaseModel):
@@ -42,6 +46,13 @@ def _normalize_address_key(value: str | None) -> str:
 def _normalize_state_code(value: str | None) -> str | None:
     text = _normalize_text(value).upper()
     return text or None
+
+
+def _vic_state_code(value: str | None) -> str:
+    state = _normalize_state_code(value) or "VIC"
+    if state not in {"VIC", "VICTORIA"}:
+        raise HTTPException(status_code=400, detail="Only Victorian properties can be added.")
+    return "VIC"
 
 
 def _property_identity_key(
@@ -77,14 +88,18 @@ def _split_full_address(value: str | None) -> dict[str, str | None]:
         remaining.pop()
         if prefix:
             prefix_upper = prefix.upper()
-            if re.fullmatch(r"[A-Z]{2,3}", prefix_upper):
+            state_match = re.fullmatch(r"(.+?)\s+(VIC|VICTORIA|NSW|QLD|SA|WA|TAS|NT|ACT)", prefix_upper)
+            if state_match:
+                suburb = _normalize_text(prefix[: len(state_match.group(1))])
+                state_code = state_match.group(2)
+            elif prefix_upper in {"VIC", "VICTORIA", "NSW", "QLD", "SA", "WA", "TAS", "NT", "ACT"}:
                 state_code = prefix_upper
             else:
                 suburb = prefix
 
     if remaining:
         maybe_state = remaining[-1].upper()
-        if not state_code and re.fullmatch(r"[A-Z]{2,3}", maybe_state):
+        if not state_code and maybe_state in {"VIC", "VICTORIA", "NSW", "QLD", "SA", "WA", "TAS", "NT", "ACT"}:
             state_code = maybe_state
             remaining.pop()
 
@@ -245,6 +260,76 @@ def _property_to_dict(row: ManagedProperty) -> dict[str, object]:
     }
 
 
+def _title_address(value: str | None) -> str:
+    return _normalize_text(value).title()
+
+
+def _vicmap_address_where(query: str) -> str:
+    words = re.findall(r"[A-Za-z0-9]+", query.upper())[:6]
+    if not words:
+        raise HTTPException(status_code=400, detail="Search query is required.")
+    clauses = ["state = 'VIC'"]
+    clauses.extend(f"UPPER(ezi_address) LIKE '%{word}%'" for word in words)
+    return " AND ".join(clauses)
+
+
+@router.get("/address-suggestions")
+def address_suggestions(
+    q: str | None = None,
+    mailbox: str = Depends(get_current_mailbox),
+    _user: User = Depends(get_current_user),
+):
+    del mailbox
+    query = _normalize_text(q)
+    if len(query) < 3:
+        return {"items": []}
+
+    params = {
+        "where": _vicmap_address_where(query),
+        "outFields": "ezi_address,num_road_address,locality_name,state,postcode",
+        "returnGeometry": "false",
+        "resultRecordCount": "12",
+        "orderByFields": "ezi_address ASC",
+        "f": "json",
+    }
+    url = f"{VICMAP_ADDRESS_QUERY_URL}?{urlencode(params)}"
+    try:
+        with urlopen(url, timeout=8) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except Exception:
+        return {"items": []}
+
+    items: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for feature in payload.get("features", []):
+        attrs = feature.get("attributes") or {}
+        state = _normalize_state_code(attrs.get("state"))
+        if state not in {"VIC", "VICTORIA"}:
+            continue
+        street = _title_address(attrs.get("num_road_address") or attrs.get("ezi_address"))
+        suburb = _title_address(attrs.get("locality_name"))
+        postcode = _normalize_text(attrs.get("postcode"))
+        if not street or not suburb:
+            continue
+        label_tail = " ".join([x for x in [suburb, "VIC", postcode] if x])
+        label = ", ".join([street, label_tail])
+        key = _property_identity_key(street, suburb, "VIC", postcode)
+        if key in seen:
+            continue
+        seen.add(key)
+        items.append(
+            {
+                "label": label,
+                "property_address": street,
+                "suburb": suburb,
+                "state_code": "VIC",
+                "postcode": postcode,
+                "source": "vicmap",
+            }
+        )
+    return {"items": items}
+
+
 @router.post("/import-xlsx")
 async def import_xlsx(
     file: UploadFile = File(...),
@@ -287,7 +372,7 @@ async def import_xlsx(
         if match:
             match.address_line_2 = item["address_line_2"]
             match.suburb = item["suburb"]
-            match.state_code = item["state_code"]
+            match.state_code = _vic_state_code(item["state_code"])
             match.postcode = item["postcode"]
             match.is_active = True
             match.source = "xlsx_import"
@@ -298,7 +383,7 @@ async def import_xlsx(
                 property_address=item["property_address"] or "",
                 address_line_2=item["address_line_2"],
                 suburb=item["suburb"],
-                state_code=item["state_code"],
+                state_code=_vic_state_code(item["state_code"]),
                 postcode=item["postcode"],
                 is_active=True,
                 source="xlsx_import",
@@ -322,9 +407,12 @@ def create_property(
     address = _normalize_text(payload.property_address)
     if not address:
         raise HTTPException(status_code=400, detail="Property address is required.")
-    suburb = _normalize_text(payload.suburb) or None
-    state_code = _normalize_state_code(payload.state_code)
-    postcode = _normalize_text(payload.postcode) or None
+    parsed_address = _split_full_address(address)
+    if parsed_address.get("state_code"):
+        address = parsed_address["property_address"] or address
+    suburb = _normalize_text(payload.suburb) or parsed_address.get("suburb")
+    state_code = _vic_state_code(parsed_address.get("state_code") or payload.state_code)
+    postcode = _normalize_text(payload.postcode) or parsed_address.get("postcode")
     target_key = _property_identity_key(address, suburb, state_code, postcode)
     existing = db.query(ManagedProperty).filter(ManagedProperty.mailbox == mailbox).all()
     for row in existing:
@@ -348,6 +436,28 @@ def create_property(
     db.commit()
     db.refresh(row)
     return _property_to_dict(row)
+
+
+@router.delete("/{property_id}")
+def delete_property(
+    property_id: int,
+    mailbox: str = Depends(get_current_mailbox),
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    row = (
+        db.query(ManagedProperty)
+        .filter(ManagedProperty.mailbox == mailbox)
+        .filter(ManagedProperty.id == property_id)
+        .filter(ManagedProperty.is_active == True)
+        .first()
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Property not found.")
+    row.is_active = False
+    row.updated_at = datetime.utcnow()
+    db.commit()
+    return {"ok": True}
 
 
 @router.get("")
@@ -405,6 +515,11 @@ def property_options(
             {
                 "id": r.id,
                 "label": ", ".join([x for x in [r.property_address, r.suburb, r.postcode] if x]),
+                "property_address": r.property_address,
+                "address_line_2": r.address_line_2,
+                "suburb": r.suburb,
+                "state_code": r.state_code,
+                "postcode": r.postcode,
             }
             for r in rows
         ]

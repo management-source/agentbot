@@ -49,9 +49,14 @@
       min-height:100vh;
       display:grid;
       grid-template-columns: 232px minmax(0, 1fr);
+      transition:grid-template-columns .2s ease;
+    }
+    .app-shell.sidebar-collapsed{
+      grid-template-columns: 76px minmax(0, 1fr);
     }
     @media (max-width: 1040px){
-      .app-shell{grid-template-columns: 1fr}
+      .app-shell,
+      .app-shell.sidebar-collapsed{grid-template-columns: 1fr}
     }
 
     .sidebar{
@@ -65,6 +70,7 @@
       display:flex;
       flex-direction:column;
       gap:10px;
+      transition:width .2s ease, padding .2s ease;
     }
     @media (max-width: 1040px){
       .sidebar{
@@ -88,6 +94,19 @@
       background:#000;
       border:1px solid rgba(255,255,255,.1);
     }
+    .side-collapse{
+      width:100%;
+      border:1px solid rgba(255,255,255,.12);
+      background:rgba(255,255,255,.06);
+      color:#e5edf7;
+      border-radius:12px;
+      padding:9px 10px;
+      font-size:12px;
+      font-weight:800;
+      cursor:pointer;
+      text-align:left;
+    }
+    .side-collapse:hover{background:rgba(255,255,255,.10)}
     .side-brand h2{
       margin:0;
       font-size:15px;
@@ -122,6 +141,56 @@
     .side-nav a:not(.active):hover{
       background:rgba(255,255,255,.07);
       border-color:rgba(255,255,255,.1);
+    }
+    .side-bottom{
+      margin-top:auto;
+      display:flex;
+      flex-direction:column;
+      gap:8px;
+    }
+    .side-section-label{
+      color:#8fa0b5;
+      font-size:10px;
+      font-weight:900;
+      text-transform:uppercase;
+      letter-spacing:.12em;
+      padding:10px 11px 0;
+    }
+    .app-shell.sidebar-collapsed .sidebar{
+      padding:14px 8px;
+    }
+    .app-shell.sidebar-collapsed .side-brand img{
+      height:38px;
+      object-fit:cover;
+    }
+    .app-shell.sidebar-collapsed .side-collapse{
+      text-align:center;
+      font-size:0;
+      padding:10px 6px;
+    }
+    .app-shell.sidebar-collapsed .side-collapse::before{
+      content:"Menu";
+      font-size:11px;
+    }
+    .app-shell.sidebar-collapsed .side-section-label{
+      display:none;
+    }
+    .app-shell.sidebar-collapsed .side-nav a{
+      font-size:0;
+      text-align:center;
+      padding:11px 8px;
+    }
+    .app-shell.sidebar-collapsed .side-nav a::before{
+      content:attr(data-short);
+      font-size:12px;
+      font-weight:900;
+    }
+    @media (max-width: 1040px){
+      .app-shell.sidebar-collapsed .side-nav a{font-size:13px;text-align:left}
+      .app-shell.sidebar-collapsed .side-nav a::before{content:""}
+      .app-shell.sidebar-collapsed .side-section-label{display:block}
+      .app-shell.sidebar-collapsed .side-collapse{font-size:12px;text-align:left}
+      .app-shell.sidebar-collapsed .side-collapse::before{content:""}
     }
 
     .main-wrap{
@@ -244,6 +313,9 @@
     .dashboard-shell.rent-mode{
       grid-template-columns: 1fr;
     }
+    .dashboard-shell.portal-mode{
+      grid-template-columns: 1fr;
+    }
     .dashboard-shell.compliance-mode{
       grid-template-columns: 1fr;
     }
@@ -254,6 +326,7 @@
       grid-template-columns: 1fr;
     }
     .dashboard-shell.rent-mode .left-rail,
+    .dashboard-shell.portal-mode .left-rail,
     .dashboard-shell.compliance-mode .left-rail,
     .dashboard-shell.coverage-mode .left-rail,
     .dashboard-shell.properties-mode .left-rail{
@@ -308,6 +381,99 @@
       border-radius:var(--radius);
       box-shadow:var(--shadow);
       padding:16px;
+    }
+    .hub-hero{
+      position:relative;
+      overflow:hidden;
+      border-radius:24px;
+      padding:28px;
+      color:#fff;
+      background:
+        radial-gradient(circle at 88% 18%, rgba(255,255,255,.22) 0 0, transparent 24%),
+        linear-gradient(135deg, #111111 0%, #172033 48%, #8f6f1d 100%);
+      box-shadow:0 20px 44px rgba(15,23,42,.16);
+      border:1px solid rgba(255,255,255,.18);
+    }
+    .hub-hero::after{
+      content:"";
+      position:absolute;
+      inset:auto -80px -140px auto;
+      width:320px;
+      height:320px;
+      border-radius:999px;
+      background:rgba(255,255,255,.12);
+      filter:blur(2px);
+    }
+    .hub-hero h2{
+      margin:0;
+      font-size:clamp(30px, 4vw, 54px);
+      line-height:1;
+      letter-spacing:-.05em;
+      max-width:760px;
+    }
+    .hub-hero p{
+      margin:14px 0 0;
+      max-width:620px;
+      color:#dce8f7;
+      font-size:15px;
+      line-height:1.55;
+    }
+    .hub-grid{
+      display:grid;
+      grid-template-columns:repeat(3, minmax(0, 1fr));
+      gap:16px;
+      margin-top:16px;
+    }
+    @media (max-width: 1040px){
+      .hub-grid{grid-template-columns:1fr}
+    }
+    .hub-tile{
+      border:1px solid #d9e2ee;
+      border-radius:22px;
+      padding:18px;
+      background:
+        linear-gradient(180deg, rgba(255,255,255,.96), rgba(248,250,252,.98)),
+        radial-gradient(circle at top right, rgba(201,162,70,.16), transparent 42%);
+      min-height:156px;
+      cursor:pointer;
+      box-shadow:0 10px 26px rgba(15,23,42,.07);
+      transition:transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+    }
+    .hub-tile:hover{
+      transform:translateY(-3px);
+      box-shadow:0 18px 38px rgba(15,23,42,.12);
+      border-color:#c9a246;
+    }
+    .hub-tile .tile-mark{
+      width:40px;
+      height:40px;
+      border-radius:14px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      background:#111827;
+      color:#f9e7a7;
+      font-weight:900;
+      margin-bottom:14px;
+    }
+    .hub-tile h3{
+      margin:0;
+      font-size:17px;
+      letter-spacing:-.02em;
+    }
+    .hub-tile p{
+      margin:8px 0 0;
+      color:var(--muted);
+      font-size:13px;
+      line-height:1.45;
+    }
+    .hub-tile .tile-action{
+      margin-top:16px;
+      color:#8f6f1d;
+      font-weight:900;
+      font-size:12px;
+      text-transform:uppercase;
+      letter-spacing:.08em;
     }
 
     .top-grid{
@@ -952,14 +1118,21 @@
                 <div class="side-brand">
                     <img src="https://ik.imagekit.io/donspremier/Banner%20-%20Logo.png?updatedAt=1767844482007" alt="Dons Premier Estate Agents" loading="lazy" />
                 </div>
+                <button class="side-collapse" id="sidebarToggle" onclick="toggleSidebar()">Collapse Menu</button>
                 <nav class="side-nav">
-                    <a id="navInbox" class="active" href="javascript:void(0)" onclick="switchDashboardTab('inbox')">Inbox Dashboard</a>
-                    <a id="navRentTracker" href="javascript:void(0)" onclick="switchDashboardTab('rent')">Rent Tracker</a>
-                    <a id="navProperties" href="javascript:void(0)" onclick="switchDashboardTab('properties')">Properties</a>
-                    <a id="navCompliance" href="javascript:void(0)" onclick="switchDashboardTab('compliance')">Compliance</a>
-                    <a id="navComplianceCoverage" href="javascript:void(0)" onclick="switchDashboardTab('coverage')">Compliance Gaps</a>
-                    <a id="btnSystemUsers" href="javascript:void(0)" style="display:none" onclick="openUsersModal()">System</a>
+                    <a id="navPortal" class="active" data-short="Hub" href="javascript:void(0)" onclick="switchDashboardTab('portal')">Portal Hub</a>
+                    <a id="navInbox" data-short="Mail" href="javascript:void(0)" onclick="switchDashboardTab('inbox')">Email Manager</a>
+                    <a id="navRentTracker" data-short="Rent" href="javascript:void(0)" onclick="switchDashboardTab('rent')">Rent Tracker</a>
+                    <a id="navCompliance" data-short="Comp" href="javascript:void(0)" onclick="switchDashboardTab('compliance')">Compliance</a>
+                    <a id="navComplianceCoverage" data-short="Rpt" href="javascript:void(0)" onclick="switchDashboardTab('coverage')">Compliance Report</a>
                 </nav>
+                <div class="side-bottom">
+                    <div class="side-section-label">Setup</div>
+                    <nav class="side-nav">
+                        <a id="navProperties" data-short="Prop" href="javascript:void(0)" onclick="switchDashboardTab('properties')">Properties</a>
+                        <a id="btnSystemUsers" data-short="Sys" href="javascript:void(0)" style="display:none" onclick="openUsersModal()">System</a>
+                    </nav>
+                </div>
             </aside>
             <div class="main-wrap">
             <div class="account-bar">
@@ -977,8 +1150,8 @@
             </div>
             <div class="topbar-modern">
             <div>
-                <h1>Email Manager</h1>
-                <p>Unified inbox operations with clear action queues and fast follow-up tools.</p>
+                <h1 id="topbarTitle">Portal Hub</h1>
+                <p id="topbarSubtitle">Your workspace shortcuts for email, rent, compliance, and property setup.</p>
             </div>
             <div class="topbar-actions">
                 <span class="chip">Mode: Live</span>
@@ -1066,7 +1239,53 @@
                 </aside>
 
                 <main class="content-rail">
-            <div id="inboxPanel">
+            <div id="portalPanel">
+                <div class="hub-hero">
+                    <div class="login-kicker" style="color:#f9e7a7;margin-bottom:12px">Dons Premier Estate Agents Portal</div>
+                    <h2>Everything important, one confident click away.</h2>
+                    <p>Jump straight into email operations, rent tracking, compliance work, reporting, and the property register without digging through menus.</p>
+                </div>
+                <div class="hub-grid">
+                    <div class="hub-tile" onclick="switchDashboardTab('inbox')">
+                        <div class="tile-mark">EM</div>
+                        <h3>Email Manager</h3>
+                        <p>Manage inbox queues, quick replies, AI drafts, sync controls, and active conversations.</p>
+                        <div class="tile-action">Open emails</div>
+                    </div>
+                    <div class="hub-tile" onclick="switchDashboardTab('rent')">
+                        <div class="tile-mark">RT</div>
+                        <h3>Rent Tracker</h3>
+                        <p>Import rent schedules and monitor overdue, due soon, paid, partial, and vacant statuses.</p>
+                        <div class="tile-action">Track rent</div>
+                    </div>
+                    <div class="hub-tile" onclick="switchDashboardTab('compliance')">
+                        <div class="tile-mark">CL</div>
+                        <h3>Compliance</h3>
+                        <p>Add checks, update providers, completion dates, findings, and automatically calculate due dates.</p>
+                        <div class="tile-action">Manage checks</div>
+                    </div>
+                    <div class="hub-tile" onclick="switchDashboardTab('coverage')">
+                        <div class="tile-mark">CR</div>
+                        <h3>Compliance Report</h3>
+                        <p>See which properties are missing or have incomplete MRS, Smoke, Gas, and Electrical checks.</p>
+                        <div class="tile-action">Review gaps</div>
+                    </div>
+                    <div class="hub-tile" onclick="switchDashboardTab('properties')">
+                        <div class="tile-mark">PR</div>
+                        <h3>Properties</h3>
+                        <p>Import, add, search, and maintain your active Victorian managed property register.</p>
+                        <div class="tile-action">Open register</div>
+                    </div>
+                    <div class="hub-tile hidden" id="portalSystemTile" onclick="openUsersModal()">
+                        <div class="tile-mark">AD</div>
+                        <h3>System</h3>
+                        <p>Admin-only user management and access control tools for the portal.</p>
+                        <div class="tile-action">Manage access</div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="inboxPanel" class="hidden">
 
             <div class="filters-row">
                 <div class="seg" id="statusSeg">
@@ -1234,7 +1453,8 @@
                     <div class="row" style="align-items:flex-end">
                         <div class="field" style="min-width:280px;flex:1">
                             <div class="label">Property Address</div>
-                            <input type="text" id="newPropertyAddress" placeholder="e.g. 12 Smith Street" />
+                            <input type="text" id="newPropertyAddress" list="propertyAddressSuggestions" placeholder="Start typing a Victorian property address..." autocomplete="off" />
+                            <datalist id="propertyAddressSuggestions"></datalist>
                         </div>
                         <div class="field" style="min-width:180px">
                             <div class="label">Suburb</div>
@@ -1242,7 +1462,7 @@
                         </div>
                         <div class="field" style="width:110px">
                             <div class="label">State</div>
-                            <input type="text" id="newPropertyState" value="VIC" />
+                            <input type="text" id="newPropertyState" value="VIC" readonly />
                         </div>
                         <div class="field" style="width:130px">
                             <div class="label">Postcode</div>
@@ -1250,6 +1470,7 @@
                         </div>
                         <button class="btn primary" onclick="createPropertyFromForm()">Add Property</button>
                     </div>
+                    <div class="small muted" style="margin-top:8px">Victorian properties only. You can paste a full address like "12 Smith Street, Cranbourne, VIC, 3977" and the suburb/postcode will be filled where possible.</div>
                 </div>
 
                 <div class="filters-row">
@@ -1271,10 +1492,11 @@
                                 <th>State</th>
                                 <th>Postcode</th>
                                 <th>Source</th>
+                                <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody id="propertiesTableBody">
-                            <tr><td colspan="5" class="muted">No properties loaded.</td></tr>
+                            <tr><td colspan="6" class="muted">No properties loaded.</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -1323,7 +1545,9 @@
                     <div class="row" style="align-items:flex-end">
                         <div class="field" style="min-width:280px;flex:1">
                             <div class="label">Property</div>
-                            <select id="compliancePropertySelect"></select>
+                            <input type="text" id="compliancePropertySearch" list="compliancePropertyOptions" placeholder="Search and select a property..." autocomplete="off" />
+                            <input type="hidden" id="compliancePropertyId" />
+                            <datalist id="compliancePropertyOptions"></datalist>
                         </div>
                         <div class="field" style="min-width:160px">
                             <div class="label">Type</div>
@@ -1422,7 +1646,7 @@
                 <div class="card">
                     <div class="row space">
                         <div>
-                            <p class="panel-title">Compliance Gaps</p>
+                            <p class="panel-title">Compliance Report</p>
                             <p class="panel-sub">Check which managed properties are missing or have incomplete MRS, Smoke, Gas, and Electrical records.</p>
                         </div>
                         <button class="btn" onclick="loadComplianceCoverage(1)">Refresh</button>
@@ -1650,7 +1874,7 @@
             </div>
         </div>
 
-        <script src="/static/app.js?v=4"></script>
+        <script src="/static/app.js?v=5"></script>
 
         <script>
   // Wire segmented status buttons to existing tab logic

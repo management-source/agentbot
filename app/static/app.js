@@ -6,7 +6,7 @@ let aiVoiceStream = null;
 let aiVoiceChunks = [];
 let aiSpeechRecognition = null;
 let aiSpeechTranscript = "";
-let currentDashboardTab = "inbox";
+let currentDashboardTab = "portal";
 
 // Mailbox context (multi-inbox)
 let currentMailbox = localStorage.getItem("agent_mailbox") || "";
@@ -67,6 +67,9 @@ let complianceLoadedOnce = false;
 let currentCoveragePage = 1;
 let coverageLoadedOnce = false;
 let propertyOptionsCache = [];
+let propertyOptionsByLabel = {};
+let addressSuggestionsByLabel = {};
+let addressSuggestionTimer = null;
 let complianceRecordsCache = {};
 let editingComplianceRecordId = null;
 
@@ -79,6 +82,11 @@ function updateSyncContextUI() {
     const viewBadge = document.getElementById("queueViewMode");
     const mailboxBadge = document.getElementById("queueMailboxMode");
     if (mailboxBadge) mailboxBadge.textContent = currentMailbox || "-";
+    if (currentDashboardTab === "portal") {
+        if (viewBadge) viewBadge.textContent = "Portal Hub";
+        if (info) info.textContent = "Portal Hub: choose a workspace tile or use the menu to jump into a feature.";
+        return;
+    }
     if (currentDashboardTab === "rent") {
         if (viewBadge) viewBadge.textContent = "Rent Tracker";
         if (info) info.textContent = "Inbox sync controls are hidden while you are on the rent tracker tab.";
@@ -90,8 +98,8 @@ function updateSyncContextUI() {
         return;
     }
     if (currentDashboardTab === "coverage") {
-        if (viewBadge) viewBadge.textContent = "Compliance Gaps";
-        if (info) info.textContent = "Inbox sync controls are hidden while you are on the compliance gaps tab.";
+        if (viewBadge) viewBadge.textContent = "Compliance Report";
+        if (info) info.textContent = "Inbox sync controls are hidden while you are on the compliance report tab.";
         return;
     }
     if (currentDashboardTab === "properties") {
@@ -134,12 +142,29 @@ async function initMailboxes() {
             localStorage.setItem("agent_mailbox", currentMailbox);
             // refresh UI data under new mailbox
             currentPage = 1;
+            rentLoadedOnce = false;
+            propertiesLoadedOnce = false;
+            complianceLoadedOnce = false;
+            coverageLoadedOnce = false;
             updateSyncContextUI();
             loadTickets();
             if (currentDashboardTab === "rent") {
                 currentRentPage = 1;
                 loadActiveRentView();
             }
+            if (currentDashboardTab === "properties") {
+                currentPropertiesPage = 1;
+                loadProperties();
+            }
+            if (currentDashboardTab === "compliance") {
+                currentCompliancePage = 1;
+                loadComplianceDashboard();
+            }
+            if (currentDashboardTab === "coverage") {
+                currentCoveragePage = 1;
+                loadComplianceCoverage();
+            }
+            refreshPropertyOptions();
             refreshGoogleStatus();
         });
 
@@ -608,30 +633,48 @@ function formatDateShort(dt) {
 }
 
 function switchDashboardTab(tab) {
-    currentDashboardTab = ["rent", "compliance", "coverage", "properties"].includes(tab) ? tab : "inbox";
+    currentDashboardTab = ["portal", "rent", "compliance", "coverage", "properties", "inbox"].includes(tab) ? tab : "portal";
+    const titles = {
+        portal: ["Portal Hub", "Your workspace shortcuts for email, rent, compliance, and property setup."],
+        inbox: ["Email Manager", "Unified inbox operations with clear action queues and fast follow-up tools."],
+        rent: ["Rent Tracker", "Track rental due dates, payments, arrears, and yearly rent reporting."],
+        compliance: ["Compliance", "Create and update compliance records with calculated due dates."],
+        coverage: ["Compliance Report", "Review missing and incomplete MRS, Smoke, Gas, and Electrical checks."],
+        properties: ["Properties", "Maintain the active Victorian managed property register."],
+    };
+    const title = document.getElementById("topbarTitle");
+    const subtitle = document.getElementById("topbarSubtitle");
+    if (title) title.textContent = titles[currentDashboardTab]?.[0] || "Portal Hub";
+    if (subtitle) subtitle.textContent = titles[currentDashboardTab]?.[1] || "";
+    
+    const portalPanel = document.getElementById("portalPanel");
     const inboxPanel = document.getElementById("inboxPanel");
     const rentPanel = document.getElementById("rentPanel");
     const propertiesPanel = document.getElementById("propertiesPanel");
     const compliancePanel = document.getElementById("compliancePanel");
     const coveragePanel = document.getElementById("coveragePanel");
     const navInbox = document.getElementById("navInbox");
+    const navPortal = document.getElementById("navPortal");
     const navRent = document.getElementById("navRentTracker");
     const navProperties = document.getElementById("navProperties");
     const navCompliance = document.getElementById("navCompliance");
     const navCoverage = document.getElementById("navComplianceCoverage");
     const shell = document.getElementById("dashboardShell");
 
+    if (portalPanel) portalPanel.classList.toggle("hidden", currentDashboardTab !== "portal");
     if (inboxPanel) inboxPanel.classList.toggle("hidden", currentDashboardTab !== "inbox");
     if (rentPanel) rentPanel.classList.toggle("hidden", currentDashboardTab !== "rent");
     if (propertiesPanel) propertiesPanel.classList.toggle("hidden", currentDashboardTab !== "properties");
     if (compliancePanel) compliancePanel.classList.toggle("hidden", currentDashboardTab !== "compliance");
     if (coveragePanel) coveragePanel.classList.toggle("hidden", currentDashboardTab !== "coverage");
+    if (navPortal) navPortal.classList.toggle("active", currentDashboardTab === "portal");
     if (navInbox) navInbox.classList.toggle("active", currentDashboardTab === "inbox");
     if (navRent) navRent.classList.toggle("active", currentDashboardTab === "rent");
     if (navProperties) navProperties.classList.toggle("active", currentDashboardTab === "properties");
     if (navCompliance) navCompliance.classList.toggle("active", currentDashboardTab === "compliance");
     if (navCoverage) navCoverage.classList.toggle("active", currentDashboardTab === "coverage");
     if (shell) {
+        shell.classList.toggle("portal-mode", currentDashboardTab === "portal");
         shell.classList.toggle("rent-mode", currentDashboardTab === "rent");
         shell.classList.toggle("compliance-mode", currentDashboardTab === "compliance");
         shell.classList.toggle("coverage-mode", currentDashboardTab === "coverage");
@@ -644,6 +687,7 @@ function switchDashboardTab(tab) {
     }
     if (currentDashboardTab === "properties" && !propertiesLoadedOnce) {
         loadProperties();
+        refreshPropertyOptions();
     }
     if (currentDashboardTab === "compliance" && !complianceLoadedOnce) {
         refreshPropertyOptions();
@@ -652,6 +696,21 @@ function switchDashboardTab(tab) {
     if (currentDashboardTab === "coverage" && !coverageLoadedOnce) {
         loadComplianceCoverage();
     }
+}
+
+function applySidebarState() {
+    const shell = document.getElementById("appShell");
+    const btn = document.getElementById("sidebarToggle");
+    const collapsed = localStorage.getItem("agent_sidebar_collapsed") === "1";
+    if (shell) shell.classList.toggle("sidebar-collapsed", collapsed);
+    if (btn) btn.textContent = collapsed ? "Expand Menu" : "Collapse Menu";
+}
+
+function toggleSidebar() {
+    const shell = document.getElementById("appShell");
+    const collapsed = !(shell && shell.classList.contains("sidebar-collapsed"));
+    localStorage.setItem("agent_sidebar_collapsed", collapsed ? "1" : "0");
+    applySidebarState();
 }
 
 function rentStatusChip(status) {
@@ -1087,12 +1146,12 @@ async function loadProperties(page = null) {
     if (query) url.searchParams.set("query", query);
 
     const body = document.getElementById("propertiesTableBody");
-    if (body) body.innerHTML = `<tr><td colspan="5" class="muted">Loading...</td></tr>`;
+    if (body) body.innerHTML = `<tr><td colspan="6" class="muted">Loading...</td></tr>`;
 
     const r = await apiFetch(url.toString());
     const t = await r.text();
     if (!r.ok) {
-        if (body) body.innerHTML = `<tr><td colspan="5" class="muted">Failed to load properties: ${escapeHtml(t)}</td></tr>`;
+        if (body) body.innerHTML = `<tr><td colspan="6" class="muted">Failed to load properties: ${escapeHtml(t)}</td></tr>`;
         return;
     }
     const data = JSON.parse(t);
@@ -1100,7 +1159,7 @@ async function loadProperties(page = null) {
     const items = Array.isArray(data.items) ? data.items : [];
     if (body) {
         if (!items.length) {
-            body.innerHTML = `<tr><td colspan="5" class="muted">No properties found.</td></tr>`;
+            body.innerHTML = `<tr><td colspan="6" class="muted">No properties found.</td></tr>`;
         } else {
             body.innerHTML = items.map((row) => `
                 <tr>
@@ -1109,6 +1168,7 @@ async function loadProperties(page = null) {
                     <td>${escapeHtml(row.state_code || "-")}</td>
                     <td>${escapeHtml(row.postcode || "-")}</td>
                     <td>${escapeHtml(row.source || "-")}</td>
+                    <td><button class="btn danger" onclick="deleteProperty(${row.id})">Delete</button></td>
                 </tr>
             `).join("");
         }
@@ -1127,6 +1187,152 @@ async function loadProperties(page = null) {
     if (btnNext) btnNext.disabled = !Boolean(data.has_more);
 }
 
+function splitAustralianAddress(value) {
+    const text = String(value || "").replace(/\s+/g, " ").trim();
+    const parts = text.split(",").map((part) => part.trim()).filter(Boolean);
+    if (parts.length < 2) return null;
+    const states = new Set(["VIC", "VICTORIA", "NSW", "QLD", "SA", "WA", "TAS", "NT", "ACT"]);
+    let postcode = "";
+    let state = "";
+    let suburb = "";
+    let unsupportedState = "";
+    const setState = (raw) => {
+        const normalized = String(raw || "").trim().toUpperCase();
+        if (!states.has(normalized)) return false;
+        state = normalized === "VICTORIA" ? "VIC" : normalized;
+        if (state !== "VIC") unsupportedState = state;
+        return true;
+    };
+    const remaining = [...parts];
+    const last = remaining[remaining.length - 1] || "";
+    const postcodeMatch = last.match(/\b(\d{4})\b$/);
+    if (postcodeMatch) {
+        postcode = postcodeMatch[1];
+        const prefix = last.slice(0, postcodeMatch.index).trim();
+        remaining.pop();
+        if (prefix) {
+            const stateWithSuburb = prefix.match(/^(.+?)\s+(VIC|VICTORIA|NSW|QLD|SA|WA|TAS|NT|ACT)$/i);
+            if (stateWithSuburb) {
+                suburb = stateWithSuburb[1].trim();
+                setState(stateWithSuburb[2]);
+            } else if (!setState(prefix)) {
+                suburb = prefix;
+            }
+        }
+    }
+    if (remaining.length) {
+        const maybeState = remaining[remaining.length - 1].toUpperCase();
+        if (!state && setState(maybeState)) {
+            remaining.pop();
+        }
+    }
+    if (remaining.length >= 2 && !suburb) suburb = remaining.pop();
+    const propertyAddress = remaining.join(", ") || text;
+    return { propertyAddress, suburb, state: state || "VIC", postcode, unsupportedState };
+}
+
+function fillPropertyFormFromOption(option) {
+    if (!option) return;
+    const address = document.getElementById("newPropertyAddress");
+    const suburb = document.getElementById("newPropertySuburb");
+    const state = document.getElementById("newPropertyState");
+    const postcode = document.getElementById("newPropertyPostcode");
+    if (address) address.value = option.property_address || option.label || "";
+    if (suburb) suburb.value = option.suburb || "";
+    if (state) state.value = "VIC";
+    if (postcode) postcode.value = option.postcode || "";
+}
+
+function rememberAddressSuggestion(option) {
+    if (!option) return;
+    [option.label, option.property_address].forEach((value) => {
+        const key = String(value || "").trim().toLowerCase();
+        if (key) addressSuggestionsByLabel[key] = option;
+    });
+}
+
+function renderAddressSuggestionOptions(remoteItems = [], filterValue = "") {
+    const addressList = document.getElementById("propertyAddressSuggestions");
+    if (!addressList) return;
+    const needle = String(filterValue || "").trim().toLowerCase();
+    addressSuggestionsByLabel = {};
+    const merged = [];
+    const seen = new Set();
+    const addOption = (option) => {
+        const label = String(option?.label || option?.property_address || "").trim();
+        const key = label.toLowerCase();
+        if (!label || seen.has(key)) return;
+        seen.add(key);
+        merged.push({ ...option, label });
+        rememberAddressSuggestion({ ...option, label });
+    };
+    (Array.isArray(remoteItems) ? remoteItems : []).forEach(addOption);
+    propertyOptionsCache
+        .filter((p) => !needle || String(p.label || "").toLowerCase().includes(needle))
+        .slice(0, 40)
+        .forEach(addOption);
+    addressList.innerHTML = merged
+        .slice(0, 60)
+        .map((p) => `<option value="${escapeHtml(p.label || "")}"></option>`)
+        .join("");
+}
+
+async function loadVictorianAddressSuggestions(value) {
+    const query = String(value || "").trim();
+    if (query.length < 3) {
+        renderAddressSuggestionOptions([], query);
+        return;
+    }
+    const url = new URL("/properties/address-suggestions", window.location.origin);
+    url.searchParams.set("q", query);
+    try {
+        const r = await apiFetch(url.pathname + url.search);
+        if (!r.ok) {
+            renderAddressSuggestionOptions([], query);
+            return;
+        }
+        const data = await r.json();
+        const currentValue = (document.getElementById("newPropertyAddress")?.value || "").trim();
+        if (currentValue !== query) return;
+        renderAddressSuggestionOptions(Array.isArray(data.items) ? data.items : [], query);
+    } catch {
+        renderAddressSuggestionOptions([], query);
+    }
+}
+
+function scheduleAddressSuggestionSearch() {
+    const address = document.getElementById("newPropertyAddress");
+    const value = address ? address.value : "";
+    if (addressSuggestionTimer) clearTimeout(addressSuggestionTimer);
+    addressSuggestionTimer = setTimeout(() => loadVictorianAddressSuggestions(value), 300);
+}
+
+function autocompleteNewPropertyFields() {
+    const address = document.getElementById("newPropertyAddress");
+    if (!address) return;
+    const raw = address.value || "";
+    const exact = addressSuggestionsByLabel[raw.trim().toLowerCase()] || propertyOptionsByLabel[raw.trim().toLowerCase()];
+    if (exact) {
+        fillPropertyFormFromOption(exact);
+        return;
+    }
+    const parsed = splitAustralianAddress(raw);
+    if (!parsed) return;
+    if (parsed.unsupportedState) {
+        alert("Only Victorian properties can be added. This address looks like it is in " + parsed.unsupportedState + ".");
+        address.focus();
+        return false;
+    }
+    const suburb = document.getElementById("newPropertySuburb");
+    const state = document.getElementById("newPropertyState");
+    const postcode = document.getElementById("newPropertyPostcode");
+    address.value = parsed.propertyAddress;
+    if (suburb && parsed.suburb) suburb.value = parsed.suburb;
+    if (state) state.value = "VIC";
+    if (postcode && parsed.postcode) postcode.value = parsed.postcode;
+    return true;
+}
+
 function prevPropertiesPage() {
     if (currentPropertiesPage <= 1) return;
     currentPropertiesPage -= 1;
@@ -1139,9 +1345,10 @@ function nextPropertiesPage() {
 }
 
 async function createPropertyFromForm() {
+    if (autocompleteNewPropertyFields() === false) return;
     const property_address = (document.getElementById("newPropertyAddress")?.value || "").trim();
     const suburb = (document.getElementById("newPropertySuburb")?.value || "").trim();
-    const state_code = (document.getElementById("newPropertyState")?.value || "").trim();
+    const state_code = "VIC";
     const postcode = (document.getElementById("newPropertyPostcode")?.value || "").trim();
     if (!property_address) {
         alert("Property address is required.");
@@ -1165,6 +1372,22 @@ async function createPropertyFromForm() {
     propertiesLoadedOnce = false;
     await loadProperties();
     await refreshPropertyOptions();
+}
+
+async function deleteProperty(propertyId, label = "this property") {
+    if (!confirm(`Delete ${label} from the active property register? Compliance records will be kept in history.`)) return;
+    const r = await apiFetch(`/properties/${propertyId}`, { method: "DELETE" });
+    const t = await r.text();
+    if (!r.ok) {
+        alert(`Failed to delete property (${r.status}):\n\n${t}`);
+        return;
+    }
+    currentPropertiesPage = 1;
+    propertiesLoadedOnce = false;
+    await loadProperties();
+    await refreshPropertyOptions();
+    if (complianceLoadedOnce) await loadComplianceDashboard(1);
+    if (coverageLoadedOnce) await loadComplianceCoverage(1);
 }
 
 async function importPropertiesWorkbook() {
@@ -1195,23 +1418,55 @@ async function importPropertiesWorkbook() {
 }
 
 async function refreshPropertyOptions() {
-    const select = document.getElementById("compliancePropertySelect");
+    const search = document.getElementById("compliancePropertySearch");
+    const hidden = document.getElementById("compliancePropertyId");
+    const complianceList = document.getElementById("compliancePropertyOptions");
     try {
         const r = await apiFetch("/properties/options");
         if (!r.ok) {
-            if (select) select.innerHTML = `<option value="">No properties loaded</option>`;
+            if (complianceList) complianceList.innerHTML = "";
+            renderAddressSuggestionOptions();
+            if (hidden) hidden.value = "";
             return;
         }
         const data = await r.json();
         propertyOptionsCache = Array.isArray(data.items) ? data.items : [];
-        if (select) {
-            select.innerHTML = propertyOptionsCache.length
-                ? propertyOptionsCache.map((p) => `<option value="${p.id}">${escapeHtml(p.label || "")}</option>`).join("")
-                : `<option value="">No properties loaded</option>`;
+        propertyOptionsByLabel = {};
+        propertyOptionsCache.forEach((p) => {
+            propertyOptionsByLabel[String(p.label || "").trim().toLowerCase()] = p;
+            propertyOptionsByLabel[String(p.property_address || "").trim().toLowerCase()] = p;
+        });
+        const optionsHtml = propertyOptionsCache
+            .map((p) => `<option value="${escapeHtml(p.label || "")}"></option>`)
+            .join("");
+        if (complianceList) complianceList.innerHTML = optionsHtml;
+        renderAddressSuggestionOptions();
+        if (search && hidden) {
+            const match = resolvePropertySearchValue(search.value);
+            hidden.value = match ? String(match.id) : "";
         }
     } catch {
-        if (select) select.innerHTML = `<option value="">No properties loaded</option>`;
+        if (complianceList) complianceList.innerHTML = "";
+        renderAddressSuggestionOptions();
+        if (hidden) hidden.value = "";
     }
+}
+
+function resolvePropertySearchValue(value) {
+    const needle = String(value || "").trim().toLowerCase();
+    if (!needle) return null;
+    if (propertyOptionsByLabel[needle]) return propertyOptionsByLabel[needle];
+    const matches = propertyOptionsCache.filter((p) => String(p.label || "").toLowerCase().includes(needle));
+    return matches.length === 1 ? matches[0] : null;
+}
+
+function updateCompliancePropertySelection() {
+    const search = document.getElementById("compliancePropertySearch");
+    const hidden = document.getElementById("compliancePropertyId");
+    if (!search || !hidden) return null;
+    const match = resolvePropertySearchValue(search.value);
+    hidden.value = match ? String(match.id) : "";
+    return match;
 }
 
 function getComplianceFilters() {
@@ -1335,9 +1590,10 @@ function nextCompliancePage() {
 }
 
 async function createComplianceRecord() {
-    const propertyId = Number(document.getElementById("compliancePropertySelect")?.value || 0);
+    const selectedProperty = updateCompliancePropertySelection();
+    const propertyId = Number(selectedProperty?.id || document.getElementById("compliancePropertyId")?.value || 0);
     if (!propertyId) {
-        alert("Add or import properties first, then choose a property.");
+        alert("Search and select a property from the suggestions first.");
         return;
     }
     const compliance_type = (document.getElementById("complianceTypeInput")?.value || "OTHER").trim();
@@ -1526,7 +1782,7 @@ async function loadComplianceCoverage(page = null) {
     const r = await apiFetch(url.toString());
     const t = await r.text();
     if (!r.ok) {
-        if (body) body.innerHTML = `<tr><td colspan="6" class="muted">Failed to load compliance gaps: ${escapeHtml(t)}</td></tr>`;
+        if (body) body.innerHTML = `<tr><td colspan="6" class="muted">Failed to load compliance report: ${escapeHtml(t)}</td></tr>`;
         return;
     }
     const data = JSON.parse(t);
@@ -1545,7 +1801,7 @@ async function loadComplianceCoverage(page = null) {
     const items = Array.isArray(data.items) ? data.items : [];
     if (body) {
         if (!items.length) {
-            body.innerHTML = `<tr><td colspan="6" class="muted">No compliance gaps found for this filter.</td></tr>`;
+            body.innerHTML = `<tr><td colspan="6" class="muted">No compliance report items found for this filter.</td></tr>`;
         } else {
             body.innerHTML = items.map((row) => `
                 <tr>
@@ -2791,6 +3047,8 @@ async function ensureAuthenticated() {
     }
     const systemBtn = document.getElementById("btnSystemUsers");
     if (systemBtn) systemBtn.style.display = (String(currentUser.role || "").toUpperCase() === "ADMIN") ? "block" : "none";
+    const portalSystemTile = document.getElementById("portalSystemTile");
+    if (portalSystemTile) portalSystemTile.classList.toggle("hidden", String(currentUser.role || "").toUpperCase() !== "ADMIN");
 
     if (currentUser.must_change_password) {
         setTimeout(() => openPasswordModal(), 100);
@@ -2868,6 +3126,8 @@ function logout() {
     closeAccountMenu();
     const systemBtn = document.getElementById("btnSystemUsers");
     if (systemBtn) systemBtn.style.display = "none";
+    const portalSystemTile = document.getElementById("portalSystemTile");
+    if (portalSystemTile) portalSystemTile.classList.add("hidden");
     const authDot = document.getElementById("authDot");
     if (authDot) {
         authDot.classList.remove("green");
@@ -2898,7 +3158,7 @@ window.addEventListener("load", async () => {
     });
 
     await refreshGoogleStatus();
-    initMailboxes();
+    await initMailboxes();
 
     // Small UX: show a one-time confirmation after OAuth callback.
     try {
@@ -2972,6 +3232,17 @@ window.addEventListener("load", async () => {
             }, 250);
         });
     }
+    const newPropertyAddress = document.getElementById("newPropertyAddress");
+    if (newPropertyAddress) {
+        newPropertyAddress.addEventListener("input", scheduleAddressSuggestionSearch);
+        newPropertyAddress.addEventListener("change", autocompleteNewPropertyFields);
+        newPropertyAddress.addEventListener("blur", autocompleteNewPropertyFields);
+    }
+    const compliancePropertySearch = document.getElementById("compliancePropertySearch");
+    if (compliancePropertySearch) {
+        compliancePropertySearch.addEventListener("input", updateCompliancePropertySelection);
+        compliancePropertySearch.addEventListener("change", updateCompliancePropertySelection);
+    }
     ["complianceStateFilter", "complianceTypeFilter"].forEach((id) => {
         const el = document.getElementById(id);
         if (!el) return;
@@ -3035,7 +3306,9 @@ window.addEventListener("load", async () => {
 
     // Assignment / category filters removed.
 
-    switchDashboardTab("inbox");
+    applySidebarState();
+    await refreshPropertyOptions();
+    switchDashboardTab("portal");
     updateSyncContextUI();
 
     // Set default tab (will load tickets).
