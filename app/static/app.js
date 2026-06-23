@@ -60,8 +60,11 @@ let currentSearch = "";
 let currentRentPage = 1;
 let rentLoadedOnce = false;
 let rentViewMode = "tracker";
+let currentPropertiesPage = 1;
+let propertiesLoadedOnce = false;
 let currentCompliancePage = 1;
 let complianceLoadedOnce = false;
+let propertyOptionsCache = [];
 
 function isAllEmailsTab() {
     return String(currentTab || "").toLowerCase() === "all";
@@ -80,6 +83,11 @@ function updateSyncContextUI() {
     if (currentDashboardTab === "compliance") {
         if (viewBadge) viewBadge.textContent = "Compliance";
         if (info) info.textContent = "Inbox sync controls are hidden while you are on the compliance tab.";
+        return;
+    }
+    if (currentDashboardTab === "properties") {
+        if (viewBadge) viewBadge.textContent = "Properties";
+        if (info) info.textContent = "Inbox sync controls are hidden while you are on the properties tab.";
         return;
     }
     if (!info) return;
@@ -591,31 +599,40 @@ function formatDateShort(dt) {
 }
 
 function switchDashboardTab(tab) {
-    currentDashboardTab = tab === "rent" ? "rent" : (tab === "compliance" ? "compliance" : "inbox");
+    currentDashboardTab = tab === "rent" ? "rent" : (tab === "compliance" ? "compliance" : (tab === "properties" ? "properties" : "inbox"));
     const inboxPanel = document.getElementById("inboxPanel");
     const rentPanel = document.getElementById("rentPanel");
+    const propertiesPanel = document.getElementById("propertiesPanel");
     const compliancePanel = document.getElementById("compliancePanel");
     const navInbox = document.getElementById("navInbox");
     const navRent = document.getElementById("navRentTracker");
+    const navProperties = document.getElementById("navProperties");
     const navCompliance = document.getElementById("navCompliance");
     const shell = document.getElementById("dashboardShell");
 
     if (inboxPanel) inboxPanel.classList.toggle("hidden", currentDashboardTab !== "inbox");
     if (rentPanel) rentPanel.classList.toggle("hidden", currentDashboardTab !== "rent");
+    if (propertiesPanel) propertiesPanel.classList.toggle("hidden", currentDashboardTab !== "properties");
     if (compliancePanel) compliancePanel.classList.toggle("hidden", currentDashboardTab !== "compliance");
     if (navInbox) navInbox.classList.toggle("active", currentDashboardTab === "inbox");
     if (navRent) navRent.classList.toggle("active", currentDashboardTab === "rent");
+    if (navProperties) navProperties.classList.toggle("active", currentDashboardTab === "properties");
     if (navCompliance) navCompliance.classList.toggle("active", currentDashboardTab === "compliance");
     if (shell) {
         shell.classList.toggle("rent-mode", currentDashboardTab === "rent");
         shell.classList.toggle("compliance-mode", currentDashboardTab === "compliance");
+        shell.classList.toggle("properties-mode", currentDashboardTab === "properties");
     }
 
     updateSyncContextUI();
     if (currentDashboardTab === "rent" && !rentLoadedOnce) {
         loadActiveRentView();
     }
+    if (currentDashboardTab === "properties" && !propertiesLoadedOnce) {
+        loadProperties();
+    }
     if (currentDashboardTab === "compliance" && !complianceLoadedOnce) {
+        refreshPropertyOptions();
         loadComplianceDashboard();
     }
 }
@@ -972,33 +989,174 @@ async function importRentWorkbook() {
 }
 
 function complianceStatusChip(status) {
-    const key = String(status || "UNKNOWN").toUpperCase();
+    const key = String(status || "OPEN").toUpperCase();
     if (key === "CURRENT") return `<span class="compliance-status current">Current</span>`;
     if (key === "DUE_SOON") return `<span class="compliance-status due-soon">Due Soon</span>`;
     if (key === "OVERDUE") return `<span class="compliance-status overdue">Overdue</span>`;
     if (key === "ACTION_REQUIRED") return `<span class="compliance-status action">Action Required</span>`;
-    return `<span class="compliance-status unknown">Unknown</span>`;
+    if (key === "WAIVED") return `<span class="compliance-status waived">Waived</span>`;
+    return `<span class="compliance-status open">Open</span>`;
 }
 
-function complianceDateLine(label, rawValue, lastAt, nextAt) {
-    const last = formatDateShort(lastAt);
-    const next = formatDateShort(nextAt);
-    const raw = escapeHtml(rawValue || "-");
-    return `<div class="small"><b>${label}:</b> ${raw}</div><div class="small muted">Last ${last} • Next ${next}</div>`;
+function complianceTypeLabel(type) {
+    const labels = {
+        GAS: "Gas",
+        SMOKE: "Smoke",
+        ELECTRICAL: "Electrical",
+        MRS: "MRS",
+        POOL: "Pool",
+        POWERBAND: "PowerBand",
+        DISCLOSURE: "Disclosure",
+        OTHER: "Other",
+    };
+    return labels[String(type || "OTHER").toUpperCase()] || String(type || "-");
 }
 
-function complianceFaultSummary(row) {
-    const parts = [];
-    if (row.electrical_faults_raw && row.electrical_faults_raw !== "-") parts.push(`Electrical: ${escapeHtml(row.electrical_faults_raw)}`);
-    if (row.gas_faults_raw && row.gas_faults_raw !== "-") parts.push(`Gas: ${escapeHtml(row.gas_faults_raw)}`);
-    if (row.smoke_faults_raw && row.smoke_faults_raw !== "-") parts.push(`Smoke: ${escapeHtml(row.smoke_faults_raw)}`);
-    if (row.mrs_faults_raw && row.mrs_faults_raw !== "-") parts.push(`MRS: ${escapeHtml(row.mrs_faults_raw)}`);
-    return parts.length ? parts.join("<br />") : `<span class="muted">No fault flags in workbook.</span>`;
+function getPropertyFilters() {
+    return { query: (document.getElementById("propertySearchBox")?.value || "").trim() };
+}
+
+async function loadProperties(page = null) {
+    if (page !== null) currentPropertiesPage = page;
+    const p = currentPropertiesPage || 1;
+    const { query } = getPropertyFilters();
+    const url = new URL("/properties", window.location.origin);
+    url.searchParams.set("page", String(p));
+    url.searchParams.set("page_size", "25");
+    if (query) url.searchParams.set("query", query);
+
+    const body = document.getElementById("propertiesTableBody");
+    if (body) body.innerHTML = `<tr><td colspan="5" class="muted">Loading...</td></tr>`;
+
+    const r = await apiFetch(url.toString());
+    const t = await r.text();
+    if (!r.ok) {
+        if (body) body.innerHTML = `<tr><td colspan="5" class="muted">Failed to load properties: ${escapeHtml(t)}</td></tr>`;
+        return;
+    }
+    const data = JSON.parse(t);
+    propertiesLoadedOnce = true;
+    const items = Array.isArray(data.items) ? data.items : [];
+    if (body) {
+        if (!items.length) {
+            body.innerHTML = `<tr><td colspan="5" class="muted">No properties found.</td></tr>`;
+        } else {
+            body.innerHTML = items.map((row) => `
+                <tr>
+                    <td><div style="font-weight:700">${escapeHtml(row.property_address || "")}</div><div class="small muted">${escapeHtml(row.address_line_2 || "")}</div></td>
+                    <td>${escapeHtml(row.suburb || "-")}</td>
+                    <td>${escapeHtml(row.state_code || "-")}</td>
+                    <td>${escapeHtml(row.postcode || "-")}</td>
+                    <td>${escapeHtml(row.source || "-")}</td>
+                </tr>
+            `).join("");
+        }
+    }
+    const pi = document.getElementById("propertiesPageInfo");
+    if (pi) {
+        const total = Number(data.total || 0);
+        const pageNow = Number(data.page || 1);
+        const sizeNow = Number(data.page_size || 25);
+        const pages = sizeNow > 0 ? Math.max(1, Math.ceil(total / sizeNow)) : 1;
+        pi.textContent = `Page ${pageNow} of ${pages} - ${total} properties`;
+    }
+    const btnPrev = document.getElementById("propertiesBtnPrev");
+    const btnNext = document.getElementById("propertiesBtnNext");
+    if (btnPrev) btnPrev.disabled = Number(data.page || 1) <= 1;
+    if (btnNext) btnNext.disabled = !Boolean(data.has_more);
+}
+
+function prevPropertiesPage() {
+    if (currentPropertiesPage <= 1) return;
+    currentPropertiesPage -= 1;
+    loadProperties();
+}
+
+function nextPropertiesPage() {
+    currentPropertiesPage += 1;
+    loadProperties();
+}
+
+async function createPropertyFromForm() {
+    const property_address = (document.getElementById("newPropertyAddress")?.value || "").trim();
+    const suburb = (document.getElementById("newPropertySuburb")?.value || "").trim();
+    const state_code = (document.getElementById("newPropertyState")?.value || "").trim();
+    const postcode = (document.getElementById("newPropertyPostcode")?.value || "").trim();
+    if (!property_address) {
+        alert("Property address is required.");
+        return;
+    }
+    const r = await apiFetch("/properties", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ property_address, suburb, state_code, postcode }),
+    });
+    const t = await r.text();
+    if (!r.ok) {
+        alert(`Failed to add property (${r.status}):\n\n${t}`);
+        return;
+    }
+    ["newPropertyAddress", "newPropertySuburb", "newPropertyPostcode"].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.value = "";
+    });
+    currentPropertiesPage = 1;
+    propertiesLoadedOnce = false;
+    await loadProperties();
+    await refreshPropertyOptions();
+}
+
+async function importPropertiesWorkbook() {
+    const fileInput = document.getElementById("propertyImportFile");
+    const f = fileInput && fileInput.files ? fileInput.files[0] : null;
+    if (!f) {
+        alert("Choose a property .xlsx workbook first.");
+        return;
+    }
+    const form = new FormData();
+    form.append("file", f, f.name);
+    const meta = document.getElementById("propertyImportMeta");
+    if (meta) meta.textContent = "Importing properties...";
+    const r = await apiFetch("/properties/import-xlsx", { method: "POST", body: form });
+    const t = await r.text();
+    if (!r.ok) {
+        if (meta) meta.textContent = "Import failed.";
+        alert(`Property import failed (${r.status}):\n\n${t}`);
+        return;
+    }
+    let j = null;
+    try { j = JSON.parse(t); } catch { j = null; }
+    if (meta) meta.textContent = `Imported ${j?.imported_rows || "-"} properties from ${escapeHtml(f.name)} at ${new Date().toLocaleString()}.`;
+    currentPropertiesPage = 1;
+    propertiesLoadedOnce = false;
+    await loadProperties();
+    await refreshPropertyOptions();
+}
+
+async function refreshPropertyOptions() {
+    const select = document.getElementById("compliancePropertySelect");
+    try {
+        const r = await apiFetch("/properties/options");
+        if (!r.ok) {
+            if (select) select.innerHTML = `<option value="">No properties loaded</option>`;
+            return;
+        }
+        const data = await r.json();
+        propertyOptionsCache = Array.isArray(data.items) ? data.items : [];
+        if (select) {
+            select.innerHTML = propertyOptionsCache.length
+                ? propertyOptionsCache.map((p) => `<option value="${p.id}">${escapeHtml(p.label || "")}</option>`).join("")
+                : `<option value="">No properties loaded</option>`;
+        }
+    } catch {
+        if (select) select.innerHTML = `<option value="">No properties loaded</option>`;
+    }
 }
 
 function getComplianceFilters() {
     return {
         state: (document.getElementById("complianceStateFilter")?.value || "").trim(),
+        complianceType: (document.getElementById("complianceTypeFilter")?.value || "").trim(),
         query: (document.getElementById("complianceSearchBox")?.value || "").trim(),
     };
 }
@@ -1006,13 +1164,14 @@ function getComplianceFilters() {
 async function loadComplianceDashboard(page = null) {
     if (page !== null) currentCompliancePage = page;
     const p = currentCompliancePage || 1;
-    const { state, query } = getComplianceFilters();
+    const { state, complianceType, query } = getComplianceFilters();
 
-    const itemsUrl = new URL("/compliance/properties", window.location.origin);
+    const itemsUrl = new URL("/compliance/records", window.location.origin);
     const summaryUrl = new URL("/compliance/summary", window.location.origin);
     itemsUrl.searchParams.set("page", String(p));
     itemsUrl.searchParams.set("page_size", "25");
     if (state) itemsUrl.searchParams.set("state", state);
+    if (complianceType) itemsUrl.searchParams.set("compliance_type", complianceType);
     if (query) itemsUrl.searchParams.set("query", query);
 
     const body = document.getElementById("complianceTableBody");
@@ -1041,16 +1200,16 @@ async function loadComplianceDashboard(page = null) {
         const el = document.getElementById(id);
         if (el) el.textContent = String(val || 0);
     };
-    setText("complianceKpiTotal", summary.total || 0);
-    setText("complianceKpiAction", summary.action_required_properties || 0);
-    setText("complianceKpiOverdue", summary.overdue_properties || 0);
-    setText("complianceKpiSoon", summary.due_soon_properties || 0);
-    setText("complianceKpiCurrent", summary.current_properties || 0);
+    setText("complianceKpiTotal", summary.total_properties || 0);
+    setText("complianceKpiAction", summary.action_required_records || 0);
+    setText("complianceKpiOverdue", summary.overdue_records || 0);
+    setText("complianceKpiSoon", summary.due_soon_records || 0);
+    setText("complianceKpiCurrent", summary.current_records || 0);
 
     const items = Array.isArray(data.items) ? data.items : [];
     if (body) {
         if (!items.length) {
-            body.innerHTML = `<tr><td colspan="8" class="muted">No compliance properties found for this filter.</td></tr>`;
+            body.innerHTML = `<tr><td colspan="8" class="muted">No compliance records found for this filter.</td></tr>`;
         } else {
             body.innerHTML = items.map((row) => `
                 <tr>
@@ -1058,23 +1217,20 @@ async function loadComplianceDashboard(page = null) {
                         <div style="font-weight:700">${escapeHtml(row.property_address || "")}</div>
                         <div class="small muted">${escapeHtml([row.suburb, row.state_code, row.postcode].filter(Boolean).join(", ") || "-")}</div>
                     </td>
+                    <td>${escapeHtml(complianceTypeLabel(row.compliance_type))}</td>
                     <td>
-                        ${complianceStatusChip(row.overall_state)}
-                        <div class="small muted" style="margin-top:6px">${escapeHtml(row.overall_reason || "-")}</div>
+                        ${complianceStatusChip(row.state)}
+                        <div style="margin-top:6px">
+                          <select onchange="updateComplianceRecordStatus(${row.id}, this.value)">
+                            ${["OPEN", "ACTION_REQUIRED", "COMPLETED", "WAIVED"].map((s) => `<option value="${s}" ${s === row.status ? "selected" : ""}>${s.replace("_", " ")}</option>`).join("")}
+                          </select>
+                        </div>
                     </td>
-                    <td>${complianceDateLine("Gas", row.gas_raw, row.gas_last_checked_at, row.gas_next_due_at)}</td>
-                    <td>${complianceDateLine("Smoke", row.smoke_raw, row.smoke_last_checked_at, row.smoke_next_due_at)}</td>
-                    <td>${complianceDateLine("Electrical", row.electrical_raw, row.electrical_last_checked_at, row.electrical_next_due_at)}</td>
-                    <td>
-                        <div class="small"><b>Work order:</b> ${escapeHtml(formatDateShort(row.work_order_requested_at))}</div>
-                        <div class="small"><b>Report:</b> ${escapeHtml(row.report_result || "-")}</div>
-                        <div class="small"><b>Invoice:</b> ${escapeHtml(row.invoice_payment_status || "-")}</div>
-                    </td>
-                    <td class="small">${complianceFaultSummary(row)}</td>
-                    <td>
-                        <div class="small">${escapeHtml(row.compliance_notes || "-")}</div>
-                        <div class="small muted" style="margin-top:6px">Source: ${escapeHtml(row.source_sheet || "-")}</div>
-                    </td>
+                    <td>${escapeHtml(formatDateShort(row.due_date))}</td>
+                    <td>${escapeHtml(formatDateShort(row.completed_at))}</td>
+                    <td>${escapeHtml(row.provider_name || "-")}</td>
+                    <td>${escapeHtml(row.result_text || "-")}</td>
+                    <td class="small">${escapeHtml(row.notes || "-")}</td>
                 </tr>
             `).join("");
         }
@@ -1086,7 +1242,7 @@ async function loadComplianceDashboard(page = null) {
         const pageNow = Number(data.page || 1);
         const sizeNow = Number(data.page_size || 25);
         const pages = sizeNow > 0 ? Math.max(1, Math.ceil(total / sizeNow)) : 1;
-        pi.textContent = `Page ${pageNow} of ${pages} • ${total} properties • Due soon window ${Number(summary.due_soon_window_days || 30)} days`;
+        pi.textContent = `Page ${pageNow} of ${pages} - ${total} records - Due soon window ${Number(summary.due_soon_window_days || 30)} days`;
     }
 
     const btnPrev = document.getElementById("complianceBtnPrev");
@@ -1106,37 +1262,60 @@ function nextCompliancePage() {
     loadComplianceDashboard();
 }
 
-async function importComplianceWorkbook() {
-    const fileInput = document.getElementById("complianceImportFile");
-    const f = fileInput && fileInput.files ? fileInput.files[0] : null;
-    if (!f) {
-        alert("Choose a compliance .xlsx workbook first.");
+async function createComplianceRecord() {
+    const propertyId = Number(document.getElementById("compliancePropertySelect")?.value || 0);
+    if (!propertyId) {
+        alert("Add or import properties first, then choose a property.");
         return;
     }
-
-    const form = new FormData();
-    form.append("file", f, f.name);
-
-    const meta = document.getElementById("complianceImportMeta");
-    if (meta) meta.textContent = "Importing workbook...";
-
-    const r = await apiFetch("/compliance/import-xlsx", {
+    const compliance_type = (document.getElementById("complianceTypeInput")?.value || "OTHER").trim();
+    const dueDate = (document.getElementById("complianceDueDateInput")?.value || "").trim();
+    const provider_name = (document.getElementById("complianceProviderInput")?.value || "").trim();
+    const result_text = (document.getElementById("complianceResultInput")?.value || "").trim();
+    const notes = (document.getElementById("complianceNotesInput")?.value || "").trim();
+    const payload = {
+        property_id: propertyId,
+        compliance_type,
+        status: "OPEN",
+        due_date: dueDate ? `${dueDate}T00:00:00` : null,
+        provider_name: provider_name || null,
+        result_text: result_text || null,
+        notes: notes || null,
+    };
+    const r = await apiFetch("/compliance/records", {
         method: "POST",
-        body: form,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
     });
     const t = await r.text();
     if (!r.ok) {
-        if (meta) meta.textContent = "Import failed.";
-        alert(`Compliance import failed (${r.status}):\n\n${t}`);
+        alert(`Failed to add compliance record (${r.status}):\n\n${t}`);
         return;
     }
-    let j = null;
-    try { j = JSON.parse(t); } catch { j = null; }
-    if (meta) {
-        const rows = j && j.imported_rows ? j.imported_rows : "-";
-        meta.textContent = `Imported ${rows} properties from ${escapeHtml(f.name)} at ${new Date().toLocaleString()}.`;
-    }
+    ["complianceDueDateInput", "complianceProviderInput", "complianceResultInput", "complianceNotesInput"].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.value = "";
+    });
     currentCompliancePage = 1;
+    await loadComplianceDashboard();
+}
+
+async function updateComplianceRecordStatus(recordId, status) {
+    const payload = { status };
+    if (status === "COMPLETED") {
+        const d = new Date();
+        payload.completed_at = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}T00:00:00`;
+    }
+    const r = await apiFetch(`/compliance/records/${recordId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+    });
+    if (!r.ok) {
+        const t = await r.text();
+        alert(`Failed to update compliance record: ${t}`);
+        return;
+    }
     await loadComplianceDashboard();
 }
 
@@ -2512,7 +2691,20 @@ window.addEventListener("load", async () => {
             }
         });
     });
-    ["complianceStateFilter"].forEach((id) => {
+    const propertySearch = document.getElementById("propertySearchBox");
+    if (propertySearch) {
+        let tmr = null;
+        propertySearch.addEventListener("input", () => {
+            if (tmr) clearTimeout(tmr);
+            tmr = setTimeout(() => {
+                if (currentDashboardTab === "properties") {
+                    currentPropertiesPage = 1;
+                    loadProperties();
+                }
+            }, 250);
+        });
+    }
+    ["complianceStateFilter", "complianceTypeFilter"].forEach((id) => {
         const el = document.getElementById(id);
         if (!el) return;
         el.addEventListener("change", () => {

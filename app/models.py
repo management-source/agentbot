@@ -57,6 +57,24 @@ class ComplianceState(str, Enum):
     UNKNOWN = "UNKNOWN"
 
 
+class ComplianceType(str, Enum):
+    GAS = "GAS"
+    SMOKE = "SMOKE"
+    ELECTRICAL = "ELECTRICAL"
+    MRS = "MRS"
+    POOL = "POOL"
+    POWERBAND = "POWERBAND"
+    DISCLOSURE = "DISCLOSURE"
+    OTHER = "OTHER"
+
+
+class ComplianceRecordStatus(str, Enum):
+    OPEN = "OPEN"
+    ACTION_REQUIRED = "ACTION_REQUIRED"
+    COMPLETED = "COMPLETED"
+    WAIVED = "WAIVED"
+
+
 class AuditAction(str, Enum):
     CREATED = "CREATED"
     UPDATED = "UPDATED"
@@ -266,6 +284,41 @@ class RentDueTracker(Base):
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class ManagedProperty(Base):
+    __tablename__ = "managed_properties"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    mailbox: Mapped[str] = mapped_column(String, index=True)
+    property_address: Mapped[str] = mapped_column(String, index=True)
+    address_line_2: Mapped[str | None] = mapped_column(String, nullable=True)
+    suburb: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    state_code: Mapped[str | None] = mapped_column(String, nullable=True)
+    postcode: Mapped[str | None] = mapped_column(String, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    source: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class ComplianceRecord(Base):
+    __tablename__ = "compliance_records"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    mailbox: Mapped[str] = mapped_column(String, index=True)
+    property_id: Mapped[int] = mapped_column(Integer, ForeignKey("managed_properties.id"), index=True)
+    compliance_type: Mapped[ComplianceType] = mapped_column(SAEnum(ComplianceType), index=True)
+    status: Mapped[ComplianceRecordStatus] = mapped_column(SAEnum(ComplianceRecordStatus), default=ComplianceRecordStatus.OPEN, index=True)
+    due_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    provider_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    result_text: Mapped[str | None] = mapped_column(String, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+    property = relationship("ManagedProperty")
 
 
 class ComplianceProperty(Base):

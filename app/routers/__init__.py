@@ -1,1 +1,1 @@
-from . import auth, tickets, autopilot, ui, threads, compliance
+from . import auth, tickets, autopilot, ui, threads, compliance, properties

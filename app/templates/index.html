@@ -246,8 +246,12 @@
     .dashboard-shell.compliance-mode{
       grid-template-columns: 1fr;
     }
+    .dashboard-shell.properties-mode{
+      grid-template-columns: 1fr;
+    }
     .dashboard-shell.rent-mode .left-rail,
-    .dashboard-shell.compliance-mode .left-rail{
+    .dashboard-shell.compliance-mode .left-rail,
+    .dashboard-shell.properties-mode .left-rail{
       display:none;
     }
     @media (max-width: 1080px){
@@ -540,6 +544,8 @@
     .compliance-status.overdue{background:rgba(220,38,38,.08); border-color:rgba(220,38,38,.25); color:#991b1b}
     .compliance-status.action{background:rgba(59,130,246,.1); border-color:rgba(59,130,246,.25); color:#1e40af}
     .compliance-status.unknown{background:rgba(100,116,139,.12); border-color:rgba(100,116,139,.24); color:#334155}
+    .compliance-status.open{background:rgba(100,116,139,.12); border-color:rgba(100,116,139,.24); color:#334155}
+    .compliance-status.waived{background:rgba(79,70,229,.10); border-color:rgba(79,70,229,.25); color:#3730a3}
 
     /* Ticket list */
     .ticket{
@@ -942,6 +948,7 @@
                 <nav class="side-nav">
                     <a id="navInbox" class="active" href="javascript:void(0)" onclick="switchDashboardTab('inbox')">Inbox Dashboard</a>
                     <a id="navRentTracker" href="javascript:void(0)" onclick="switchDashboardTab('rent')">Rent Tracker</a>
+                    <a id="navProperties" href="javascript:void(0)" onclick="switchDashboardTab('properties')">Properties</a>
                     <a id="navCompliance" href="javascript:void(0)" onclick="switchDashboardTab('compliance')">Compliance</a>
                     <a id="btnSystemUsers" href="javascript:void(0)" style="display:none" onclick="openUsersModal()">System</a>
                 </nav>
@@ -1200,24 +1207,90 @@
                 </div>
             </div>
 
+            <div id="propertiesPanel" class="hidden">
+                <div class="card">
+                    <div class="row space">
+                        <div>
+                            <p class="panel-title">Properties</p>
+                            <p class="panel-sub">Maintain the managed property register used across compliance and future modules.</p>
+                        </div>
+                        <div class="row">
+                            <input type="file" id="propertyImportFile" accept=".xlsx" />
+                            <button class="btn primary" onclick="importPropertiesWorkbook()">Import Properties</button>
+                        </div>
+                    </div>
+                    <div class="small muted" id="propertyImportMeta" style="margin-top:8px">No property workbook imported yet.</div>
+                </div>
+
+                <div class="card">
+                    <div class="row" style="align-items:flex-end">
+                        <div class="field" style="min-width:280px;flex:1">
+                            <div class="label">Property Address</div>
+                            <input type="text" id="newPropertyAddress" placeholder="e.g. 12 Smith Street" />
+                        </div>
+                        <div class="field" style="min-width:180px">
+                            <div class="label">Suburb</div>
+                            <input type="text" id="newPropertySuburb" />
+                        </div>
+                        <div class="field" style="width:110px">
+                            <div class="label">State</div>
+                            <input type="text" id="newPropertyState" value="VIC" />
+                        </div>
+                        <div class="field" style="width:130px">
+                            <div class="label">Postcode</div>
+                            <input type="text" id="newPropertyPostcode" />
+                        </div>
+                        <button class="btn primary" onclick="createPropertyFromForm()">Add Property</button>
+                    </div>
+                </div>
+
+                <div class="filters-row">
+                    <div class="field" style="min-width:300px">
+                        <div class="label">Search</div>
+                        <input type="text" id="propertySearchBox" placeholder="Address, suburb, postcode..." />
+                    </div>
+                    <div class="row" style="align-self:flex-end">
+                        <button class="btn" onclick="loadProperties(1)">Apply</button>
+                    </div>
+                </div>
+
+                <div class="rent-table-wrap">
+                    <table class="rent-table" style="min-width:900px">
+                        <thead>
+                            <tr>
+                                <th>Property</th>
+                                <th>Suburb</th>
+                                <th>State</th>
+                                <th>Postcode</th>
+                                <th>Source</th>
+                            </tr>
+                        </thead>
+                        <tbody id="propertiesTableBody">
+                            <tr><td colspan="5" class="muted">No properties loaded.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="small muted" id="propertiesPageInfo" style="margin-top:8px"></div>
+                <div class="row space" style="margin-top:10px">
+                    <button class="btn" id="propertiesBtnPrev" onclick="prevPropertiesPage()">Prev</button>
+                    <button class="btn" id="propertiesBtnNext" onclick="nextPropertiesPage()">Next</button>
+                </div>
+            </div>
+
             <div id="compliancePanel" class="hidden">
                 <div class="card">
                     <div class="row space">
                         <div>
                             <p class="panel-title">Compliance Dashboard</p>
-                            <p class="panel-sub">Upload your compliance workbook, track due dates, and surface properties that need action.</p>
+                            <p class="panel-sub">Create compliance records against saved properties and track what is open, due, overdue, and completed.</p>
                         </div>
-                        <div class="row">
-                            <input type="file" id="complianceImportFile" accept=".xlsx" />
-                            <button class="btn primary" onclick="importComplianceWorkbook()">Import Workbook</button>
-                        </div>
+                        <button class="btn" onclick="refreshPropertyOptions()">Refresh Properties</button>
                     </div>
-                    <div class="small muted" id="complianceImportMeta" style="margin-top:8px">No compliance workbook imported yet.</div>
                 </div>
 
                 <div class="kpi-row">
                     <div class="card kpi">
-                        <h3>Total Properties</h3>
+                        <h3>Properties</h3>
                         <div class="num" id="complianceKpiTotal">0</div>
                     </div>
                     <div class="card kpi">
@@ -1233,8 +1306,47 @@
                         <div class="num warn" id="complianceKpiSoon">0</div>
                     </div>
                     <div class="card kpi">
-                        <h3>Current</h3>
+                        <h3>Completed</h3>
                         <div class="num ok" id="complianceKpiCurrent">0</div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="row" style="align-items:flex-end">
+                        <div class="field" style="min-width:280px;flex:1">
+                            <div class="label">Property</div>
+                            <select id="compliancePropertySelect"></select>
+                        </div>
+                        <div class="field" style="min-width:160px">
+                            <div class="label">Type</div>
+                            <select id="complianceTypeInput">
+                                <option value="GAS">Gas</option>
+                                <option value="SMOKE">Smoke</option>
+                                <option value="ELECTRICAL">Electrical</option>
+                                <option value="MRS">MRS</option>
+                                <option value="POOL">Pool</option>
+                                <option value="POWERBAND">PowerBand</option>
+                                <option value="DISCLOSURE">Disclosure</option>
+                                <option value="OTHER">Other</option>
+                            </select>
+                        </div>
+                        <div class="field" style="min-width:150px">
+                            <div class="label">Due Date</div>
+                            <input type="date" id="complianceDueDateInput" />
+                        </div>
+                        <div class="field" style="min-width:180px">
+                            <div class="label">Provider</div>
+                            <input type="text" id="complianceProviderInput" />
+                        </div>
+                        <div class="field" style="min-width:180px">
+                            <div class="label">Result / Finding</div>
+                            <input type="text" id="complianceResultInput" placeholder="Pass, pending, fault found..." />
+                        </div>
+                        <button class="btn primary" onclick="createComplianceRecord()">Add Record</button>
+                    </div>
+                    <div class="field" style="margin-top:10px">
+                        <div class="label">Notes</div>
+                        <input type="text" id="complianceNotesInput" placeholder="Owner approval, fault details, report notes..." />
                     </div>
                 </div>
 
@@ -1243,11 +1355,26 @@
                         <div class="label">Status</div>
                         <select id="complianceStateFilter">
                             <option value="">All</option>
+                            <option value="OPEN">Open</option>
                             <option value="ACTION_REQUIRED">Action Required</option>
                             <option value="OVERDUE">Overdue</option>
                             <option value="DUE_SOON">Due Soon</option>
                             <option value="CURRENT">Current</option>
-                            <option value="UNKNOWN">Unknown</option>
+                            <option value="WAIVED">Waived</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <div class="label">Type</div>
+                        <select id="complianceTypeFilter">
+                            <option value="">All</option>
+                            <option value="GAS">Gas</option>
+                            <option value="SMOKE">Smoke</option>
+                            <option value="ELECTRICAL">Electrical</option>
+                            <option value="MRS">MRS</option>
+                            <option value="POOL">Pool</option>
+                            <option value="POWERBAND">PowerBand</option>
+                            <option value="DISCLOSURE">Disclosure</option>
+                            <option value="OTHER">Other</option>
                         </select>
                     </div>
                     <div class="field" style="min-width:280px">
@@ -1260,21 +1387,21 @@
                 </div>
 
                 <div class="rent-table-wrap">
-                    <table class="rent-table" style="min-width:1400px">
+                    <table class="rent-table" style="min-width:1200px">
                         <thead>
                             <tr>
                                 <th>Property</th>
+                                <th>Type</th>
                                 <th>Status</th>
-                                <th>Gas</th>
-                                <th>Smoke</th>
-                                <th>Electrical</th>
-                                <th>Workflow</th>
-                                <th>Faults</th>
+                                <th>Due Date</th>
+                                <th>Completed</th>
+                                <th>Provider</th>
+                                <th>Result</th>
                                 <th>Notes</th>
                             </tr>
                         </thead>
                         <tbody id="complianceTableBody">
-                            <tr><td colspan="8" class="muted">No data loaded.</td></tr>
+                            <tr><td colspan="8" class="muted">No compliance records loaded.</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -1396,7 +1523,7 @@
             </div>
         </div>
 
-        <script src="/static/app.js?v=2"></script>
+        <script src="/static/app.js?v=3"></script>
 
         <script>
   // Wire segmented status buttons to existing tab logic

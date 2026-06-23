@@ -288,3 +288,13 @@ def migrate(engine: Engine) -> None:
         if not _column_exists(engine, cp, "overall_reason"):
             stmts.append(f"ALTER TABLE {cp} ADD COLUMN overall_reason TEXT")
         _exec_statements(engine, stmts)
+
+    # -------------------------------------------------------------------------
+    # 6) Managed properties / compliance records (added 2026-06)
+    # -------------------------------------------------------------------------
+    mp = "managed_properties"
+    if _table_exists(engine, mp):
+        stmts = []
+        if not _column_exists(engine, mp, "source"):
+            stmts.append(f"ALTER TABLE {mp} ADD COLUMN source VARCHAR")
+        _exec_statements(engine, stmts)
