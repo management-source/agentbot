@@ -20,6 +20,12 @@ let currentUser = null;
 let usersCache = [];
 let loginRecaptchaWidgetId = null;
 
+window.onRecaptchaLoad = function () {
+    ensureLoginRecaptcha().catch(() => {
+        setLoginError("reCAPTCHA could not load. Please refresh and try again.");
+    });
+};
+
 async function apiFetch(url, options = {}) {
     const opts = { ...options, headers: { ...(options.headers || {}) } };
     if (authToken) {
@@ -2329,4 +2335,3 @@ window.addEventListener("load", async () => {
     // Set default tab (will load tickets).
     setTab(currentTab);
 });
-

@@ -653,13 +653,22 @@
       display:flex;
       align-items:center;
       gap:14px;
-      margin-bottom:72px;
+      margin-bottom:56px;
     }
     .login-mark{
-      width:190px;
+      width:380px;
       max-width:100%;
       height:auto;
       display:block;
+    }
+    .login-kicker{
+      display:inline-block;
+      margin-bottom:18px;
+      font-size:14px;
+      font-weight:800;
+      letter-spacing:.12em;
+      text-transform:uppercase;
+      color:#4e88eb;
     }
     .login-copy h1{
       margin:0;
@@ -671,7 +680,7 @@
     }
     .login-copy p{
       margin:18px 0 0 0;
-      font-size:clamp(17px, 1.65vw, 24px);
+      font-size:clamp(17px, 1.5vw, 22px);
       line-height:1.45;
       color:#123a70;
       max-width:700px;
@@ -714,6 +723,19 @@
       margin-top:14px;
       display:flex;
       justify-content:center;
+      min-height:78px;
+      align-items:center;
+    }
+    .login-recaptcha-placeholder{
+      width:100%;
+      border:1px dashed #bfd0ea;
+      border-radius:16px;
+      background:rgba(255,255,255,.75);
+      padding:14px 16px;
+      text-align:center;
+      font-size:13px;
+      color:#5c6c82;
+      line-height:1.45;
     }
     .login-submit{
       width:100%;
@@ -842,7 +864,7 @@
           window.AGENTBOT_CONFIG = {{ app_config | tojson }};
         </script>
         {% if app_config.recaptcha_enabled %}
-        <script src="https://www.google.com/recaptcha/api.js?render=explicit" async defer></script>
+        <script src="https://www.google.com/recaptcha/api.js?onload=onRecaptchaLoad&render=explicit" async defer></script>
         {% endif %}
         <section class="login-screen" id="loginScreen">
             <div class="login-panel">
@@ -851,8 +873,9 @@
                         <img class="login-mark" src="https://ik.imagekit.io/donspremier/Banner%20-%20Logo.png?updatedAt=1767844482007" alt="Dons Premier Estate Agents" />
                     </div>
                     <div class="login-copy">
-                        <h1>The professional workspace for property managers</h1>
-                        <p>Secure sign-in for your team with work email access, protected passwords, and bot-safe verification.</p>
+                        <div class="login-kicker">Dons Premier Estate Agents Portal</div>
+                        <h1>Welcome to your Portal</h1>
+                        <p>Dons Premier Estate Agents - The Knights of Real Estate.</p>
                     </div>
                     <div class="login-form-shell">
                         <form class="login-form" onsubmit="event.preventDefault(); doLogin();">
@@ -867,6 +890,11 @@
                             <div class="login-recaptcha-wrap{% if not app_config.recaptcha_enabled %} hidden{% endif %}">
                                 <div id="loginRecaptcha"></div>
                             </div>
+                            {% if not app_config.recaptcha_enabled %}
+                            <div class="login-recaptcha-placeholder">
+                                reCAPTCHA is not configured yet. Add <code>RECAPTCHA_SITE_KEY</code> and <code>RECAPTCHA_SECRET_KEY</code> to enable the “I’m not a robot” checkbox.
+                            </div>
+                            {% endif %}
                             <div class="error" id="loginError" style="display:none"></div>
                             <button class="login-submit" id="btnLogin" type="submit">Log in</button>
                         </form>
