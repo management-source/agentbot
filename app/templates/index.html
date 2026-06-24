@@ -692,6 +692,78 @@
       flex-wrap:wrap;
       margin-top:var(--gap);
     }
+    .mail-workspace{
+      display:flex;
+      flex-direction:column;
+      gap:14px;
+    }
+    .mail-board-head{
+      display:flex;
+      justify-content:space-between;
+      align-items:flex-end;
+      gap:16px;
+      padding:18px;
+      border:1px solid #dbe4ef;
+      border-radius:18px;
+      background:
+        linear-gradient(180deg, rgba(255,255,255,.98), rgba(248,250,252,.98)),
+        radial-gradient(circle at top right, rgba(201,162,70,.14), transparent 44%);
+      box-shadow:0 10px 28px rgba(15,23,42,.06);
+    }
+    .mail-board-title{
+      margin:0;
+      font-size:20px;
+      line-height:1.2;
+      letter-spacing:-.02em;
+      font-weight:900;
+    }
+    .mail-board-sub{
+      margin:6px 0 0;
+      color:#667085;
+      font-size:13px;
+      line-height:1.4;
+    }
+    .mail-board-meta{
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+      justify-content:flex-end;
+    }
+    .mail-toolbar{
+      display:grid;
+      grid-template-columns:minmax(0, 1fr) minmax(240px, 340px);
+      gap:12px;
+      align-items:center;
+    }
+    .mail-search{
+      display:flex;
+      flex-direction:column;
+      gap:6px;
+      padding:10px;
+      border:1px solid #dbe4ef;
+      border-radius:16px;
+      background:#fff;
+      box-shadow:0 1px 2px rgba(16,24,40,.04);
+    }
+    .mail-search span{
+      font-size:11px;
+      font-weight:900;
+      color:#667085;
+      text-transform:uppercase;
+      letter-spacing:.08em;
+    }
+    .mail-search input{
+      border:none;
+      box-shadow:none;
+      padding:3px 2px;
+      border-radius:0;
+      font-size:14px;
+    }
+    .mail-search input:focus{box-shadow:none}
+    .status-tabs{
+      overflow:auto;
+      scrollbar-width:thin;
+    }
 
     .seg{
       display:flex;
@@ -710,8 +782,27 @@
       font-size:13px;
       cursor:pointer;
       color:var(--muted);
+      white-space:nowrap;
     }
     .seg button.active{background:rgba(79,70,229,.10); color:var(--primary)}
+    .status-tabs button{
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+    }
+    .status-tabs .pill{
+      margin-left:0 !important;
+      padding:4px 8px;
+      font-size:11px;
+      font-weight:900;
+      color:#344054;
+      background:#f8fafc;
+    }
+    @media (max-width: 980px){
+      .mail-board-head{align-items:flex-start; flex-direction:column}
+      .mail-board-meta{justify-content:flex-start}
+      .mail-toolbar{grid-template-columns:1fr}
+    }
 
     .rent-table-wrap{
       margin-top:12px;
@@ -791,30 +882,95 @@
     .compliance-status.incomplete{background:rgba(245,158,11,.12); border-color:rgba(245,158,11,.28); color:#92400e}
 
     /* Ticket list */
+    #ticketList.ticket-list{
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+    }
     .ticket{
-      margin-top:12px;
-      padding:16px;
-      border:1px solid var(--border);
-      border-radius:var(--radius);
+      padding:0;
+      border:1px solid #dbe4ef;
+      border-radius:16px;
       background:#fff;
-      box-shadow:var(--shadow);
+      box-shadow:0 8px 24px rgba(15,23,42,.055);
       display:grid;
-      grid-template-columns: 1fr 340px;
-      gap:14px;
-      align-items:start;
+      grid-template-columns:minmax(0, 1fr) 268px;
+      gap:0;
+      align-items:stretch;
+      overflow:hidden;
+      transition:border-color .16s ease, box-shadow .16s ease, transform .16s ease;
+    }
+    .ticket:hover{
+      border-color:#c9d5e4;
+      box-shadow:0 12px 30px rgba(15,23,42,.08);
+      transform:translateY(-1px);
     }
     @media (max-width: 980px){
       .ticket{grid-template-columns:1fr}
     }
-    #ticketList{display:block}
-
+    .ticket-main{
+      display:grid;
+      grid-template-columns:44px minmax(0, 1fr);
+      gap:12px;
+      padding:16px;
+      min-width:0;
+    }
+    .ticket-avatar{
+      width:44px;
+      height:44px;
+      border-radius:14px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      background:#111827;
+      color:#f9e7a7;
+      font-weight:900;
+      font-size:15px;
+      flex:0 0 auto;
+    }
+    .ticket-content{min-width:0}
+    .ticket-topline{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      min-width:0;
+    }
+    .ticket-sender{
+      font-size:13px;
+      font-weight:900;
+      color:#101828;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      white-space:nowrap;
+    }
+    .ticket-time{
+      font-size:12px;
+      color:#667085;
+      white-space:nowrap;
+      flex:0 0 auto;
+    }
     .ticket h4{
       margin:0;
-      font-size:14px;
+      margin-top:5px;
+      font-size:15px;
       line-height:1.3;
+      letter-spacing:-.01em;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      white-space:nowrap;
     }
-    .ticket .from{margin:4px 0 0 0; font-size:12px; color:var(--muted)}
-    .ticket .snippet{margin:10px 0 0 0; font-size:13px; color:#111827; line-height:1.45}
+    .ticket .from{margin:4px 0 0 0; font-size:12px; color:#667085; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+    .ticket .snippet{
+      margin:10px 0 0 0;
+      font-size:13px;
+      color:#344054;
+      line-height:1.45;
+      display:-webkit-box;
+      -webkit-line-clamp:2;
+      -webkit-box-orient:vertical;
+      overflow:hidden;
+    }
     .badge-row{display:flex; gap:8px; flex-wrap:wrap; margin-top:10px}
     .badge{
       display:inline-flex;
@@ -831,17 +987,77 @@
     .badge.priority{border-color:rgba(245,158,11,.45); background:rgba(245,158,11,.10); color:#92400e}
     .badge.unread{border-color:rgba(79,70,229,.45); background:rgba(79,70,229,.10); color:var(--primary)}
     .badge.overdue{border-color:rgba(220,38,38,.45); background:rgba(220,38,38,.10); color:var(--danger)}
+    .ticket-status-pill{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      padding:6px 9px;
+      border-radius:999px;
+      font-size:11px;
+      font-weight:900;
+      border:1px solid #dbe4ef;
+      background:#f8fafc;
+      color:#344054;
+      white-space:nowrap;
+    }
+    .ticket-status-pill.pending{background:rgba(245,158,11,.11); border-color:rgba(245,158,11,.28); color:#92400e}
+    .ticket-status-pill.progress{background:rgba(59,130,246,.1); border-color:rgba(59,130,246,.25); color:#1e40af}
+    .ticket-status-pill.responded{background:rgba(22,163,74,.1); border-color:rgba(22,163,74,.25); color:#166534}
+    .ticket-status-pill.closed{background:rgba(100,116,139,.12); border-color:rgba(100,116,139,.24); color:#334155}
 
     .ticket-right{
       display:flex;
       flex-direction:column;
-      gap:10px;
+      gap:12px;
       align-items:stretch;
+      justify-content:space-between;
+      padding:14px;
+      border-left:1px solid #edf1f6;
+      background:#fbfcfe;
     }
-    .ticket-actions{display:flex; gap:10px; flex-wrap:wrap}
-    .ticket-actions .btn{flex:1}
+    .ticket-actions{display:grid; grid-template-columns:1fr; gap:8px}
+    .ticket-actions .btn{width:100%; text-align:center}
     .ticket-controls{display:grid; grid-template-columns:1fr; gap:10px}
-    .ticket-meta{font-size:12px; color:var(--muted); line-height:1.45}
+    .ticket-meta{
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+      margin-top:12px;
+      font-size:12px;
+      color:#667085;
+      line-height:1.45;
+    }
+    .ticket-meta span{
+      padding:4px 8px;
+      border:1px solid #edf1f6;
+      border-radius:999px;
+      background:#fbfcfe;
+    }
+    .ticket-empty{
+      padding:28px;
+      border:1px dashed #cbd5e1;
+      border-radius:18px;
+      background:#fff;
+      text-align:center;
+      color:#667085;
+      font-weight:700;
+    }
+    .ticket-empty strong{
+      display:block;
+      color:#101828;
+      font-size:14px;
+    }
+    @media (max-width: 980px){
+      .ticket-right{border-left:none; border-top:1px solid #edf1f6}
+      .ticket-actions{grid-template-columns:repeat(3, minmax(0, 1fr))}
+    }
+    @media (max-width: 640px){
+      .ticket-main{grid-template-columns:1fr}
+      .ticket-avatar{display:none}
+      .ticket-topline{align-items:flex-start; flex-direction:column}
+      .ticket h4{white-space:normal}
+      .ticket-actions{grid-template-columns:1fr}
+    }
 
     /* Modal */
     .modal-backdrop{
@@ -1416,31 +1632,41 @@
             </div>
 
             <div id="inboxPanel" class="hidden">
-
-            <div class="filters-row">
-                <div class="seg" id="statusSeg">
-                    <button data-tab="all">All Emails <span class="pill" style="margin-left:8px" id="tabAllCount">0</span></button>
-                    <button data-tab="awaiting_reply" class="active">Awaiting Reply <span class="pill" style="margin-left:8px" id="tabAwaitingCount">0</span></button>
-                    <button data-tab="in_progress">In Progress <span class="pill" style="margin-left:8px" id="tabInProgressCount">0</span></button>
-                    <button data-tab="responded">Responded <span class="pill" style="margin-left:8px" id="tabRespondedCount">0</span></button>
-                    <button data-tab="no_reply_needed">Reply not Needed <span class="pill" style="margin-left:8px" id="tabNoReplyNeededCount">0</span></button>
+            <section class="mail-workspace">
+                <div class="mail-board-head">
+                    <div>
+                        <h2 class="mail-board-title">Email Manager</h2>
+                        <p class="mail-board-sub">Triage active conversations, draft replies, and keep the shared inbox moving.</p>
+                    </div>
+                    <div class="mail-board-meta">
+                        <span class="chip">Mailbox: <span id="mailboxBadge">-</span></span>
+                        <span class="chip">Last sync: <span id="mailLastSyncMirror">-</span></span>
+                    </div>
                 </div>
 
-                <div class="field" style="min-width:220px">
-                    <div class="label">Search</div>
-                    <input type="text" id="searchBox"
-                        placeholder="Subject, sender, address…" />
+                <div class="mail-toolbar">
+                    <div class="seg status-tabs" id="statusSeg">
+                        <button data-tab="all">All Emails <span class="pill" id="tabAllCount">0</span></button>
+                        <button data-tab="awaiting_reply" class="active">Awaiting Reply <span class="pill" id="tabAwaitingCount">0</span></button>
+                        <button data-tab="in_progress">In Progress <span class="pill" id="tabInProgressCount">0</span></button>
+                        <button data-tab="responded">Responded <span class="pill" id="tabRespondedCount">0</span></button>
+                        <button data-tab="no_reply_needed">Reply not Needed <span class="pill" id="tabNoReplyNeededCount">0</span></button>
+                    </div>
+
+                    <label class="mail-search">
+                        <span>Search</span>
+                        <input type="text" id="searchBox"
+                            placeholder="Subject, sender, address..." />
+                    </label>
                 </div>
 
-                <!-- Category filtering removed: classification is handled without AI and without UI filters. -->
-            </div>
-
-            <div id="ticketList" style="margin-top:10px"></div>
-            <div id="pagination" class="row space" style="margin-top:12px; display:none">
-                <button class="btn" id="btnPrev" onclick="prevPage()">Prev</button>
-                <div class="small muted" id="pageInfo">Page 1</div>
-                <button class="btn" id="btnNext" onclick="nextPage()">Next</button>
-            </div>
+                <div id="ticketList" class="ticket-list"></div>
+                <div id="pagination" class="row space" style="margin-top:2px; display:none">
+                    <button class="btn" id="btnPrev" onclick="prevPage()">Prev</button>
+                    <div class="small muted" id="pageInfo">Page 1</div>
+                    <button class="btn" id="btnNext" onclick="nextPage()">Next</button>
+                </div>
+            </section>
             </div>
 
             <div id="rentPanel" class="hidden">
@@ -2010,7 +2236,7 @@
             </div>
         </div>
 
-        <script src="/static/app.js?v=8"></script>
+        <script src="/static/app.js?v=9"></script>
 
         <script>
   // Wire segmented status buttons to existing tab logic

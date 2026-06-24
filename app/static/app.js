@@ -179,8 +179,7 @@ function isAllEmailsTab() {
 function updateSyncContextUI() {
     const info = document.getElementById("syncInfo");
     const viewBadge = document.getElementById("queueViewMode");
-    const mailboxBadge = document.getElementById("queueMailboxMode");
-    if (mailboxBadge) mailboxBadge.textContent = currentMailbox || "-";
+    setMailboxSummary(currentMailbox || "-");
     if (currentDashboardTab === "portal") {
         if (viewBadge) viewBadge.textContent = "Portal Hub";
         if (info) info.textContent = "Portal Hub: choose a workspace tile or use the menu to jump into a feature.";
@@ -214,6 +213,24 @@ function updateSyncContextUI() {
         if (viewBadge) viewBadge.textContent = "Awaiting Reply";
         info.textContent = "Awaiting Reply mode: incremental updates focus on active inbox threads that need a response.";
     }
+}
+
+function setMailboxSummary(value) {
+    const text = value || currentMailbox || "-";
+    const mailboxBadge = document.getElementById("mailboxBadge");
+    const queueMailbox = document.getElementById("queueMailboxMode");
+    const mailboxLabel = document.getElementById("mailboxLabel");
+    if (mailboxBadge) mailboxBadge.textContent = text;
+    if (queueMailbox) queueMailbox.textContent = text;
+    if (mailboxLabel) mailboxLabel.textContent = text;
+}
+
+function setLastSyncSummary(value = null) {
+    const text = value || new Date().toLocaleString();
+    const last = document.getElementById("lastSync");
+    const mirror = document.getElementById("mailLastSyncMirror");
+    if (last) last.textContent = text;
+    if (mirror) mirror.textContent = text;
 }
 
 let googleConnected = false;
@@ -267,10 +284,7 @@ async function initMailboxes() {
             refreshGoogleStatus();
         });
 
-        const lbl = document.getElementById("mailboxLabel");
-        if (lbl) lbl.textContent = currentMailbox || "-";
-        const mailboxBadge = document.getElementById("queueMailboxMode");
-        if (mailboxBadge) mailboxBadge.textContent = currentMailbox || "-";
+        setMailboxSummary(currentMailbox || "-");
         updateSyncContextUI();
     } catch (e) {
         // If auth isn't ready yet, we'll retry after login.
@@ -302,11 +316,7 @@ async function refreshGoogleStatus() {
 
         const target = (currentMailbox || j.target_mailbox || j.delegated_mailbox || "me");
 
-        const mb = document.getElementById("mailboxBadge");
-        if (mb) mb.textContent = googleConnected ? (`Mailbox: ${target}`) : "";
-
-        const mb2 = document.getElementById("mailboxLabel");
-        if (mb2) mb2.textContent = googleConnected ? target : "-";
+        setMailboxSummary(googleConnected ? target : "-");
 
         const pill = document.getElementById("googlePill");
         if (pill) pill.style.display = googleConnected ? "inline-flex" : "none";
@@ -2030,14 +2040,10 @@ async function fetchNow() {
             alert("Fetch completed, but hit the configured limit. Increase Max and fetch again to capture more emails for the selected range.");
         }
         if (j && j.target_mailbox) {
-            const mb1 = document.getElementById("mailboxBadge");
-            const mb2 = document.getElementById("mailboxLabel");
-            if (mb1) mb1.textContent = `Mailbox: ${j.target_mailbox}`;
-            if (mb2) mb2.textContent = j.target_mailbox;
+            setMailboxSummary(j.target_mailbox);
         }
 
-        const last1 = document.getElementById("lastSync");
-        if (last1) last1.textContent = new Date().toLocaleString();
+        setLastSyncSummary();
 
         await loadTickets();
         console.log(j);
@@ -2095,8 +2101,7 @@ async function checkUpdates() {
             return;
         }
 
-        const last1 = document.getElementById("lastSync");
-        if (last1) last1.textContent = new Date().toLocaleString();
+        setLastSyncSummary();
 
         await loadTickets();
     } catch (e) {
@@ -2147,6 +2152,27 @@ function statusOptions(selected) {
     return opts.map(([v, label]) => `<option value="${v}" ${v === selected ? "selected" : ""}>${label}</option>`).join("");
 }
 
+function ticketInitial(t) {
+    const value = String(t.from_name || t.from_email || "?").trim();
+    return escapeHtml((value[0] || "?").toUpperCase());
+}
+
+function ticketStatusLabel(status) {
+    const key = String(status || "").toUpperCase();
+    if (key === "IN_PROGRESS") return "In Progress";
+    if (key === "RESPONDED") return "Responded";
+    if (key === "NO_REPLY_NEEDED") return "No Reply Needed";
+    return "Pending";
+}
+
+function ticketStatusClass(status) {
+    const key = String(status || "").toUpperCase();
+    if (key === "IN_PROGRESS") return "progress";
+    if (key === "RESPONDED") return "responded";
+    if (key === "NO_REPLY_NEEDED") return "closed";
+    return "pending";
+}
+
 function renderTicket(t) {
     const useGoodUi = !!document.querySelector(".page") && !document.querySelector(".tabbtn");
 
@@ -2181,35 +2207,47 @@ function renderTicket(t) {
         const unreadBadge = t.is_unread ? `<span class="badge unread">Unread</span>` : "";
         const nrBadge = t.is_not_replied ? `<span class="badge priority">Not Replied</span>` : "";
         const slaBadge = slaOverdue ? `<span class="badge overdue">Overdue</span>` : "";
+        const senderName = t.from_name || t.from_email || "(unknown sender)";
+        const senderEmail = t.from_email || "";
+        const lastShort = t.last_message_at ? formatDateShort(t.last_message_at) : "-";
+        const statusPill = `<span class="ticket-status-pill ${ticketStatusClass(t.status)}">${ticketStatusLabel(t.status)}</span>`;
 
         card.innerHTML = `
-          <div>
-            <h4>${escapeHtml(t.subject || "(no subject)")}</h4>
-            <div class="from">${escapeHtml(t.from_name || t.from_email || "(unknown sender)")}  •  ${escapeHtml(t.from_email || "")}</div>
-            <div class="snippet">${escapeHtml(t.snippet || "")}</div>
+          <div class="ticket-main">
+            <div class="ticket-avatar">${ticketInitial(t)}</div>
+            <div class="ticket-content">
+              <div class="ticket-topline">
+                <div class="ticket-sender">${escapeHtml(senderName)}</div>
+                <div class="ticket-time">${escapeHtml(lastShort)}</div>
+              </div>
+              <h4>${escapeHtml(t.subject || "(no subject)")}</h4>
+              <div class="from">${senderEmail ? escapeHtml(senderEmail) : "Unknown email address"}</div>
+              <div class="snippet">${escapeHtml(t.snippet || "")}</div>
 
-            <div class="badge-row">
-              ${priBadge}
-              ${aiBadges(t)}
-              ${cat ? `<span class="badge">${escapeHtml(cat)}</span>` : ``}
-              ${assignee ? `<span class="badge">${escapeHtml(assignee)}</span>` : ``}
-              ${nrBadge}
-              ${unreadBadge}
-              ${slaBadge}
-            </div>
+              <div class="badge-row">
+                ${statusPill}
+                ${priBadge}
+                ${aiBadges(t)}
+                ${cat ? `<span class="badge">${escapeHtml(cat)}</span>` : ``}
+                ${assignee ? `<span class="badge">${escapeHtml(assignee)}</span>` : ``}
+                ${nrBadge}
+                ${unreadBadge}
+                ${slaBadge}
+              </div>
 
-            <div class="ticket-meta" style="margin-top:10px">
-              <div>${escapeHtml(last)}</div>
-              <div>${escapeHtml(due)}</div>
-              <div>${escapeHtml(slaText)}</div>
+              <div class="ticket-meta">
+                <span>${escapeHtml(last)}</span>
+                <span>${escapeHtml(due)}</span>
+                <span>${escapeHtml(slaText)}</span>
+              </div>
             </div>
           </div>
 
           <div class="ticket-right">
             <div class="ticket-actions">
-              <button class="btn" onclick="openThread('${t.thread_id}')">Open</button>
-              <button class="btn" onclick="openAiReplyModal('${t.thread_id}')">AI Draft</button>
+              <button class="btn primary" onclick="openThread('${t.thread_id}')">Open</button>
               <button class="btn" onclick="openAckModal('${t.thread_id}')">Quick Reply</button>
+              <button class="btn" onclick="openAiReplyModal('${t.thread_id}')">AI Draft</button>
             </div>
 
             <div class="ticket-controls">
@@ -2324,7 +2362,7 @@ async function loadTickets() {
     items.forEach(t => list.appendChild(renderTicket(t)));
 
     if (items.length === 0) {
-        list.innerHTML = `<div class="muted small" style="padding:10px">No tickets in this tab.</div>`;
+        list.innerHTML = `<div class="ticket-empty"><strong>No tickets in this queue</strong><div class="small muted" style="margin-top:6px">Try another status tab or clear the search filter.</div></div>`;
     }
 
     renderPagination(data);
@@ -2353,7 +2391,7 @@ function renderPagination(data) {
     wrap.style.display = "flex";
     if (btnPrev) btnPrev.disabled = page <= 1;
     if (btnNext) btnNext.disabled = !has_more;
-    if (info) info.textContent = `Page ${page} of ${totalPages}  •  ${total} tickets`;
+    if (info) info.textContent = `Page ${page} of ${totalPages} - ${total} tickets`;
 }
 
 function prevPage() {
@@ -3432,7 +3470,7 @@ window.addEventListener("load", async () => {
     if (yearEl) yearEl.textContent = String(new Date().getFullYear());
 
     loadSettings();
-    document.getElementById("lastSync").textContent = new Date().toLocaleString();
+    setLastSyncSummary();
     const ok = await ensureAuthenticated();
     if (!ok) return;
 
