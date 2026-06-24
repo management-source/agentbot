@@ -1307,66 +1307,121 @@
     .myspace-workspace{
       display:flex;
       flex-direction:column;
-      gap:14px;
+      gap:16px;
     }
     .myspace-hero{
       position:relative;
       overflow:hidden;
-      padding:24px;
-      border-radius:24px;
+      padding:28px;
+      border-radius:28px;
       color:#fff;
       border:1px solid rgba(255,255,255,.16);
       background:
-        radial-gradient(circle at 82% 18%, rgba(249,231,167,.24), transparent 34%),
-        linear-gradient(135deg, #0f172a 0%, #1f2937 52%, #8f6f1d 100%);
+        radial-gradient(circle at 82% 16%, rgba(249,231,167,.26), transparent 34%),
+        radial-gradient(circle at 4% 100%, rgba(180,128,28,.26), transparent 28%),
+        linear-gradient(135deg, #08111f 0%, #162033 52%, #8f6f1d 100%);
       box-shadow:0 18px 42px rgba(15,23,42,.14);
     }
-    .myspace-hero h2{margin:0;font-size:clamp(30px,4vw,52px);letter-spacing:-.05em;line-height:1}
-    .myspace-hero p{margin:12px 0 0;color:#d8dee9;font-size:15px;line-height:1.55;max-width:720px}
+    .myspace-hero::after{
+      content:"";
+      position:absolute;
+      inset:auto -8% -45% auto;
+      width:420px;
+      height:420px;
+      border-radius:999px;
+      border:1px solid rgba(249,231,167,.22);
+      background:radial-gradient(circle, rgba(249,231,167,.12), transparent 62%);
+      pointer-events:none;
+    }
+    .myspace-hero h2{margin:0;font-size:clamp(32px,4vw,56px);letter-spacing:-.055em;line-height:1}
+    .myspace-hero p{margin:12px 0 0;color:#d8dee9;font-size:15px;line-height:1.55;max-width:760px}
     .myspace-grid{
       display:grid;
-      grid-template-columns:minmax(0, 1.35fr) minmax(280px, .65fr);
+      grid-template-columns:minmax(0, 1.16fr) minmax(320px, .84fr);
       gap:14px;
       align-items:start;
     }
     .myspace-card{
       padding:18px;
       border:1px solid #dbe4ef;
-      border-radius:18px;
-      background:#fff;
+      border-radius:20px;
+      background:linear-gradient(180deg, #fff, #fbfcfe);
       box-shadow:0 8px 24px rgba(15,23,42,.055);
     }
+    .myspace-card.wide{grid-column:1 / -1}
     .myspace-card h3{margin:0;color:#101828;font-size:17px;letter-spacing:-.02em}
     .myspace-card p{margin:6px 0 0;color:#667085;font-size:13px;line-height:1.45}
     .myspace-add{
       display:grid;
-      grid-template-columns:minmax(180px, 1fr) 150px 130px auto;
+      grid-template-columns:minmax(220px, 1.4fr) 118px 124px 120px 146px minmax(150px, .8fr) auto;
       gap:10px;
       align-items:end;
       margin-top:14px;
     }
-    .myspace-todo-list{
+    .myspace-planner{
+      display:grid;
+      grid-template-columns:repeat(3, minmax(0, 1fr));
+      gap:12px;
+      margin-top:16px;
+    }
+    .myspace-lane{
+      min-height:210px;
+      border:1px solid #dbe4ef;
+      border-radius:18px;
+      padding:12px;
+      background:#f8fafc;
+    }
+    .myspace-lane-head{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      margin-bottom:10px;
+    }
+    .myspace-lane-head h4{margin:0;color:#101828;font-size:14px;letter-spacing:-.01em}
+    .myspace-count{
+      min-width:28px;
+      height:28px;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      border-radius:999px;
+      background:#111827;
+      color:#f9e7a7;
+      font-weight:900;
+      font-size:12px;
+    }
+    .myspace-lane-list{
       display:flex;
       flex-direction:column;
       gap:10px;
-      margin-top:14px;
+    }
+    .myspace-empty{
+      padding:14px;
+      border:1px dashed #cbd5e1;
+      border-radius:14px;
+      color:#667085;
+      background:rgba(255,255,255,.7);
+      font-size:13px;
+      line-height:1.45;
     }
     .myspace-todo{
       display:grid;
-      grid-template-columns:38px minmax(0, 1fr) minmax(230px, .56fr);
-      gap:12px;
-      padding:14px;
+      grid-template-columns:30px minmax(0, 1fr);
+      gap:10px;
+      padding:12px;
       border:1px solid #dbe4ef;
       border-radius:16px;
-      background:#fbfcfe;
+      background:#fff;
+      box-shadow:0 8px 18px rgba(15,23,42,.045);
     }
     .myspace-todo.done{opacity:.72}
     .myspace-todo.done .myspace-title-input{text-decoration:line-through;color:#667085}
-    .myspace-check{display:flex;align-items:flex-start;justify-content:center;padding-top:9px}
+    .myspace-check{display:flex;align-items:flex-start;justify-content:center;padding-top:8px}
     .myspace-check input{display:none}
     .myspace-check span{
-      width:24px;
-      height:24px;
+      width:22px;
+      height:22px;
       border-radius:999px;
       border:2px solid #cbd5e1;
       background:#fff;
@@ -1380,8 +1435,8 @@
     .myspace-check input:checked + span::after{
       content:"";
       position:absolute;
-      left:7px;
-      top:3px;
+      left:6px;
+      top:2px;
       width:6px;
       height:12px;
       border:solid #fff;
@@ -1398,9 +1453,12 @@
       font-size:15px;
       color:#101828;
     }
-    .myspace-todo textarea,.myspace-note{
+    .myspace-todo textarea,
+    .myspace-note,
+    .myspace-tool-item textarea,
+    .myspace-guide-upload textarea{
       width:100%;
-      min-height:72px;
+      min-height:70px;
       resize:vertical;
       border:1px solid #dbe4ef;
       border-radius:14px;
@@ -1413,11 +1471,63 @@
     .myspace-note{min-height:320px;margin-top:14px}
     .myspace-todo-meta{display:flex;gap:6px;flex-wrap:wrap}
     .myspace-todo-actions{
+      grid-column:2;
       display:grid;
-      grid-template-columns:1fr;
+      grid-template-columns:repeat(2, minmax(0, 1fr));
       gap:8px;
       align-content:start;
     }
+    .myspace-action-row{
+      display:flex;
+      gap:8px;
+      grid-column:1 / -1;
+    }
+    .myspace-action-row .btn{flex:1}
+    .myspace-tool-grid{
+      display:grid;
+      grid-template-columns:repeat(2, minmax(0, 1fr));
+      gap:14px;
+    }
+    .myspace-tool-form,
+    .myspace-guide-upload{
+      display:grid;
+      gap:10px;
+      margin-top:14px;
+    }
+    .myspace-tool-list,
+    .myspace-guide-list{
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+      margin-top:14px;
+    }
+    .myspace-tool-item,
+    .myspace-guide-item{
+      display:grid;
+      grid-template-columns:minmax(0, 1fr) auto;
+      gap:12px;
+      padding:13px;
+      border:1px solid #dbe4ef;
+      border-radius:16px;
+      background:#fff;
+    }
+    .myspace-tool-main{display:grid;gap:8px;min-width:0}
+    .myspace-tool-actions,
+    .myspace-guide-actions{
+      display:flex;
+      flex-direction:column;
+      gap:8px;
+      align-items:stretch;
+      justify-content:flex-start;
+    }
+    .myspace-inline-fields{
+      display:grid;
+      grid-template-columns:1fr 150px;
+      gap:8px;
+    }
+    .myspace-snippet-body{min-height:110px !important}
+    .myspace-guide-item strong{display:block;color:#101828;font-size:14px}
+    .myspace-guide-item p{margin:4px 0 6px;color:#667085;font-size:13px}
     .myspace-privacy{
       border:1px solid rgba(22,163,74,.22);
       background:rgba(22,163,74,.08);
@@ -1428,17 +1538,25 @@
       line-height:1.45;
       margin-top:14px;
     }
+    @media (max-width: 1220px){
+      .myspace-add{grid-template-columns:1fr 1fr 1fr}
+      .myspace-add .btn{grid-column:1 / -1}
+      .myspace-planner,.myspace-tool-grid{grid-template-columns:1fr}
+    }
     @media (max-width: 1050px){
       .myspace-grid{grid-template-columns:1fr}
-      .myspace-add{grid-template-columns:1fr 1fr}
-      .myspace-todo{grid-template-columns:38px minmax(0, 1fr)}
-      .myspace-todo-actions{grid-column:2}
     }
     @media (max-width: 640px){
-      .myspace-add{grid-template-columns:1fr}
-      .myspace-todo{grid-template-columns:1fr}
+      .myspace-add,
+      .myspace-todo-actions,
+      .myspace-inline-fields{grid-template-columns:1fr}
+      .myspace-todo,
+      .myspace-tool-item,
+      .myspace-guide-item{grid-template-columns:1fr}
       .myspace-check{justify-content:flex-start;padding-top:0}
       .myspace-todo-actions{grid-column:auto}
+      .myspace-tool-actions,
+      .myspace-guide-actions{flex-direction:row;flex-wrap:wrap}
     }
 
     /* Modal */
@@ -1978,7 +2096,7 @@
                     <div class="hub-tile" data-page-tile="myspace" onclick="switchDashboardTab('myspace')">
                         <div class="tile-mark">MS</div>
                         <h3>My Space</h3>
-                        <p>Your private workspace for personal to-dos, notes, and daily focus items.</p>
+                        <p>Your private planner for follow-ups, links, snippets, notes, and shared staff guides.</p>
                         <div class="tile-action">Open my space</div>
                     </div>
                     <div class="hub-tile" data-page-tile="inbox" onclick="switchDashboardTab('inbox')">
@@ -2025,23 +2143,34 @@
                     <div class="myspace-hero">
                         <div class="login-kicker" style="color:#f9e7a7;margin-bottom:10px">Private Workspace</div>
                         <h2>My Space</h2>
-                        <p>Your personal area for the work that belongs only to you. Tasks and notes are saved in the backend so you can continue tomorrow.</p>
+                        <p>Your personal command centre for daily planning, follow-ups, quick links, email snippets, private notes, and shared staff guides.</p>
                     </div>
 
                     <div class="system-stats" id="mySpaceStats"></div>
 
                     <div class="myspace-grid">
                         <div class="myspace-card">
-                            <h3>Private To-Do List</h3>
-                            <p>Add personal follow-ups, reminders, and focus items. Only your login can access this list.</p>
+                            <h3>Daily Planner + Follow-Up Tracker</h3>
+                            <p>Plan today, park work for later, and keep chase-ups visible. Only your login can access these items.</p>
                             <div class="myspace-add">
                                 <div class="field">
                                     <div class="label">Task</div>
-                                    <input type="text" id="mySpaceNewTitle" placeholder="What do you need to get done?" />
+                                    <input type="text" id="mySpaceNewTitle" placeholder="What needs attention?" />
                                 </div>
                                 <div class="field">
-                                    <div class="label">Due Date</div>
-                                    <input type="date" id="mySpaceNewDue" />
+                                    <div class="label">Lane</div>
+                                    <select id="mySpaceNewBucket">
+                                        <option value="today">Today</option>
+                                        <option value="week">This Week</option>
+                                        <option value="later">Later</option>
+                                    </select>
+                                </div>
+                                <div class="field">
+                                    <div class="label">Type</div>
+                                    <select id="mySpaceNewType" onchange="toggleMySpaceNewFollowField(this.value)">
+                                        <option value="task">Task</option>
+                                        <option value="follow_up">Follow-up</option>
+                                    </select>
                                 </div>
                                 <div class="field">
                                     <div class="label">Priority</div>
@@ -2051,24 +2180,99 @@
                                         <option value="low">Low</option>
                                     </select>
                                 </div>
+                                <div class="field">
+                                    <div class="label">Due Date</div>
+                                    <input type="date" id="mySpaceNewDue" />
+                                </div>
+                                <div class="field">
+                                    <div class="label">Follow Up With</div>
+                                    <input type="text" id="mySpaceNewFollowUpWith" class="hidden" placeholder="Tenant, owner, supplier..." />
+                                </div>
                                 <button class="btn primary" onclick="addMySpaceTodo()">Add Task</button>
                             </div>
-                            <div id="mySpaceTodoList" class="myspace-todo-list"></div>
+                            <div class="myspace-planner">
+                                <div class="myspace-lane">
+                                    <div class="myspace-lane-head">
+                                        <h4>Today</h4>
+                                        <span class="myspace-count" id="mySpaceTodotodayCount">0</span>
+                                    </div>
+                                    <div class="myspace-lane-list" id="mySpaceTodotoday"></div>
+                                </div>
+                                <div class="myspace-lane">
+                                    <div class="myspace-lane-head">
+                                        <h4>This Week</h4>
+                                        <span class="myspace-count" id="mySpaceTodoweekCount">0</span>
+                                    </div>
+                                    <div class="myspace-lane-list" id="mySpaceTodoweek"></div>
+                                </div>
+                                <div class="myspace-lane">
+                                    <div class="myspace-lane-head">
+                                        <h4>Later</h4>
+                                        <span class="myspace-count" id="mySpaceTodolaterCount">0</span>
+                                    </div>
+                                    <div class="myspace-lane-list" id="mySpaceTodolater"></div>
+                                </div>
+                            </div>
                         </div>
 
                         <div class="myspace-card">
                             <div class="row space">
                                 <div>
                                     <h3>Private Notes</h3>
-                                    <p>A simple scratchpad for today’s reminders, call notes, or planning.</p>
+                                    <p>A scratchpad for today's reminders, call notes, or planning.</p>
                                 </div>
                                 <span class="small muted" id="mySpaceNoteStatus">Autosaves</span>
                             </div>
                             <textarea id="mySpaceNote" class="myspace-note" oninput="scheduleMySpaceNoteSave()" placeholder="Write private notes here..."></textarea>
                             <div class="myspace-privacy">
-                                This page is private to your account in the portal. Administrators can assign access to the My Space page, but there is no admin screen to view another staff member's tasks or notes.
+                                Your planner, snippets, links, and notes are private to your account. Staff guides are shared because they are team resources.
                             </div>
                         </div>
+                    </div>
+
+                    <div class="myspace-tool-grid">
+                        <div class="myspace-card">
+                            <h3>Quick Links</h3>
+                            <p>Keep your daily portals, report URLs, calendars, and supplier pages one click away.</p>
+                            <div class="myspace-tool-form">
+                                <input type="text" id="mySpaceLinkTitle" placeholder="Link title" />
+                                <input type="url" id="mySpaceLinkUrl" placeholder="https://..." />
+                                <textarea id="mySpaceLinkNotes" placeholder="Optional notes for this link..."></textarea>
+                                <button class="btn primary" onclick="addMySpaceQuickLink()">Add Quick Link</button>
+                            </div>
+                            <div id="mySpaceQuickLinks" class="myspace-tool-list"></div>
+                        </div>
+
+                        <div class="myspace-card">
+                            <h3>Email Snippets</h3>
+                            <p>Save repeat wording for rent follow-ups, compliance requests, tenant updates, and owner replies.</p>
+                            <div class="myspace-tool-form">
+                                <div class="myspace-inline-fields">
+                                    <input type="text" id="mySpaceSnippetTitle" placeholder="Snippet title" />
+                                    <input type="text" id="mySpaceSnippetCategory" placeholder="Category" />
+                                </div>
+                                <textarea id="mySpaceSnippetBody" class="myspace-snippet-body" placeholder="Write the email wording here..."></textarea>
+                                <button class="btn primary" onclick="addMySpaceSnippet()">Add Snippet</button>
+                            </div>
+                            <div id="mySpaceSnippets" class="myspace-tool-list"></div>
+                        </div>
+                    </div>
+
+                    <div class="myspace-card">
+                        <div class="row space">
+                            <div>
+                                <h3>Staff Guides</h3>
+                                <p>Upload PDF instructions for common office tasks so the team can view them anytime.</p>
+                            </div>
+                            <span class="user-chip">PDF library</span>
+                        </div>
+                        <div id="mySpaceGuideUpload" class="myspace-guide-upload hidden">
+                            <input type="text" id="mySpaceGuideTitle" placeholder="Guide title" />
+                            <textarea id="mySpaceGuideDescription" placeholder="Short description or when to use this guide..."></textarea>
+                            <input type="file" id="mySpaceGuideFile" accept="application/pdf" />
+                            <button class="btn primary" onclick="uploadMySpaceGuide()">Upload Staff Guide</button>
+                        </div>
+                        <div id="mySpaceStaffGuides" class="myspace-guide-list"></div>
                     </div>
                 </section>
             </div>
@@ -2700,7 +2904,7 @@
             </div>
         </div>
 
-        <script src="/static/app.js?v=14"></script>
+        <script src="/static/app.js?v=15"></script>
 
         <script>
   // Wire segmented status buttons to existing tab logic

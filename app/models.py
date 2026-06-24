@@ -7,6 +7,7 @@ from sqlalchemy import (
     Boolean,
     Integer,
     Float,
+    LargeBinary,
     Enum as SAEnum,
     Text,
     ForeignKey,
@@ -194,6 +195,9 @@ class MySpaceTodo(Base):
     title: Mapped[str] = mapped_column(String)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     priority: Mapped[str] = mapped_column(String, default="normal", index=True)
+    bucket: Mapped[str] = mapped_column(String, default="today", index=True)
+    item_type: Mapped[str] = mapped_column(String, default="task", index=True)
+    follow_up_with: Mapped[str | None] = mapped_column(String, nullable=True)
     due_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
     is_done: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
@@ -211,6 +215,50 @@ class MySpaceNote(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
     user = relationship("User")
+
+
+class MySpaceQuickLink(Base):
+    __tablename__ = "my_space_quick_links"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), index=True)
+    title: Mapped[str] = mapped_column(String)
+    url: Mapped[str] = mapped_column(Text)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+    user = relationship("User")
+
+
+class MySpaceSnippet(Base):
+    __tablename__ = "my_space_snippets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), index=True)
+    title: Mapped[str] = mapped_column(String)
+    body: Mapped[str] = mapped_column(Text)
+    category: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+    user = relationship("User")
+
+
+class StaffGuide(Base):
+    __tablename__ = "staff_guides"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    title: Mapped[str] = mapped_column(String)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    filename: Mapped[str] = mapped_column(String)
+    content_type: Mapped[str] = mapped_column(String, default="application/pdf")
+    content_bytes: Mapped[bytes] = mapped_column(LargeBinary)
+    uploaded_by_user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+    uploaded_by = relationship("User")
 
 
 class ThreadTicket(Base):

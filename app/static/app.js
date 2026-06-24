@@ -183,6 +183,9 @@ let coverageLoadedOnce = false;
 let usersLoadedOnce = false;
 let mySpaceLoadedOnce = false;
 let mySpaceSaveTimer = null;
+let mySpaceQuickLinksCache = [];
+let mySpaceSnippetsCache = [];
+let mySpaceGuidesCache = [];
 let pageRegistry = [];
 let rolePagePermissions = {};
 let allowedPages = new Set(["portal"]);
@@ -585,10 +588,46 @@ function mySpaceDuePayload(value) {
     return raw ? `${raw}T00:00:00` : null;
 }
 
+const MY_SPACE_BUCKETS = [
+    { id: "today", label: "Today", empty: "Nothing planned for today." },
+    { id: "week", label: "This Week", empty: "No weekly follow-ups yet." },
+    { id: "later", label: "Later", empty: "No parked items." },
+];
+
+function mySpaceCleanBucket(value) {
+    const bucket = String(value || "today").toLowerCase();
+    return MY_SPACE_BUCKETS.some((item) => item.id === bucket) ? bucket : "today";
+}
+
+function mySpaceCleanType(value) {
+    const type = String(value || "task").toLowerCase();
+    return type === "follow_up" ? "follow_up" : "task";
+}
+
+function mySpaceTypeLabel(value) {
+    return mySpaceCleanType(value) === "follow_up" ? "Follow-up" : "Task";
+}
+
+function mySpaceBucketLabel(value) {
+    const bucket = MY_SPACE_BUCKETS.find((item) => item.id === mySpaceCleanBucket(value));
+    return bucket ? bucket.label : "Today";
+}
+
+function mySpaceTodayInput() {
+    const today = new Date();
+    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+}
+
+function mySpaceCanManageGuides() {
+    return String(currentUser?.role || "").toUpperCase() === "ADMIN";
+}
+
 function mySpaceStats(items) {
     const total = items.length;
     const done = items.filter((item) => item.is_done).length;
     const open = total - done;
+    const followUps = items.filter((item) => !item.is_done && mySpaceCleanType(item.item_type) === "follow_up").length;
+    const dueToday = items.filter((item) => !item.is_done && item.due_at && dateInputValue(item.due_at) === mySpaceTodayInput()).length;
     const overdue = items.filter((item) => {
         if (item.is_done || !item.due_at) return false;
         const due = new Date(item.due_at);
@@ -596,7 +635,7 @@ function mySpaceStats(items) {
         due.setHours(23, 59, 59, 999);
         return due < today;
     }).length;
-    return { total, done, open, overdue };
+    return { total, done, open, overdue, followUps, dueToday };
 }
 
 function renderMySpaceStats(items) {
@@ -604,52 +643,167 @@ function renderMySpaceStats(items) {
     if (!el) return;
     const stats = mySpaceStats(items);
     el.innerHTML = `
-        <div class="system-stat"><span>Open tasks</span><strong>${stats.open}</strong></div>
-        <div class="system-stat"><span>Completed</span><strong>${stats.done}</strong></div>
+        <div class="system-stat"><span>Open Items</span><strong>${stats.open}</strong></div>
+        <div class="system-stat"><span>Follow-Ups</span><strong>${stats.followUps}</strong></div>
+        <div class="system-stat"><span>Due Today</span><strong>${stats.dueToday}</strong></div>
         <div class="system-stat"><span>Overdue</span><strong>${stats.overdue}</strong></div>
-        <div class="system-stat"><span>Total</span><strong>${stats.total}</strong></div>
+    `;
+}
+
+function renderMySpaceTodoItem(item) {
+    const due = item.due_at ? dateInputValue(item.due_at) : "";
+    const dueLabel = item.due_at ? formatDateShort(item.due_at) : "No due date";
+    const priority = String(item.priority || "normal").toLowerCase();
+    const itemType = mySpaceCleanType(item.item_type);
+    const bucket = mySpaceCleanBucket(item.bucket);
+    return `
+        <article class="myspace-todo ${item.is_done ? "done" : ""}">
+            <label class="myspace-check" title="Mark complete">
+                <input type="checkbox" ${item.is_done ? "checked" : ""} onchange="toggleMySpaceTodo(${item.id}, this.checked)" />
+                <span></span>
+            </label>
+            <div class="myspace-todo-main">
+                <input class="myspace-title-input" data-myspace-title="${item.id}" value="${escapeHtml(item.title || "")}" />
+                <textarea data-myspace-notes="${item.id}" placeholder="Private task notes...">${escapeHtml(item.notes || "")}</textarea>
+                <div class="myspace-todo-meta">
+                    <span class="user-chip ${priority === "high" ? "warn" : ""}">${escapeHtml(priority)}</span>
+                    <span class="user-chip">${escapeHtml(mySpaceTypeLabel(itemType))}</span>
+                    ${item.follow_up_with ? `<span class="user-chip">Chase: ${escapeHtml(item.follow_up_with)}</span>` : ""}
+                    <span class="user-chip">${escapeHtml(dueLabel)}</span>
+                    ${item.completed_at ? `<span class="user-chip ok">Done ${escapeHtml(formatDateShort(item.completed_at))}</span>` : ""}
+                </div>
+            </div>
+            <div class="myspace-todo-actions">
+                <select data-myspace-bucket="${item.id}">
+                    <option value="today" ${bucket === "today" ? "selected" : ""}>Today</option>
+                    <option value="week" ${bucket === "week" ? "selected" : ""}>This Week</option>
+                    <option value="later" ${bucket === "later" ? "selected" : ""}>Later</option>
+                </select>
+                <select data-myspace-type="${item.id}" onchange="toggleMySpaceFollowField(${item.id}, this.value)">
+                    <option value="task" ${itemType === "task" ? "selected" : ""}>Task</option>
+                    <option value="follow_up" ${itemType === "follow_up" ? "selected" : ""}>Follow-up</option>
+                </select>
+                <input type="text" data-myspace-follow="${item.id}" class="${itemType === "follow_up" ? "" : "hidden"}" placeholder="Who or what to chase?" value="${escapeHtml(item.follow_up_with || "")}" />
+                <select data-myspace-priority="${item.id}">
+                    <option value="low" ${priority === "low" ? "selected" : ""}>Low</option>
+                    <option value="normal" ${priority === "normal" ? "selected" : ""}>Normal</option>
+                    <option value="high" ${priority === "high" ? "selected" : ""}>High</option>
+                </select>
+                <input type="date" data-myspace-due="${item.id}" value="${escapeHtml(due)}" />
+                <div class="myspace-action-row">
+                    <button class="btn" onclick="saveMySpaceTodo(${item.id})">Save</button>
+                    <button class="btn danger" onclick="deleteMySpaceTodo(${item.id})">Delete</button>
+                </div>
+            </div>
+        </article>
     `;
 }
 
 function renderMySpaceTodos(items) {
-    const list = document.getElementById("mySpaceTodoList");
+    MY_SPACE_BUCKETS.forEach((bucket) => {
+        const list = document.getElementById(`mySpaceTodo${bucket.id}`);
+        const count = document.getElementById(`mySpaceTodo${bucket.id}Count`);
+        if (!list) return;
+        const bucketItems = items.filter((item) => mySpaceCleanBucket(item.bucket) === bucket.id);
+        if (count) count.textContent = String(bucketItems.filter((item) => !item.is_done).length);
+        if (!bucketItems.length) {
+            list.innerHTML = `<div class="myspace-empty">${escapeHtml(bucket.empty)}</div>`;
+            return;
+        }
+        list.innerHTML = bucketItems.map(renderMySpaceTodoItem).join("");
+    });
+}
+
+function renderMySpaceQuickLinks(items) {
+    mySpaceQuickLinksCache = items;
+    const list = document.getElementById("mySpaceQuickLinks");
     if (!list) return;
     if (!items.length) {
-        list.innerHTML = `<div class="ticket-empty"><strong>No private tasks yet</strong><div class="small muted" style="margin-top:6px">Add your first task and it will be waiting here tomorrow.</div></div>`;
+        list.innerHTML = `<div class="myspace-empty">Add reusable links for portals, calendars, reports, or supplier systems.</div>`;
         return;
     }
-    list.innerHTML = items.map((item) => {
-        const due = item.due_at ? dateInputValue(item.due_at) : "";
-        const dueLabel = item.due_at ? formatDateShort(item.due_at) : "No due date";
-        const priority = String(item.priority || "normal").toLowerCase();
-        return `
-            <article class="myspace-todo ${item.is_done ? "done" : ""}">
-                <label class="myspace-check">
-                    <input type="checkbox" ${item.is_done ? "checked" : ""} onchange="toggleMySpaceTodo(${item.id}, this.checked)" />
-                    <span></span>
-                </label>
-                <div class="myspace-todo-main">
-                    <input class="myspace-title-input" data-myspace-title="${item.id}" value="${escapeHtml(item.title || "")}" />
-                    <textarea data-myspace-notes="${item.id}" placeholder="Private task notes...">${escapeHtml(item.notes || "")}</textarea>
-                    <div class="myspace-todo-meta">
-                        <span class="user-chip ${priority === "high" ? "warn" : ""}">${escapeHtml(priority)}</span>
-                        <span class="user-chip">${escapeHtml(dueLabel)}</span>
-                        ${item.completed_at ? `<span class="user-chip ok">Done ${escapeHtml(formatDateShort(item.completed_at))}</span>` : ""}
-                    </div>
+    list.innerHTML = items.map((link) => `
+        <article class="myspace-tool-item">
+            <div class="myspace-tool-main">
+                <input data-myspace-link-title="${link.id}" value="${escapeHtml(link.title || "")}" placeholder="Link title" />
+                <input data-myspace-link-url="${link.id}" value="${escapeHtml(link.url || "")}" placeholder="https://..." />
+                <textarea data-myspace-link-notes="${link.id}" placeholder="Optional notes...">${escapeHtml(link.notes || "")}</textarea>
+            </div>
+            <div class="myspace-tool-actions">
+                <a class="btn" href="${escapeHtml(link.url || "#")}" target="_blank" rel="noopener noreferrer">Open</a>
+                <button class="btn" onclick="saveMySpaceQuickLink(${link.id})">Save</button>
+                <button class="btn danger" onclick="deleteMySpaceQuickLink(${link.id})">Delete</button>
+            </div>
+        </article>
+    `).join("");
+}
+
+function renderMySpaceSnippets(items) {
+    mySpaceSnippetsCache = items;
+    const list = document.getElementById("mySpaceSnippets");
+    if (!list) return;
+    if (!items.length) {
+        list.innerHTML = `<div class="myspace-empty">Save repeat email wording here so you can copy it in seconds.</div>`;
+        return;
+    }
+    list.innerHTML = items.map((snippet) => `
+        <article class="myspace-tool-item">
+            <div class="myspace-tool-main">
+                <div class="myspace-inline-fields">
+                    <input data-myspace-snippet-title="${snippet.id}" value="${escapeHtml(snippet.title || "")}" placeholder="Snippet title" />
+                    <input data-myspace-snippet-category="${snippet.id}" value="${escapeHtml(snippet.category || "")}" placeholder="Category" />
                 </div>
-                <div class="myspace-todo-actions">
-                    <select data-myspace-priority="${item.id}">
-                        <option value="low" ${priority === "low" ? "selected" : ""}>Low</option>
-                        <option value="normal" ${priority === "normal" ? "selected" : ""}>Normal</option>
-                        <option value="high" ${priority === "high" ? "selected" : ""}>High</option>
-                    </select>
-                    <input type="date" data-myspace-due="${item.id}" value="${escapeHtml(due)}" />
-                    <button class="btn" onclick="saveMySpaceTodo(${item.id})">Save</button>
-                    <button class="btn danger" onclick="deleteMySpaceTodo(${item.id})">Delete</button>
-                </div>
-            </article>
-        `;
-    }).join("");
+                <textarea class="myspace-snippet-body" data-myspace-snippet-body="${snippet.id}" placeholder="Snippet body...">${escapeHtml(snippet.body || "")}</textarea>
+            </div>
+            <div class="myspace-tool-actions">
+                <button class="btn primary" onclick="copyMySpaceSnippet(${snippet.id})">Copy</button>
+                <button class="btn" onclick="saveMySpaceSnippet(${snippet.id})">Save</button>
+                <button class="btn danger" onclick="deleteMySpaceSnippet(${snippet.id})">Delete</button>
+            </div>
+        </article>
+    `).join("");
+}
+
+function renderMySpaceGuides(items) {
+    mySpaceGuidesCache = items;
+    const list = document.getElementById("mySpaceStaffGuides");
+    const upload = document.getElementById("mySpaceGuideUpload");
+    const canManage = mySpaceCanManageGuides();
+    if (upload) upload.classList.toggle("hidden", !canManage);
+    if (!list) return;
+    if (!items.length) {
+        list.innerHTML = `<div class="myspace-empty">No staff guides uploaded yet.</div>`;
+        return;
+    }
+    list.innerHTML = items.map((guide) => `
+        <article class="myspace-guide-item">
+            <div>
+                <strong>${escapeHtml(guide.title || "Staff guide")}</strong>
+                <p>${escapeHtml(guide.description || guide.filename || "PDF guide")}</p>
+                <span class="small muted">Uploaded ${escapeHtml(formatDateShort(guide.created_at))}</span>
+            </div>
+            <div class="myspace-guide-actions">
+                <a class="btn" href="/my-space/staff-guides/${guide.id}/view" target="_blank" rel="noopener noreferrer">View PDF</a>
+                ${canManage ? `<button class="btn danger" onclick="deleteMySpaceGuide(${guide.id})">Delete</button>` : ""}
+            </div>
+        </article>
+    `).join("");
+}
+
+function toggleMySpaceFollowField(todoId, value) {
+    const followEl = document.querySelector(`[data-myspace-follow="${todoId}"]`);
+    if (!followEl) return;
+    const show = mySpaceCleanType(value) === "follow_up";
+    followEl.classList.toggle("hidden", !show);
+    if (!show) followEl.value = "";
+}
+
+function toggleMySpaceNewFollowField(value) {
+    const followEl = document.getElementById("mySpaceNewFollowUpWith");
+    if (!followEl) return;
+    const show = mySpaceCleanType(value) === "follow_up";
+    followEl.classList.toggle("hidden", !show);
+    if (!show) followEl.value = "";
 }
 
 async function loadMySpace() {
@@ -664,6 +818,9 @@ async function loadMySpace() {
     if (note) note.value = data.note || "";
     renderMySpaceStats(items);
     renderMySpaceTodos(items);
+    renderMySpaceQuickLinks(Array.isArray(data.quick_links) ? data.quick_links : []);
+    renderMySpaceSnippets(Array.isArray(data.snippets) ? data.snippets : []);
+    renderMySpaceGuides(Array.isArray(data.staff_guides) ? data.staff_guides : []);
     mySpaceLoadedOnce = true;
 }
 
@@ -671,7 +828,11 @@ async function addMySpaceTodo() {
     const titleEl = document.getElementById("mySpaceNewTitle");
     const dueEl = document.getElementById("mySpaceNewDue");
     const priorityEl = document.getElementById("mySpaceNewPriority");
+    const bucketEl = document.getElementById("mySpaceNewBucket");
+    const typeEl = document.getElementById("mySpaceNewType");
+    const followEl = document.getElementById("mySpaceNewFollowUpWith");
     const title = String(titleEl?.value || "").trim();
+    const itemType = mySpaceCleanType(typeEl?.value);
     if (!title) {
         alert("Add a task title first.");
         return;
@@ -682,6 +843,9 @@ async function addMySpaceTodo() {
         body: JSON.stringify({
             title,
             priority: priorityEl?.value || "normal",
+            bucket: mySpaceCleanBucket(bucketEl?.value),
+            item_type: itemType,
+            follow_up_with: itemType === "follow_up" ? (followEl?.value || "") : "",
             due_at: mySpaceDuePayload(dueEl?.value),
         }),
     });
@@ -692,6 +856,12 @@ async function addMySpaceTodo() {
     if (titleEl) titleEl.value = "";
     if (dueEl) dueEl.value = "";
     if (priorityEl) priorityEl.value = "normal";
+    if (bucketEl) bucketEl.value = "today";
+    if (typeEl) typeEl.value = "task";
+    if (followEl) {
+        followEl.value = "";
+        followEl.classList.add("hidden");
+    }
     await loadMySpace();
 }
 
@@ -700,7 +870,11 @@ async function saveMySpaceTodo(todoId) {
     const notesEl = document.querySelector(`[data-myspace-notes="${todoId}"]`);
     const priorityEl = document.querySelector(`[data-myspace-priority="${todoId}"]`);
     const dueEl = document.querySelector(`[data-myspace-due="${todoId}"]`);
+    const bucketEl = document.querySelector(`[data-myspace-bucket="${todoId}"]`);
+    const typeEl = document.querySelector(`[data-myspace-type="${todoId}"]`);
+    const followEl = document.querySelector(`[data-myspace-follow="${todoId}"]`);
     const title = String(titleEl?.value || "").trim();
+    const itemType = mySpaceCleanType(typeEl?.value);
     if (!title) {
         alert("Task title cannot be empty.");
         return;
@@ -712,6 +886,9 @@ async function saveMySpaceTodo(todoId) {
             title,
             notes: notesEl?.value || "",
             priority: priorityEl?.value || "normal",
+            bucket: mySpaceCleanBucket(bucketEl?.value),
+            item_type: itemType,
+            follow_up_with: itemType === "follow_up" ? (followEl?.value || "") : "",
             due_at: mySpaceDuePayload(dueEl?.value),
         }),
     });
@@ -767,6 +944,173 @@ async function saveMySpaceNote() {
     if (status) status.textContent = `Saved ${new Date().toLocaleTimeString()}`;
 }
 
+async function addMySpaceQuickLink() {
+    const titleEl = document.getElementById("mySpaceLinkTitle");
+    const urlEl = document.getElementById("mySpaceLinkUrl");
+    const notesEl = document.getElementById("mySpaceLinkNotes");
+    const title = String(titleEl?.value || "").trim();
+    const url = String(urlEl?.value || "").trim();
+    if (!title || !url) {
+        alert("Add both a link title and full URL.");
+        return;
+    }
+    const r = await apiFetch("/my-space/quick-links", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, url, notes: notesEl?.value || "" }),
+    });
+    if (!r.ok) {
+        alert(`Failed to add quick link: ${await extractErrorMessage(r)}`);
+        return;
+    }
+    if (titleEl) titleEl.value = "";
+    if (urlEl) urlEl.value = "";
+    if (notesEl) notesEl.value = "";
+    await loadMySpace();
+}
+
+async function saveMySpaceQuickLink(linkId) {
+    const titleEl = document.querySelector(`[data-myspace-link-title="${linkId}"]`);
+    const urlEl = document.querySelector(`[data-myspace-link-url="${linkId}"]`);
+    const notesEl = document.querySelector(`[data-myspace-link-notes="${linkId}"]`);
+    const title = String(titleEl?.value || "").trim();
+    const url = String(urlEl?.value || "").trim();
+    if (!title || !url) {
+        alert("Quick links need a title and full URL.");
+        return;
+    }
+    const r = await apiFetch(`/my-space/quick-links/${linkId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, url, notes: notesEl?.value || "" }),
+    });
+    if (!r.ok) {
+        alert(`Failed to save quick link: ${await extractErrorMessage(r)}`);
+        return;
+    }
+    await loadMySpace();
+}
+
+async function deleteMySpaceQuickLink(linkId) {
+    if (!confirm("Delete this quick link?")) return;
+    const r = await apiFetch(`/my-space/quick-links/${linkId}`, { method: "DELETE" });
+    if (!r.ok) {
+        alert(`Failed to delete quick link: ${await extractErrorMessage(r)}`);
+        return;
+    }
+    await loadMySpace();
+}
+
+async function addMySpaceSnippet() {
+    const titleEl = document.getElementById("mySpaceSnippetTitle");
+    const categoryEl = document.getElementById("mySpaceSnippetCategory");
+    const bodyEl = document.getElementById("mySpaceSnippetBody");
+    const title = String(titleEl?.value || "").trim();
+    const body = String(bodyEl?.value || "").trim();
+    if (!title || !body) {
+        alert("Add a snippet title and body.");
+        return;
+    }
+    const r = await apiFetch("/my-space/snippets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, body, category: categoryEl?.value || "" }),
+    });
+    if (!r.ok) {
+        alert(`Failed to add snippet: ${await extractErrorMessage(r)}`);
+        return;
+    }
+    if (titleEl) titleEl.value = "";
+    if (categoryEl) categoryEl.value = "";
+    if (bodyEl) bodyEl.value = "";
+    await loadMySpace();
+}
+
+async function saveMySpaceSnippet(snippetId) {
+    const titleEl = document.querySelector(`[data-myspace-snippet-title="${snippetId}"]`);
+    const categoryEl = document.querySelector(`[data-myspace-snippet-category="${snippetId}"]`);
+    const bodyEl = document.querySelector(`[data-myspace-snippet-body="${snippetId}"]`);
+    const title = String(titleEl?.value || "").trim();
+    const body = String(bodyEl?.value || "").trim();
+    if (!title || !body) {
+        alert("Snippets need a title and body.");
+        return;
+    }
+    const r = await apiFetch(`/my-space/snippets/${snippetId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, body, category: categoryEl?.value || "" }),
+    });
+    if (!r.ok) {
+        alert(`Failed to save snippet: ${await extractErrorMessage(r)}`);
+        return;
+    }
+    await loadMySpace();
+}
+
+async function deleteMySpaceSnippet(snippetId) {
+    if (!confirm("Delete this email snippet?")) return;
+    const r = await apiFetch(`/my-space/snippets/${snippetId}`, { method: "DELETE" });
+    if (!r.ok) {
+        alert(`Failed to delete snippet: ${await extractErrorMessage(r)}`);
+        return;
+    }
+    await loadMySpace();
+}
+
+async function copyMySpaceSnippet(snippetId) {
+    const bodyEl = document.querySelector(`[data-myspace-snippet-body="${snippetId}"]`);
+    const cached = mySpaceSnippetsCache.find((snippet) => Number(snippet.id) === Number(snippetId));
+    const body = String(bodyEl?.value || cached?.body || "");
+    if (!body.trim()) {
+        alert("This snippet is empty.");
+        return;
+    }
+    try {
+        await navigator.clipboard.writeText(body);
+        alert("Snippet copied.");
+    } catch {
+        bodyEl?.focus();
+        bodyEl?.select();
+        alert("Copy shortcut ready. Press Ctrl+C to copy the selected snippet.");
+    }
+}
+
+async function uploadMySpaceGuide() {
+    const titleEl = document.getElementById("mySpaceGuideTitle");
+    const descriptionEl = document.getElementById("mySpaceGuideDescription");
+    const fileEl = document.getElementById("mySpaceGuideFile");
+    const title = String(titleEl?.value || "").trim();
+    const file = fileEl?.files?.[0] || null;
+    if (!title || !file) {
+        alert("Add a guide title and select a PDF file.");
+        return;
+    }
+    const form = new FormData();
+    form.append("title", title);
+    form.append("description", descriptionEl?.value || "");
+    form.append("file", file);
+    const r = await apiFetch("/my-space/staff-guides", { method: "POST", body: form });
+    if (!r.ok) {
+        alert(`Failed to upload staff guide: ${await extractErrorMessage(r)}`);
+        return;
+    }
+    if (titleEl) titleEl.value = "";
+    if (descriptionEl) descriptionEl.value = "";
+    if (fileEl) fileEl.value = "";
+    await loadMySpace();
+}
+
+async function deleteMySpaceGuide(guideId) {
+    if (!confirm("Delete this staff guide?")) return;
+    const r = await apiFetch(`/my-space/staff-guides/${guideId}`, { method: "DELETE" });
+    if (!r.ok) {
+        alert(`Failed to delete staff guide: ${await extractErrorMessage(r)}`);
+        return;
+    }
+    await loadMySpace();
+}
+
 const USER_ROLE_ACCESS = {
     ADMIN: {
         label: "Administrator",
@@ -802,7 +1146,7 @@ const USER_ROLE_ACCESS = {
 
 const FALLBACK_PAGE_REGISTRY = [
     { id: "portal", label: "Portal Hub", description: "Landing dashboard and shortcuts.", section: "Core", locked: true },
-    { id: "myspace", label: "My Space", description: "Private staff to-dos and notes.", section: "Core" },
+    { id: "myspace", label: "My Space", description: "Private planner, follow-ups, links, snippets, notes, and guides.", section: "Core" },
     { id: "inbox", label: "Email Manager", description: "Email tickets and inbox operations.", section: "Operations" },
     { id: "rent", label: "Rent Tracker", description: "Rent tracking and reports.", section: "Operations" },
     { id: "compliance", label: "Compliance", description: "Compliance records and due dates.", section: "Compliance" },
@@ -1439,7 +1783,7 @@ function switchDashboardTab(tab) {
     }
     const titles = {
         portal: ["Portal Hub", "Your workspace shortcuts for email, rent, compliance, and property setup."],
-        myspace: ["My Space", "Your private workspace for personal tasks, notes, and day-to-day focus."],
+        myspace: ["My Space", "Your private workspace for planning, follow-ups, snippets, notes, and staff guides."],
         inbox: ["Email Manager", "Unified inbox operations with clear action queues and fast follow-up tools."],
         rent: ["Rent Tracker", "Track rental due dates, payments, arrears, and yearly rent reporting."],
         compliance: ["Compliance", "Create and update compliance records with calculated due dates."],

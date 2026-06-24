@@ -280,7 +280,31 @@ def migrate(engine: Engine) -> None:
         _exec_statements(engine, stmts)
 
     # -------------------------------------------------------------------------
-    # 5) Compliance dashboard fields (added 2026-06)
+    # 5) My Space planner fields (added 2026-06)
+    # -------------------------------------------------------------------------
+    mst = "my_space_todos"
+    if _table_exists(engine, mst):
+        stmts: list[str] = []
+        if not _column_exists(engine, mst, "bucket"):
+            stmts.append(f"ALTER TABLE {mst} ADD COLUMN bucket VARCHAR DEFAULT 'today'")
+        if not _column_exists(engine, mst, "item_type"):
+            stmts.append(f"ALTER TABLE {mst} ADD COLUMN item_type VARCHAR DEFAULT 'task'")
+        if not _column_exists(engine, mst, "follow_up_with"):
+            stmts.append(f"ALTER TABLE {mst} ADD COLUMN follow_up_with VARCHAR")
+        _exec_statements(engine, stmts)
+
+        with engine.begin() as conn:
+            try:
+                conn.execute(text(f"UPDATE {mst} SET bucket = COALESCE(NULLIF(bucket,''), 'today')"))
+            except Exception:
+                pass
+            try:
+                conn.execute(text(f"UPDATE {mst} SET item_type = COALESCE(NULLIF(item_type,''), 'task')"))
+            except Exception:
+                pass
+
+    # -------------------------------------------------------------------------
+    # 6) Compliance dashboard fields (added 2026-06)
     # -------------------------------------------------------------------------
     cp = "compliance_properties"
     if _table_exists(engine, cp):
@@ -290,7 +314,7 @@ def migrate(engine: Engine) -> None:
         _exec_statements(engine, stmts)
 
     # -------------------------------------------------------------------------
-    # 6) Managed properties / compliance records (added 2026-06)
+    # 7) Managed properties / compliance records (added 2026-06)
     # -------------------------------------------------------------------------
     mp = "managed_properties"
     if _table_exists(engine, mp):
