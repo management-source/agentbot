@@ -90,6 +90,13 @@ class Settings(BaseSettings):
         # Back-compat: fall back to single impersonation mailbox.
         if (self.IMPERSONATE_USER or "").strip():
             return [(self.IMPERSONATE_USER or "").strip().lower()]
+        # OAuth delegated inbox deployments should still have a concrete mailbox
+        # context even when MONITORED_MAILBOXES is not explicitly set.
+        if (self.DELEGATED_MAILBOX or "").strip():
+            return [(self.DELEGATED_MAILBOX or "").strip().lower()]
+        my_emails = self.my_emails_list()
+        if my_emails:
+            return [my_emails[0]]
         return []
 
     def my_emails_list(self) -> List[str]:

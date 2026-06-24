@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import base64
 import imghdr
 import re
-import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -20,7 +20,6 @@ from app.schemas import UserOut
 from app.security import create_access_token, hash_password, verify_password
 
 router = APIRouter(prefix="/user-auth", tags=["user-auth"])
-AVATAR_DIR = Path("app/static/avatars")
 MAX_AVATAR_BYTES = 2 * 1024 * 1024
 MAX_LOGIN_ATTEMPTS = 5
 LOCKOUT_MINUTES = 15
@@ -142,7 +141,6 @@ def _delete_local_avatar(old_avatar_url: str | None) -> None:
 
 
 def _save_avatar(user_id: int, file: UploadFile) -> str:
-    AVATAR_DIR.mkdir(parents=True, exist_ok=True)
     raw = file.file.read(MAX_AVATAR_BYTES + 1)
     if not raw:
         raise HTTPException(status_code=400, detail="Empty file.")
@@ -155,10 +153,9 @@ def _save_avatar(user_id: int, file: UploadFile) -> str:
     if not ext:
         raise HTTPException(status_code=400, detail="Unsupported image type. Use JPG, PNG, GIF, or WEBP.")
 
-    fname = f"user_{user_id}_{uuid.uuid4().hex}.{ext}"
-    target = AVATAR_DIR / fname
-    target.write_bytes(raw)
-    return f"/static/avatars/{fname}"
+    mime = "image/jpeg" if ext == "jpg" else f"image/{ext}"
+    encoded = base64.b64encode(raw).decode("ascii")
+    return f"data:{mime};base64,{encoded}"
 
 
 @router.post("/login", response_model=LoginOut)

@@ -9,8 +9,9 @@ let aiSpeechTranscript = "";
 let currentDashboardTab = "portal";
 
 // Mailbox context (multi-inbox)
+const DEFAULT_MAILBOX = "admin@donspremier.com.au";
 let currentMailbox = localStorage.getItem("agent_mailbox") || "";
-const delegatedGmailMailboxes = new Set(["admin@donspremier.com.au"]);
+const delegatedGmailMailboxes = new Set([DEFAULT_MAILBOX]);
 
 
 // Local user auth (JWT)
@@ -54,6 +55,20 @@ function gmailDelegateStorageKey(mailbox) {
 
 function needsDelegatedGmailUrl(mailbox) {
     return delegatedGmailMailboxes.has(String(mailbox || "").trim().toLowerCase());
+}
+
+function normalizeMailbox(value) {
+    return String(value || "").trim().toLowerCase();
+}
+
+function chooseMailbox(mailboxes) {
+    const available = Array.isArray(mailboxes)
+        ? mailboxes.map(normalizeMailbox).filter(Boolean)
+        : [];
+    const saved = normalizeMailbox(currentMailbox);
+    if (saved && available.includes(saved)) return saved;
+    if (available.includes(DEFAULT_MAILBOX)) return DEFAULT_MAILBOX;
+    return available[0] || DEFAULT_MAILBOX;
 }
 
 function normalizeGmailBaseUrl(value) {
@@ -165,6 +180,7 @@ let currentCompliancePage = 1;
 let complianceLoadedOnce = false;
 let currentCoveragePage = 1;
 let coverageLoadedOnce = false;
+let usersLoadedOnce = false;
 let propertyOptionsCache = [];
 let propertyOptionsByLabel = {};
 let addressSuggestionsByLabel = {};
@@ -205,6 +221,11 @@ function updateSyncContextUI() {
         if (info) info.textContent = "Inbox sync controls are hidden while you are on the properties tab.";
         return;
     }
+    if (currentDashboardTab === "system") {
+        if (viewBadge) viewBadge.textContent = "System";
+        if (info) info.textContent = "Inbox sync controls are hidden while you are managing users and access.";
+        return;
+    }
     if (!info) return;
     if (isAllEmailsTab()) {
         if (viewBadge) viewBadge.textContent = "All Emails";
@@ -240,7 +261,9 @@ async function initMailboxes() {
     try {
         const r = await apiFetch("/settings/mailboxes");
         const j = await r.json();
-        const mbs = Array.isArray(j.mailboxes) ? j.mailboxes : [];
+        const mbs = Array.isArray(j.mailboxes)
+            ? j.mailboxes.map(normalizeMailbox).filter(Boolean)
+            : [];
         sel.innerHTML = "";
         for (const mb of mbs) {
             const opt = document.createElement("option");
@@ -248,7 +271,7 @@ async function initMailboxes() {
             opt.textContent = mb;
             sel.appendChild(opt);
         }
-        if (!currentMailbox && mbs.length) currentMailbox = mbs[0];
+        currentMailbox = chooseMailbox(mbs);
         if (currentMailbox) {
             localStorage.setItem("agent_mailbox", currentMailbox);
             sel.value = currentMailbox;
@@ -547,6 +570,324 @@ async function deleteUser(userId) {
     await renderUsersList();
 }
 
+const USER_ROLE_ACCESS = {
+    ADMIN: {
+        label: "Administrator",
+        summary: "Full control over the portal, system users, settings, and all operational workspaces.",
+        access: ["System users", "Email Manager", "Rent Tracker", "Compliance", "Compliance Report", "Properties"],
+    },
+    PM: {
+        label: "Property Manager",
+        summary: "Daily property management tools for inbox triage, rent, compliance, reports, and properties.",
+        access: ["Email Manager", "Rent Tracker", "Compliance", "Compliance Report", "Properties"],
+    },
+    LEASING: {
+        label: "Leasing",
+        summary: "Leasing-focused access for email work and property information.",
+        access: ["Email Manager", "Properties"],
+    },
+    SALES: {
+        label: "Sales",
+        summary: "Sales-focused access for email work and property information.",
+        access: ["Email Manager", "Properties"],
+    },
+    ACCOUNTS: {
+        label: "Accounts",
+        summary: "Accounts access for rent operations and inbox follow-up.",
+        access: ["Email Manager", "Rent Tracker"],
+    },
+    READONLY: {
+        label: "Read Only",
+        summary: "View-only team member role. Use for staff who should not manage system access.",
+        access: ["View portal data"],
+    },
+};
+
+function userRoleKeys() {
+    return Object.keys(USER_ROLE_ACCESS);
+}
+
+function setUsersError(message = "", type = "error") {
+    const el = document.getElementById("usersError");
+    if (!el) return;
+    el.textContent = message;
+    el.style.display = message ? "block" : "none";
+    el.classList.toggle("success", type === "success");
+}
+
+function openUsersModal() {
+    switchDashboardTab("system");
+}
+
+function closeUsersModal() {
+    switchDashboardTab("portal");
+}
+
+function userInitials(user) {
+    const raw = String(user?.name || user?.email || "?").trim();
+    const parts = raw.includes("@")
+        ? raw.split("@")[0].split(/[._-]+/)
+        : raw.split(/\s+/);
+    const initials = parts.filter(Boolean).slice(0, 2).map((x) => x[0]).join("");
+    return escapeHtml((initials || "?").toUpperCase());
+}
+
+function avatarBlock(user, className = "system-avatar") {
+    const initials = userInitials(user);
+    if (!user?.avatar_url) {
+        return `<span class="${className} avatar-fallback">${initials}</span>`;
+    }
+    return `
+        <span class="avatar-wrap">
+            <img class="${className}" src="${escapeHtml(user.avatar_url)}" alt="${escapeHtml(user.name || "User avatar")}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" />
+            <span class="${className} avatar-fallback" style="display:none">${initials}</span>
+        </span>
+    `;
+}
+
+function formatUserDate(value) {
+    if (!value) return "Never";
+    try { return new Date(value).toLocaleString(); } catch { return value; }
+}
+
+function roleOptions(selected) {
+    return userRoleKeys().map((role) => {
+        const meta = USER_ROLE_ACCESS[role] || { label: role };
+        return `<option value="${role}" ${role === selected ? "selected" : ""}>${role} - ${escapeHtml(meta.label)}</option>`;
+    }).join("");
+}
+
+function accessChips(role) {
+    const meta = USER_ROLE_ACCESS[role] || USER_ROLE_ACCESS.READONLY;
+    return meta.access.map((item) => `<span class="access-chip">${escapeHtml(item)}</span>`).join("");
+}
+
+function renderRoleMatrix() {
+    const target = document.getElementById("roleMatrix");
+    if (!target) return;
+    target.innerHTML = userRoleKeys().map((role) => {
+        const meta = USER_ROLE_ACCESS[role];
+        return `
+            <div class="role-card">
+                <div class="role-card-head">
+                    <span>${escapeHtml(role)}</span>
+                    <small>${escapeHtml(meta.label)}</small>
+                </div>
+                <p>${escapeHtml(meta.summary)}</p>
+                <div class="access-chip-row">${accessChips(role)}</div>
+            </div>
+        `;
+    }).join("");
+}
+
+function renderSystemStats() {
+    const target = document.getElementById("systemStats");
+    if (!target) return;
+    const total = usersCache.length;
+    const active = usersCache.filter((u) => u.is_active).length;
+    const admins = usersCache.filter((u) => u.role === "ADMIN" && u.is_active).length;
+    const pending = usersCache.filter((u) => u.must_change_password).length;
+    target.innerHTML = `
+        <div class="system-stat"><span>Total users</span><strong>${total}</strong></div>
+        <div class="system-stat"><span>Active</span><strong>${active}</strong></div>
+        <div class="system-stat"><span>Active admins</span><strong>${admins}</strong></div>
+        <div class="system-stat"><span>Password change due</span><strong>${pending}</strong></div>
+    `;
+}
+
+async function renderUsersList() {
+    await loadUsersCache();
+    usersLoadedOnce = true;
+    renderSystemStats();
+    renderRoleMatrix();
+
+    const list = document.getElementById("usersList");
+    if (!list) return;
+    if (!usersCache.length) {
+        list.innerHTML = `<div class="ticket-empty"><strong>No users found</strong><div class="small muted" style="margin-top:6px">Create the first team member using the form above.</div></div>`;
+        return;
+    }
+    list.innerHTML = usersCache.map((u) => {
+        const role = String(u.role || "READONLY");
+        const meta = USER_ROLE_ACCESS[role] || USER_ROLE_ACCESS.READONLY;
+        const status = u.is_active ? "Active" : "Disabled";
+        const passwordFlag = u.must_change_password ? `<span class="user-chip warn">Must change password</span>` : `<span class="user-chip">Password OK</span>`;
+        return `
+            <article class="system-user-card">
+                <div class="system-user-head">
+                    <div class="system-user-identity">
+                        ${avatarBlock(u)}
+                        <div>
+                            <h3>${escapeHtml(u.name || "Unnamed user")}</h3>
+                            <p>${escapeHtml(u.email || "")}</p>
+                            <div class="user-chip-row">
+                                <span class="user-chip ${u.is_active ? "ok" : "danger"}">${status}</span>
+                                <span class="user-chip">${escapeHtml(role)}</span>
+                                ${passwordFlag}
+                            </div>
+                        </div>
+                    </div>
+                    <label class="btn avatar-upload-btn">
+                        Change Avatar
+                        <input type="file" accept="image/*" onchange="uploadUserAvatar(${u.id}, this)" />
+                    </label>
+                </div>
+
+                <div class="system-user-form">
+                    <label class="field">
+                        <div class="label">Display name</div>
+                        <input type="text" data-user-name="${u.id}" value="${escapeHtml(u.name || "")}" />
+                    </label>
+                    <label class="field">
+                        <div class="label">Role and access</div>
+                        <select data-user-role="${u.id}">
+                            ${roleOptions(role)}
+                        </select>
+                    </label>
+                    <label class="system-toggle">
+                        <input type="checkbox" ${u.is_active ? "checked" : ""} data-user-active="${u.id}" />
+                        <span>
+                            <strong>Account active</strong>
+                            <small>Disabled users cannot sign in.</small>
+                        </span>
+                    </label>
+                </div>
+
+                <div class="access-preview">
+                    <div>
+                        <strong>${escapeHtml(meta.label)}</strong>
+                        <p>${escapeHtml(meta.summary)}</p>
+                    </div>
+                    <div class="access-chip-row">${accessChips(role)}</div>
+                </div>
+
+                <div class="system-user-meta">
+                    <span>Last login: ${escapeHtml(formatUserDate(u.last_login_at))}</span>
+                    <span>Password changed: ${escapeHtml(formatUserDate(u.password_changed_at))}</span>
+                </div>
+
+                <div class="system-user-actions">
+                    <input type="password" data-user-password="${u.id}" placeholder="New password for reset" />
+                    <label class="checkbox compact">
+                        <input type="checkbox" data-user-force-reset="${u.id}" checked />
+                        Force change
+                    </label>
+                    <button class="btn" onclick="adminResetPassword(${u.id})">Reset Password</button>
+                    <button class="btn primary" onclick="saveUserEdits(${u.id})">Save Changes</button>
+                    <button class="btn danger" onclick="deleteUser(${u.id})">Delete</button>
+                </div>
+            </article>
+        `;
+    }).join("");
+}
+
+async function saveUserEdits(userId) {
+    const nameEl = document.querySelector(`[data-user-name="${userId}"]`);
+    const roleSel = document.querySelector(`[data-user-role="${userId}"]`);
+    const activeChk = document.querySelector(`[data-user-active="${userId}"]`);
+    const payload = {
+        name: nameEl ? String(nameEl.value || "").trim() : undefined,
+        role: roleSel ? roleSel.value : undefined,
+        is_active: activeChk ? !!activeChk.checked : undefined,
+    };
+    const r = await apiFetch(`/user-auth/users/${userId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+    });
+    if (!r.ok) {
+        setUsersError(`Failed to update user: ${await extractErrorMessage(r)}`);
+        return;
+    }
+    setUsersError("User account updated.", "success");
+    await renderUsersList();
+    await ensureAuthenticated();
+}
+
+async function createUserFromForm() {
+    setUsersError("");
+    const email = document.getElementById("newUserEmail").value.trim();
+    const name = document.getElementById("newUserName").value.trim();
+    const role = document.getElementById("newUserRole").value;
+    const password = document.getElementById("newUserPassword").value;
+    const force = !!document.getElementById("newUserForcePassword")?.checked;
+    if (!email || !name || !password) {
+        setUsersError("Email, name and password are required.");
+        return;
+    }
+    const r = await apiFetch("/user-auth/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, name, role, password, is_active: true, must_change_password: force }),
+    });
+    if (!r.ok) {
+        setUsersError(`Failed to create user: ${await extractErrorMessage(r)}`);
+        return;
+    }
+    document.getElementById("newUserEmail").value = "";
+    document.getElementById("newUserName").value = "";
+    document.getElementById("newUserPassword").value = "";
+    if (document.getElementById("newUserForcePassword")) document.getElementById("newUserForcePassword").checked = true;
+    setUsersError("User account created.", "success");
+    await renderUsersList();
+}
+
+async function uploadUserAvatar(userId, input) {
+    setUsersError("");
+    const file = input && input.files ? input.files[0] : null;
+    if (!file) return;
+    const form = new FormData();
+    form.append("file", file);
+    const r = await apiFetch(`/user-auth/users/${userId}/avatar`, { method: "POST", body: form });
+    if (!r.ok) {
+        setUsersError(`Failed to upload avatar: ${await extractErrorMessage(r)}`);
+        return;
+    }
+    const updated = await r.json();
+    if (currentUser && Number(currentUser.id) === Number(userId)) {
+        currentUser = updated;
+        const accountAvatar = document.getElementById("accountBarAvatar");
+        if (accountAvatar) accountAvatar.src = updated.avatar_url || "/static/logo.png";
+    }
+    setUsersError("Avatar updated.", "success");
+    await renderUsersList();
+}
+
+async function adminResetPassword(userId) {
+    setUsersError("");
+    const el = document.querySelector(`[data-user-password="${userId}"]`);
+    const forceEl = document.querySelector(`[data-user-force-reset="${userId}"]`);
+    const pw = el ? String(el.value || "") : "";
+    if (!pw) {
+        setUsersError("Enter a new password before resetting.");
+        return;
+    }
+    const r = await apiFetch(`/user-auth/users/${userId}/password`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ new_password: pw, force_change_on_next_login: forceEl ? !!forceEl.checked : true }),
+    });
+    if (!r.ok) {
+        setUsersError(`Password reset failed: ${await extractErrorMessage(r)}`);
+        return;
+    }
+    if (el) el.value = "";
+    setUsersError("Password reset successfully.", "success");
+    await renderUsersList();
+}
+
+async function deleteUser(userId) {
+    setUsersError("");
+    if (!confirm("Delete this user permanently? This cannot be undone.")) return;
+    const r = await apiFetch(`/user-auth/users/${userId}`, { method: "DELETE" });
+    if (!r.ok) {
+        setUsersError(`Delete failed: ${await extractErrorMessage(r)}`);
+        return;
+    }
+    setUsersError("User deleted.", "success");
+    await renderUsersList();
+}
+
 function toggleAccountMenu() {
     const dd = document.getElementById("accountMenuDropdown");
     if (!dd) return;
@@ -742,7 +1083,13 @@ function formatDateShort(dt) {
 }
 
 function switchDashboardTab(tab) {
-    currentDashboardTab = ["portal", "rent", "compliance", "coverage", "properties", "inbox"].includes(tab) ? tab : "portal";
+    const requestedTab = ["portal", "rent", "compliance", "coverage", "properties", "system", "inbox"].includes(tab) ? tab : "portal";
+    if (requestedTab === "system" && String(currentUser?.role || "").toUpperCase() !== "ADMIN") {
+        alert("System access is available to admins only.");
+        currentDashboardTab = "portal";
+    } else {
+        currentDashboardTab = requestedTab;
+    }
     const titles = {
         portal: ["Portal Hub", "Your workspace shortcuts for email, rent, compliance, and property setup."],
         inbox: ["Email Manager", "Unified inbox operations with clear action queues and fast follow-up tools."],
@@ -750,6 +1097,7 @@ function switchDashboardTab(tab) {
         compliance: ["Compliance", "Create and update compliance records with calculated due dates."],
         coverage: ["Compliance Report", "Review missing and incomplete MRS, Smoke, Gas, and Electrical checks."],
         properties: ["Properties", "Maintain the active Victorian managed property register."],
+        system: ["System Access", "Manage staff accounts, profile photos, roles, status, and password controls."],
     };
     const title = document.getElementById("topbarTitle");
     const subtitle = document.getElementById("topbarSubtitle");
@@ -762,10 +1110,12 @@ function switchDashboardTab(tab) {
     const propertiesPanel = document.getElementById("propertiesPanel");
     const compliancePanel = document.getElementById("compliancePanel");
     const coveragePanel = document.getElementById("coveragePanel");
+    const systemPanel = document.getElementById("systemPanel");
     const navInbox = document.getElementById("navInbox");
     const navPortal = document.getElementById("navPortal");
     const navRent = document.getElementById("navRentTracker");
     const navProperties = document.getElementById("navProperties");
+    const navSystem = document.getElementById("btnSystemUsers");
     const navCompliance = document.getElementById("navCompliance");
     const navCoverage = document.getElementById("navComplianceCoverage");
     const shell = document.getElementById("dashboardShell");
@@ -776,10 +1126,12 @@ function switchDashboardTab(tab) {
     if (propertiesPanel) propertiesPanel.classList.toggle("hidden", currentDashboardTab !== "properties");
     if (compliancePanel) compliancePanel.classList.toggle("hidden", currentDashboardTab !== "compliance");
     if (coveragePanel) coveragePanel.classList.toggle("hidden", currentDashboardTab !== "coverage");
+    if (systemPanel) systemPanel.classList.toggle("hidden", currentDashboardTab !== "system");
     if (navPortal) navPortal.classList.toggle("active", currentDashboardTab === "portal");
     if (navInbox) navInbox.classList.toggle("active", currentDashboardTab === "inbox");
     if (navRent) navRent.classList.toggle("active", currentDashboardTab === "rent");
     if (navProperties) navProperties.classList.toggle("active", currentDashboardTab === "properties");
+    if (navSystem) navSystem.classList.toggle("active", currentDashboardTab === "system");
     if (navCompliance) navCompliance.classList.toggle("active", currentDashboardTab === "compliance");
     if (navCoverage) navCoverage.classList.toggle("active", currentDashboardTab === "coverage");
     if (shell) {
@@ -788,6 +1140,7 @@ function switchDashboardTab(tab) {
         shell.classList.toggle("compliance-mode", currentDashboardTab === "compliance");
         shell.classList.toggle("coverage-mode", currentDashboardTab === "coverage");
         shell.classList.toggle("properties-mode", currentDashboardTab === "properties");
+        shell.classList.toggle("system-mode", currentDashboardTab === "system");
     }
 
     updateSyncContextUI();
@@ -804,6 +1157,9 @@ function switchDashboardTab(tab) {
     }
     if (currentDashboardTab === "coverage" && !coverageLoadedOnce) {
         loadComplianceCoverage();
+    }
+    if (currentDashboardTab === "system" && !usersLoadedOnce) {
+        renderUsersList();
     }
 }
 
@@ -3374,6 +3730,9 @@ async function ensureAuthenticated() {
     if (systemBtn) systemBtn.style.display = (String(currentUser.role || "").toUpperCase() === "ADMIN") ? "flex" : "none";
     const portalSystemTile = document.getElementById("portalSystemTile");
     if (portalSystemTile) portalSystemTile.classList.toggle("hidden", String(currentUser.role || "").toUpperCase() !== "ADMIN");
+    if (currentDashboardTab === "system" && String(currentUser.role || "").toUpperCase() !== "ADMIN") {
+        switchDashboardTab("portal");
+    }
 
     if (currentUser.must_change_password) {
         setTimeout(() => openPasswordModal(), 100);
@@ -3423,6 +3782,7 @@ async function doLogin() {
         localStorage.setItem("agent_auth_token", authToken);
         hideLoginModal();
         await ensureAuthenticated();
+        await initMailboxes();
         await refreshGoogleStatus();
         // Autopilot feature removed.
         await loadTickets();
@@ -3482,8 +3842,8 @@ window.addEventListener("load", async () => {
         dd.classList.remove("show");
     });
 
-    await refreshGoogleStatus();
     await initMailboxes();
+    await refreshGoogleStatus();
 
     // Small UX: show a one-time confirmation after OAuth callback.
     try {

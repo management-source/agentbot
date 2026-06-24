@@ -30,7 +30,6 @@
     /* For modals toggled via .hidden (settings/ack) */
     #ackModal:not(.hidden){display:flex}
     #settingsModal:not(.hidden){display:flex}
-    #usersModal:not(.hidden){display:flex}
     #aiReplyModal:not(.hidden){display:flex}
     #blacklistModal:not(.hidden){display:flex}
     #passwordModal:not(.hidden){display:flex}
@@ -1059,6 +1058,221 @@
       .ticket-actions{grid-template-columns:1fr}
     }
 
+    /* System users */
+    .system-workspace{
+      display:flex;
+      flex-direction:column;
+      gap:14px;
+    }
+    .system-hero{
+      padding:22px;
+      border:1px solid #dbe4ef;
+      border-radius:20px;
+      background:
+        radial-gradient(circle at top right, rgba(201,162,70,.20), transparent 36%),
+        linear-gradient(135deg, #101828, #1f2937);
+      color:#fff;
+      box-shadow:0 16px 36px rgba(15,23,42,.12);
+    }
+    .system-hero h2{margin:0;font-size:24px;letter-spacing:-.03em}
+    .system-hero p{margin:8px 0 0;color:#d0d5dd;font-size:14px;max-width:760px;line-height:1.5}
+    .system-stats{
+      display:grid;
+      grid-template-columns:repeat(4, minmax(0, 1fr));
+      gap:10px;
+    }
+    .system-stat{
+      padding:14px;
+      border:1px solid #dbe4ef;
+      border-radius:16px;
+      background:#fff;
+      box-shadow:0 6px 18px rgba(15,23,42,.05);
+    }
+    .system-stat span{display:block;color:#667085;font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.06em}
+    .system-stat strong{display:block;margin-top:6px;color:#101828;font-size:24px;letter-spacing:-.03em}
+    .system-grid{
+      display:grid;
+      grid-template-columns:minmax(280px, 380px) minmax(0, 1fr);
+      gap:14px;
+      align-items:start;
+    }
+    .system-card{
+      padding:18px;
+      border:1px solid #dbe4ef;
+      border-radius:18px;
+      background:#fff;
+      box-shadow:0 8px 24px rgba(15,23,42,.055);
+    }
+    .system-card h3{margin:0;color:#101828;font-size:16px;letter-spacing:-.01em}
+    .system-card p{margin:6px 0 0;color:#667085;font-size:13px;line-height:1.45}
+    .system-form-grid{
+      display:grid;
+      gap:12px;
+      margin-top:14px;
+    }
+    .system-form-row{
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:10px;
+    }
+    .role-matrix{
+      display:grid;
+      grid-template-columns:repeat(2, minmax(0, 1fr));
+      gap:10px;
+      margin-top:12px;
+    }
+    .role-card{
+      padding:13px;
+      border:1px solid #edf1f6;
+      border-radius:14px;
+      background:#fbfcfe;
+    }
+    .role-card-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+    .role-card-head span{font-size:13px;font-weight:900;color:#101828}
+    .role-card-head small{font-size:11px;color:#667085;font-weight:800}
+    .role-card p{margin:7px 0 0;color:#667085;font-size:12px;line-height:1.4}
+    .access-chip-row,.user-chip-row{
+      display:flex;
+      flex-wrap:wrap;
+      gap:6px;
+      margin-top:9px;
+    }
+    .access-chip,.user-chip{
+      display:inline-flex;
+      align-items:center;
+      padding:5px 8px;
+      border-radius:999px;
+      border:1px solid #dbe4ef;
+      background:#fff;
+      color:#344054;
+      font-size:11px;
+      font-weight:800;
+    }
+    .user-chip.ok{background:rgba(22,163,74,.10);border-color:rgba(22,163,74,.25);color:#166534}
+    .user-chip.warn{background:rgba(245,158,11,.12);border-color:rgba(245,158,11,.28);color:#92400e}
+    .user-chip.danger{background:rgba(220,38,38,.08);border-color:rgba(220,38,38,.25);color:#991b1b}
+    .system-user-list{
+      display:flex;
+      flex-direction:column;
+      gap:12px;
+      margin-top:14px;
+    }
+    .system-user-card{
+      padding:16px;
+      border:1px solid #dbe4ef;
+      border-radius:18px;
+      background:#fff;
+      box-shadow:0 8px 24px rgba(15,23,42,.055);
+    }
+    .system-user-head{
+      display:flex;
+      justify-content:space-between;
+      gap:14px;
+      align-items:flex-start;
+    }
+    .system-user-identity{
+      display:flex;
+      gap:12px;
+      min-width:0;
+      align-items:flex-start;
+    }
+    .system-user-identity h3{margin:0;color:#101828;font-size:16px;letter-spacing:-.01em}
+    .system-user-identity p{margin:4px 0 0;color:#667085;font-size:13px;word-break:break-word}
+    .avatar-wrap{display:inline-flex}
+    .system-avatar{
+      width:54px;
+      height:54px;
+      border-radius:17px;
+      object-fit:cover;
+      border:1px solid #dbe4ef;
+      background:#111827;
+      color:#f9e7a7;
+      flex:0 0 auto;
+    }
+    .avatar-fallback{
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      font-weight:900;
+      font-size:15px;
+    }
+    .avatar-upload-btn{
+      position:relative;
+      overflow:hidden;
+      cursor:pointer;
+      white-space:nowrap;
+    }
+    .avatar-upload-btn input{position:absolute;inset:0;opacity:0;cursor:pointer}
+    .system-user-form{
+      display:grid;
+      grid-template-columns:1fr 1fr minmax(180px, .7fr);
+      gap:10px;
+      align-items:end;
+      margin-top:14px;
+    }
+    .system-toggle{
+      display:flex;
+      gap:10px;
+      align-items:center;
+      padding:10px 12px;
+      border:1px solid #dbe4ef;
+      border-radius:14px;
+      background:#fbfcfe;
+      min-height:58px;
+    }
+    .system-toggle strong{display:block;color:#101828;font-size:13px}
+    .system-toggle small{display:block;color:#667085;font-size:11px;margin-top:2px}
+    .access-preview{
+      display:flex;
+      justify-content:space-between;
+      gap:12px;
+      margin-top:12px;
+      padding:12px;
+      border:1px solid #edf1f6;
+      border-radius:14px;
+      background:#fbfcfe;
+    }
+    .access-preview strong{color:#101828;font-size:13px}
+    .access-preview p{margin:4px 0 0;color:#667085;font-size:12px;line-height:1.4}
+    .system-user-meta{
+      display:flex;
+      flex-wrap:wrap;
+      gap:8px;
+      margin-top:10px;
+      color:#667085;
+      font-size:12px;
+    }
+    .system-user-meta span{
+      padding:5px 8px;
+      border:1px solid #edf1f6;
+      border-radius:999px;
+      background:#fbfcfe;
+    }
+    .system-user-actions{
+      display:grid;
+      grid-template-columns:minmax(180px, 1fr) auto auto auto auto;
+      gap:8px;
+      align-items:center;
+      margin-top:12px;
+    }
+    .checkbox.compact{padding:8px 10px;min-height:auto}
+    .error.success{
+      color:#166534;
+      border-color:rgba(22,163,74,.25);
+      background:rgba(22,163,74,.08);
+    }
+    @media (max-width: 1100px){
+      .system-grid{grid-template-columns:1fr}
+      .system-stats{grid-template-columns:repeat(2, minmax(0,1fr))}
+      .system-user-form{grid-template-columns:1fr}
+      .system-user-actions{grid-template-columns:1fr 1fr}
+    }
+    @media (max-width: 700px){
+      .system-stats,.role-matrix,.system-form-row{grid-template-columns:1fr}
+      .system-user-head,.access-preview{flex-direction:column}
+      .system-user-actions{grid-template-columns:1fr}
+    }
+
     /* Modal */
     .modal-backdrop{
       position:fixed; inset:0;
@@ -1476,7 +1690,7 @@
                     <div class="side-section-label">Setup</div>
                     <nav class="side-nav">
                         <a id="navProperties" href="javascript:void(0)" onclick="switchDashboardTab('properties')" title="Properties"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h16"></path><path d="M6 20V7l6-3 6 3v13"></path><path d="M9 10h2"></path><path d="M13 10h2"></path><path d="M9 14h2"></path><path d="M13 14h2"></path></svg></span><span class="nav-label">Properties</span></a>
-                        <a id="btnSystemUsers" href="javascript:void(0)" style="display:none" onclick="openUsersModal()" title="System"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M12 3v3"></path><path d="M12 18v3"></path><path d="m4.8 4.8 2.1 2.1"></path><path d="m17.1 17.1 2.1 2.1"></path><path d="M3 12h3"></path><path d="M18 12h3"></path><path d="m4.8 19.2 2.1-2.1"></path><path d="m17.1 6.9 2.1-2.1"></path></svg></span><span class="nav-label">System</span></a>
+                        <a id="btnSystemUsers" href="javascript:void(0)" style="display:none" onclick="switchDashboardTab('system')" title="System"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M12 3v3"></path><path d="M12 18v3"></path><path d="m4.8 4.8 2.1 2.1"></path><path d="m17.1 17.1 2.1 2.1"></path><path d="M3 12h3"></path><path d="M18 12h3"></path><path d="m4.8 19.2 2.1-2.1"></path><path d="m17.1 6.9 2.1-2.1"></path></svg></span><span class="nav-label">System</span></a>
                     </nav>
                 </div>
             </aside>
@@ -1484,7 +1698,7 @@
             <div class="account-bar">
                 <div style="position:relative">
                     <div class="account-trigger" id="accountMenuTrigger" onclick="toggleAccountMenu()">
-                        <img class="account-avatar" id="accountBarAvatar" src="/static/logo.png" alt="profile" />
+                        <img class="account-avatar" id="accountBarAvatar" src="/static/logo.png" alt="profile" onerror="this.onerror=null;this.src='/static/logo.png'" />
                         <span class="account-name" id="accountBarUserName">Not signed in</span>
                     </div>
                     <div class="account-menu" id="accountMenuDropdown">
@@ -1622,7 +1836,7 @@
                         <p>Import, add, search, and maintain your active Victorian managed property register.</p>
                         <div class="tile-action">Open register</div>
                     </div>
-                    <div class="hub-tile hidden" id="portalSystemTile" onclick="openUsersModal()">
+                    <div class="hub-tile hidden" id="portalSystemTile" onclick="switchDashboardTab('system')">
                         <div class="tile-mark">AD</div>
                         <h3>System</h3>
                         <p>Admin-only user management and access control tools for the portal.</p>
@@ -2064,74 +2278,93 @@
                     </table>
                 </div>
                 <div class="small muted" id="coveragePageInfo" style="margin-top:8px"></div>
-                <div class="row space" style="margin-top:10px">
-                    <button class="btn" id="coverageBtnPrev" onclick="prevCoveragePage()">Prev</button>
-                    <button class="btn" id="coverageBtnNext" onclick="nextCoveragePage()">Next</button>
-                </div>
+            <div class="row space" style="margin-top:10px">
+                <button class="btn" id="coverageBtnPrev" onclick="prevCoveragePage()">Prev</button>
+                <button class="btn" id="coverageBtnNext" onclick="nextCoveragePage()">Next</button>
+            </div>
+            </div>
+
+            <div id="systemPanel" class="hidden">
+                <section class="system-workspace">
+                    <div class="system-hero">
+                        <div class="login-kicker" style="color:#f9e7a7;margin-bottom:10px">Admin Workspace</div>
+                        <h2>System Access</h2>
+                        <p>Manage staff accounts, profile photos, roles, account status, and password resets from one full-page workspace.</p>
+                    </div>
+
+                    <div class="system-stats" id="systemStats"></div>
+
+                    <div class="system-grid">
+                        <div class="system-card">
+                            <h3>Create User Account</h3>
+                            <p>Add staff with a professional login, role-based access, and a forced password change on first login.</p>
+                            <div class="system-form-grid">
+                                <div class="field">
+                                    <div class="label">Email</div>
+                                    <input type="email" id="newUserEmail" placeholder="team@donspremier.com.au" autocomplete="off" />
+                                </div>
+                                <div class="field">
+                                    <div class="label">Display Name</div>
+                                    <input type="text" id="newUserName" placeholder="Staff name" autocomplete="off" />
+                                </div>
+                                <div class="system-form-row">
+                                    <div class="field">
+                                        <div class="label">Role</div>
+                                        <select id="newUserRole">
+                                            <option value="PM">PM - Property Manager</option>
+                                            <option value="ADMIN">ADMIN - Administrator</option>
+                                            <option value="LEASING">LEASING - Leasing</option>
+                                            <option value="SALES">SALES - Sales</option>
+                                            <option value="ACCOUNTS">ACCOUNTS - Accounts</option>
+                                            <option value="READONLY">READONLY - Read Only</option>
+                                        </select>
+                                    </div>
+                                    <div class="field">
+                                        <div class="label">Temporary Password</div>
+                                        <input type="password" id="newUserPassword" placeholder="12+ chars, mixed" autocomplete="new-password" />
+                                    </div>
+                                </div>
+                                <label class="system-toggle">
+                                    <input type="checkbox" id="newUserForcePassword" checked />
+                                    <span>
+                                        <strong>Force password change</strong>
+                                        <small>Recommended for every new account.</small>
+                                    </span>
+                                </label>
+                                <button class="btn primary" id="btnCreateUser" onclick="createUserFromForm()">Create User</button>
+                            </div>
+                        </div>
+
+                        <div class="system-card">
+                            <div class="row space">
+                                <div>
+                                    <h3>Access Control</h3>
+                                    <p>Role assignments define what each staff member should access inside the portal.</p>
+                                </div>
+                                <button class="btn" id="btnUsersRefresh" onclick="renderUsersList()">Refresh</button>
+                            </div>
+                            <div id="roleMatrix" class="role-matrix"></div>
+                        </div>
+                    </div>
+
+                    <div class="error" id="usersError" style="display:none"></div>
+
+                    <div class="system-card">
+                        <div class="row space">
+                            <div>
+                                <h3>User Accounts</h3>
+                                <p>Update names, avatars, roles, active status, and password reset controls.</p>
+                            </div>
+                        </div>
+                        <div id="usersList" class="system-user-list"></div>
+                    </div>
+                </section>
             </div>
 
                 </main>
             </div>
             <div class="footer">© <span id="year"></span> Dons Premier Estate Agents. Developed by - Kusal Wickremasingha.</div>
         </div>
-            </div>
-        </div>
-
-        <!-- Manage Users Modal (Admin) -->
-        <div class="modal-backdrop hidden" id="usersModal">
-            <div class="modal">
-                <div class="modal-head">
-                    <h3>Manage Users</h3>
-                    <button class="btn ghost" id="btnUsersClose"
-                        onclick="closeUsersModal()">Close</button>
-                </div>
-                <div class="modal-body">
-                    <div class="row" style="align-items:flex-end">
-                        <div class="field" style="min-width:220px">
-                            <div class="label">Email</div>
-                            <input type="text" id="newUserEmail" />
-                        </div>
-                        <div class="field" style="min-width:180px">
-                            <div class="label">Name</div>
-                            <input type="text" id="newUserName" />
-                        </div>
-                        <div class="field" style="min-width:180px">
-                            <div class="label">Role</div>
-                            <select id="newUserRole">
-                                <option value="ADMIN">ADMIN</option>
-                                <option value="PM">PM</option>
-                                <option value="LEASING">LEASING</option>
-                                <option value="SALES">SALES</option>
-                                <option value="ACCOUNTS">ACCOUNTS</option>
-                                <option value="READONLY">READONLY</option>
-                            </select>
-                        </div>
-                        <div class="field" style="min-width:180px">
-                            <div class="label">Password</div>
-                            <input type="password" id="newUserPassword" />
-                        </div>
-                        <label class="checkbox">
-                            <input type="checkbox" id="newUserForcePassword" checked />
-                            Force password change at next login
-                        </label>
-                        <button class="btn primary"
-                            id="btnCreateUser"
-                            onclick="createUserFromForm()">Create</button>
-                    </div>
-
-                    <div class="error" id="usersError"
-                        style="display:none"></div>
-
-                    <div style="margin-top:14px" class="card">
-                        <div class="small muted">Existing users</div>
-                        <div id="usersList"
-                            style="margin-top:10px; display:flex; flex-direction:column; gap:10px"></div>
-                    </div>
-                </div>
-                <div class="modal-foot">
-                    <button class="btn" id="btnUsersRefresh"
-                        onclick="renderUsersList()">Refresh</button>
-                </div>
             </div>
         </div>
 
@@ -2236,7 +2469,7 @@
             </div>
         </div>
 
-        <script src="/static/app.js?v=9"></script>
+        <script src="/static/app.js?v=11"></script>
 
         <script>
   // Wire segmented status buttons to existing tab logic
