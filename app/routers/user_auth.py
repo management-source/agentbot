@@ -42,6 +42,12 @@ PAGE_REGISTRY = [
         "section": "Operations",
     },
     {
+        "id": "myspace",
+        "label": "My Space",
+        "description": "Private staff workspace with personal to-dos and notes.",
+        "section": "Core",
+    },
+    {
         "id": "rent",
         "label": "Rent Tracker",
         "description": "Rent due tracking, arrears, payments, and yearly reporting.",
@@ -76,12 +82,12 @@ PAGE_REGISTRY = [
 
 
 DEFAULT_ROLE_PAGE_ACCESS = {
-    UserRole.ADMIN.value: ["portal", "inbox", "rent", "compliance", "coverage", "properties", "system"],
-    UserRole.PM.value: ["portal", "inbox", "rent", "compliance", "coverage", "properties"],
-    UserRole.LEASING.value: ["portal", "inbox", "properties"],
-    UserRole.SALES.value: ["portal", "inbox", "properties"],
-    UserRole.ACCOUNTS.value: ["portal", "inbox", "rent"],
-    UserRole.READONLY.value: ["portal"],
+    UserRole.ADMIN.value: ["portal", "myspace", "inbox", "rent", "compliance", "coverage", "properties", "system"],
+    UserRole.PM.value: ["portal", "myspace", "inbox", "rent", "compliance", "coverage", "properties"],
+    UserRole.LEASING.value: ["portal", "myspace", "inbox", "properties"],
+    UserRole.SALES.value: ["portal", "myspace", "inbox", "properties"],
+    UserRole.ACCOUNTS.value: ["portal", "myspace", "inbox", "rent"],
+    UserRole.READONLY.value: ["portal", "myspace"],
 }
 
 

@@ -181,6 +181,8 @@ let complianceLoadedOnce = false;
 let currentCoveragePage = 1;
 let coverageLoadedOnce = false;
 let usersLoadedOnce = false;
+let mySpaceLoadedOnce = false;
+let mySpaceSaveTimer = null;
 let pageRegistry = [];
 let rolePagePermissions = {};
 let allowedPages = new Set(["portal"]);
@@ -202,6 +204,11 @@ function updateSyncContextUI() {
     if (currentDashboardTab === "portal") {
         if (viewBadge) viewBadge.textContent = "Portal Hub";
         if (info) info.textContent = "Portal Hub: choose a workspace tile or use the menu to jump into a feature.";
+        return;
+    }
+    if (currentDashboardTab === "myspace") {
+        if (viewBadge) viewBadge.textContent = "My Space";
+        if (info) info.textContent = "Inbox sync controls are hidden while you are in your private workspace.";
         return;
     }
     if (currentDashboardTab === "rent") {
@@ -573,41 +580,229 @@ async function deleteUser(userId) {
     await renderUsersList();
 }
 
+function mySpaceDuePayload(value) {
+    const raw = String(value || "").trim();
+    return raw ? `${raw}T00:00:00` : null;
+}
+
+function mySpaceStats(items) {
+    const total = items.length;
+    const done = items.filter((item) => item.is_done).length;
+    const open = total - done;
+    const overdue = items.filter((item) => {
+        if (item.is_done || !item.due_at) return false;
+        const due = new Date(item.due_at);
+        const today = new Date();
+        due.setHours(23, 59, 59, 999);
+        return due < today;
+    }).length;
+    return { total, done, open, overdue };
+}
+
+function renderMySpaceStats(items) {
+    const el = document.getElementById("mySpaceStats");
+    if (!el) return;
+    const stats = mySpaceStats(items);
+    el.innerHTML = `
+        <div class="system-stat"><span>Open tasks</span><strong>${stats.open}</strong></div>
+        <div class="system-stat"><span>Completed</span><strong>${stats.done}</strong></div>
+        <div class="system-stat"><span>Overdue</span><strong>${stats.overdue}</strong></div>
+        <div class="system-stat"><span>Total</span><strong>${stats.total}</strong></div>
+    `;
+}
+
+function renderMySpaceTodos(items) {
+    const list = document.getElementById("mySpaceTodoList");
+    if (!list) return;
+    if (!items.length) {
+        list.innerHTML = `<div class="ticket-empty"><strong>No private tasks yet</strong><div class="small muted" style="margin-top:6px">Add your first task and it will be waiting here tomorrow.</div></div>`;
+        return;
+    }
+    list.innerHTML = items.map((item) => {
+        const due = item.due_at ? dateInputValue(item.due_at) : "";
+        const dueLabel = item.due_at ? formatDateShort(item.due_at) : "No due date";
+        const priority = String(item.priority || "normal").toLowerCase();
+        return `
+            <article class="myspace-todo ${item.is_done ? "done" : ""}">
+                <label class="myspace-check">
+                    <input type="checkbox" ${item.is_done ? "checked" : ""} onchange="toggleMySpaceTodo(${item.id}, this.checked)" />
+                    <span></span>
+                </label>
+                <div class="myspace-todo-main">
+                    <input class="myspace-title-input" data-myspace-title="${item.id}" value="${escapeHtml(item.title || "")}" />
+                    <textarea data-myspace-notes="${item.id}" placeholder="Private task notes...">${escapeHtml(item.notes || "")}</textarea>
+                    <div class="myspace-todo-meta">
+                        <span class="user-chip ${priority === "high" ? "warn" : ""}">${escapeHtml(priority)}</span>
+                        <span class="user-chip">${escapeHtml(dueLabel)}</span>
+                        ${item.completed_at ? `<span class="user-chip ok">Done ${escapeHtml(formatDateShort(item.completed_at))}</span>` : ""}
+                    </div>
+                </div>
+                <div class="myspace-todo-actions">
+                    <select data-myspace-priority="${item.id}">
+                        <option value="low" ${priority === "low" ? "selected" : ""}>Low</option>
+                        <option value="normal" ${priority === "normal" ? "selected" : ""}>Normal</option>
+                        <option value="high" ${priority === "high" ? "selected" : ""}>High</option>
+                    </select>
+                    <input type="date" data-myspace-due="${item.id}" value="${escapeHtml(due)}" />
+                    <button class="btn" onclick="saveMySpaceTodo(${item.id})">Save</button>
+                    <button class="btn danger" onclick="deleteMySpaceTodo(${item.id})">Delete</button>
+                </div>
+            </article>
+        `;
+    }).join("");
+}
+
+async function loadMySpace() {
+    const r = await apiFetch("/my-space");
+    if (!r.ok) {
+        alert(`Failed to load My Space: ${await extractErrorMessage(r)}`);
+        return;
+    }
+    const data = await r.json();
+    const items = Array.isArray(data.todos) ? data.todos : [];
+    const note = document.getElementById("mySpaceNote");
+    if (note) note.value = data.note || "";
+    renderMySpaceStats(items);
+    renderMySpaceTodos(items);
+    mySpaceLoadedOnce = true;
+}
+
+async function addMySpaceTodo() {
+    const titleEl = document.getElementById("mySpaceNewTitle");
+    const dueEl = document.getElementById("mySpaceNewDue");
+    const priorityEl = document.getElementById("mySpaceNewPriority");
+    const title = String(titleEl?.value || "").trim();
+    if (!title) {
+        alert("Add a task title first.");
+        return;
+    }
+    const r = await apiFetch("/my-space/todos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            title,
+            priority: priorityEl?.value || "normal",
+            due_at: mySpaceDuePayload(dueEl?.value),
+        }),
+    });
+    if (!r.ok) {
+        alert(`Failed to add task: ${await extractErrorMessage(r)}`);
+        return;
+    }
+    if (titleEl) titleEl.value = "";
+    if (dueEl) dueEl.value = "";
+    if (priorityEl) priorityEl.value = "normal";
+    await loadMySpace();
+}
+
+async function saveMySpaceTodo(todoId) {
+    const titleEl = document.querySelector(`[data-myspace-title="${todoId}"]`);
+    const notesEl = document.querySelector(`[data-myspace-notes="${todoId}"]`);
+    const priorityEl = document.querySelector(`[data-myspace-priority="${todoId}"]`);
+    const dueEl = document.querySelector(`[data-myspace-due="${todoId}"]`);
+    const title = String(titleEl?.value || "").trim();
+    if (!title) {
+        alert("Task title cannot be empty.");
+        return;
+    }
+    const r = await apiFetch(`/my-space/todos/${todoId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            title,
+            notes: notesEl?.value || "",
+            priority: priorityEl?.value || "normal",
+            due_at: mySpaceDuePayload(dueEl?.value),
+        }),
+    });
+    if (!r.ok) {
+        alert(`Failed to save task: ${await extractErrorMessage(r)}`);
+        return;
+    }
+    await loadMySpace();
+}
+
+async function toggleMySpaceTodo(todoId, isDone) {
+    const r = await apiFetch(`/my-space/todos/${todoId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ is_done: !!isDone }),
+    });
+    if (!r.ok) {
+        alert(`Failed to update task: ${await extractErrorMessage(r)}`);
+        return;
+    }
+    await loadMySpace();
+}
+
+async function deleteMySpaceTodo(todoId) {
+    if (!confirm("Delete this private task?")) return;
+    const r = await apiFetch(`/my-space/todos/${todoId}`, { method: "DELETE" });
+    if (!r.ok) {
+        alert(`Failed to delete task: ${await extractErrorMessage(r)}`);
+        return;
+    }
+    await loadMySpace();
+}
+
+function scheduleMySpaceNoteSave() {
+    const status = document.getElementById("mySpaceNoteStatus");
+    if (status) status.textContent = "Saving...";
+    if (mySpaceSaveTimer) clearTimeout(mySpaceSaveTimer);
+    mySpaceSaveTimer = setTimeout(saveMySpaceNote, 700);
+}
+
+async function saveMySpaceNote() {
+    const note = document.getElementById("mySpaceNote");
+    const status = document.getElementById("mySpaceNoteStatus");
+    const r = await apiFetch("/my-space/note", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body: note?.value || "" }),
+    });
+    if (!r.ok) {
+        if (status) status.textContent = "Save failed";
+        return;
+    }
+    if (status) status.textContent = `Saved ${new Date().toLocaleTimeString()}`;
+}
+
 const USER_ROLE_ACCESS = {
     ADMIN: {
         label: "Administrator",
         summary: "Full control over the portal, system users, settings, and all operational workspaces.",
-        access: ["System users", "Email Manager", "Rent Tracker", "Compliance", "Compliance Report", "Properties"],
+        access: ["System users", "My Space", "Email Manager", "Rent Tracker", "Compliance", "Compliance Report", "Properties"],
     },
     PM: {
         label: "Property Manager",
         summary: "Daily property management tools for inbox triage, rent, compliance, reports, and properties.",
-        access: ["Email Manager", "Rent Tracker", "Compliance", "Compliance Report", "Properties"],
+        access: ["My Space", "Email Manager", "Rent Tracker", "Compliance", "Compliance Report", "Properties"],
     },
     LEASING: {
         label: "Leasing",
         summary: "Leasing-focused access for email work and property information.",
-        access: ["Email Manager", "Properties"],
+        access: ["My Space", "Email Manager", "Properties"],
     },
     SALES: {
         label: "Sales",
         summary: "Sales-focused access for email work and property information.",
-        access: ["Email Manager", "Properties"],
+        access: ["My Space", "Email Manager", "Properties"],
     },
     ACCOUNTS: {
         label: "Accounts",
         summary: "Accounts access for rent operations and inbox follow-up.",
-        access: ["Email Manager", "Rent Tracker"],
+        access: ["My Space", "Email Manager", "Rent Tracker"],
     },
     READONLY: {
         label: "Read Only",
         summary: "View-only team member role. Use for staff who should not manage system access.",
-        access: ["View portal data"],
+        access: ["My Space", "View portal data"],
     },
 };
 
 const FALLBACK_PAGE_REGISTRY = [
     { id: "portal", label: "Portal Hub", description: "Landing dashboard and shortcuts.", section: "Core", locked: true },
+    { id: "myspace", label: "My Space", description: "Private staff to-dos and notes.", section: "Core" },
     { id: "inbox", label: "Email Manager", description: "Email tickets and inbox operations.", section: "Operations" },
     { id: "rent", label: "Rent Tracker", description: "Rent tracking and reports.", section: "Operations" },
     { id: "compliance", label: "Compliance", description: "Compliance records and due dates.", section: "Compliance" },
@@ -655,6 +850,7 @@ function firstAccessiblePage() {
 function applyPageVisibility() {
     const navMap = {
         portal: "navPortal",
+        myspace: "navMySpace",
         inbox: "navInbox",
         rent: "navRentTracker",
         compliance: "navCompliance",
@@ -1234,7 +1430,7 @@ function formatDateShort(dt) {
 }
 
 function switchDashboardTab(tab) {
-    const requestedTab = ["portal", "rent", "compliance", "coverage", "properties", "system", "inbox"].includes(tab) ? tab : "portal";
+    const requestedTab = ["portal", "myspace", "rent", "compliance", "coverage", "properties", "system", "inbox"].includes(tab) ? tab : "portal";
     if (!canAccessPage(requestedTab)) {
         alert("This page is not assigned to your role.");
         currentDashboardTab = firstAccessiblePage();
@@ -1243,6 +1439,7 @@ function switchDashboardTab(tab) {
     }
     const titles = {
         portal: ["Portal Hub", "Your workspace shortcuts for email, rent, compliance, and property setup."],
+        myspace: ["My Space", "Your private workspace for personal tasks, notes, and day-to-day focus."],
         inbox: ["Email Manager", "Unified inbox operations with clear action queues and fast follow-up tools."],
         rent: ["Rent Tracker", "Track rental due dates, payments, arrears, and yearly rent reporting."],
         compliance: ["Compliance", "Create and update compliance records with calculated due dates."],
@@ -1256,6 +1453,7 @@ function switchDashboardTab(tab) {
     if (subtitle) subtitle.textContent = titles[currentDashboardTab]?.[1] || "";
     
     const portalPanel = document.getElementById("portalPanel");
+    const mySpacePanel = document.getElementById("mySpacePanel");
     const inboxPanel = document.getElementById("inboxPanel");
     const rentPanel = document.getElementById("rentPanel");
     const propertiesPanel = document.getElementById("propertiesPanel");
@@ -1263,6 +1461,7 @@ function switchDashboardTab(tab) {
     const coveragePanel = document.getElementById("coveragePanel");
     const systemPanel = document.getElementById("systemPanel");
     const navInbox = document.getElementById("navInbox");
+    const navMySpace = document.getElementById("navMySpace");
     const navPortal = document.getElementById("navPortal");
     const navRent = document.getElementById("navRentTracker");
     const navProperties = document.getElementById("navProperties");
@@ -1272,6 +1471,7 @@ function switchDashboardTab(tab) {
     const shell = document.getElementById("dashboardShell");
 
     if (portalPanel) portalPanel.classList.toggle("hidden", currentDashboardTab !== "portal");
+    if (mySpacePanel) mySpacePanel.classList.toggle("hidden", currentDashboardTab !== "myspace");
     if (inboxPanel) inboxPanel.classList.toggle("hidden", currentDashboardTab !== "inbox");
     if (rentPanel) rentPanel.classList.toggle("hidden", currentDashboardTab !== "rent");
     if (propertiesPanel) propertiesPanel.classList.toggle("hidden", currentDashboardTab !== "properties");
@@ -1279,6 +1479,7 @@ function switchDashboardTab(tab) {
     if (coveragePanel) coveragePanel.classList.toggle("hidden", currentDashboardTab !== "coverage");
     if (systemPanel) systemPanel.classList.toggle("hidden", currentDashboardTab !== "system");
     if (navPortal) navPortal.classList.toggle("active", currentDashboardTab === "portal");
+    if (navMySpace) navMySpace.classList.toggle("active", currentDashboardTab === "myspace");
     if (navInbox) navInbox.classList.toggle("active", currentDashboardTab === "inbox");
     if (navRent) navRent.classList.toggle("active", currentDashboardTab === "rent");
     if (navProperties) navProperties.classList.toggle("active", currentDashboardTab === "properties");
@@ -1288,6 +1489,7 @@ function switchDashboardTab(tab) {
     if (shell) {
         shell.classList.toggle("inbox-mode", currentDashboardTab === "inbox");
         shell.classList.toggle("portal-mode", currentDashboardTab === "portal");
+        shell.classList.toggle("myspace-mode", currentDashboardTab === "myspace");
         shell.classList.toggle("rent-mode", currentDashboardTab === "rent");
         shell.classList.toggle("compliance-mode", currentDashboardTab === "compliance");
         shell.classList.toggle("coverage-mode", currentDashboardTab === "coverage");
@@ -1298,6 +1500,9 @@ function switchDashboardTab(tab) {
     updateSyncContextUI();
     if (currentDashboardTab === "rent" && !rentLoadedOnce) {
         loadActiveRentView();
+    }
+    if (currentDashboardTab === "myspace" && !mySpaceLoadedOnce) {
+        loadMySpace();
     }
     if (currentDashboardTab === "properties" && !propertiesLoadedOnce) {
         loadProperties();

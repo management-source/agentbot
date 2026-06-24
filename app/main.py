@@ -30,6 +30,7 @@ from app.routers import assets
 from app.routers import rent_tracker
 from app.routers import compliance
 from app.routers import properties
+from app.routers import my_space
 from app.routers import settings as app_settings
 from app.routers import user_auth
 from app.models import User, UserRole
@@ -214,6 +215,7 @@ app.include_router(blacklist.router, prefix="/blacklist", tags=["blacklist"])
 app.include_router(rent_tracker.router, prefix="/rent-tracker", tags=["rent-tracker"])
 app.include_router(properties.router, prefix="/properties", tags=["properties"])
 app.include_router(compliance.router, prefix="/compliance", tags=["compliance"])
+app.include_router(my_space.router)
 
 @app.on_event("startup")
 def on_startup():

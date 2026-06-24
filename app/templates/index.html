@@ -385,6 +385,9 @@
     .dashboard-shell.portal-mode{
       grid-template-columns: 1fr;
     }
+    .dashboard-shell.myspace-mode{
+      grid-template-columns: 1fr;
+    }
     .dashboard-shell.compliance-mode{
       grid-template-columns: 1fr;
     }
@@ -399,6 +402,7 @@
     }
     .dashboard-shell.rent-mode .left-rail,
     .dashboard-shell.portal-mode .left-rail,
+    .dashboard-shell.myspace-mode .left-rail,
     .dashboard-shell.compliance-mode .left-rail,
     .dashboard-shell.coverage-mode .left-rail,
     .dashboard-shell.properties-mode .left-rail,
@@ -1299,6 +1303,144 @@
       .system-user-actions{grid-template-columns:1fr}
     }
 
+    /* My Space */
+    .myspace-workspace{
+      display:flex;
+      flex-direction:column;
+      gap:14px;
+    }
+    .myspace-hero{
+      position:relative;
+      overflow:hidden;
+      padding:24px;
+      border-radius:24px;
+      color:#fff;
+      border:1px solid rgba(255,255,255,.16);
+      background:
+        radial-gradient(circle at 82% 18%, rgba(249,231,167,.24), transparent 34%),
+        linear-gradient(135deg, #0f172a 0%, #1f2937 52%, #8f6f1d 100%);
+      box-shadow:0 18px 42px rgba(15,23,42,.14);
+    }
+    .myspace-hero h2{margin:0;font-size:clamp(30px,4vw,52px);letter-spacing:-.05em;line-height:1}
+    .myspace-hero p{margin:12px 0 0;color:#d8dee9;font-size:15px;line-height:1.55;max-width:720px}
+    .myspace-grid{
+      display:grid;
+      grid-template-columns:minmax(0, 1.35fr) minmax(280px, .65fr);
+      gap:14px;
+      align-items:start;
+    }
+    .myspace-card{
+      padding:18px;
+      border:1px solid #dbe4ef;
+      border-radius:18px;
+      background:#fff;
+      box-shadow:0 8px 24px rgba(15,23,42,.055);
+    }
+    .myspace-card h3{margin:0;color:#101828;font-size:17px;letter-spacing:-.02em}
+    .myspace-card p{margin:6px 0 0;color:#667085;font-size:13px;line-height:1.45}
+    .myspace-add{
+      display:grid;
+      grid-template-columns:minmax(180px, 1fr) 150px 130px auto;
+      gap:10px;
+      align-items:end;
+      margin-top:14px;
+    }
+    .myspace-todo-list{
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+      margin-top:14px;
+    }
+    .myspace-todo{
+      display:grid;
+      grid-template-columns:38px minmax(0, 1fr) minmax(230px, .56fr);
+      gap:12px;
+      padding:14px;
+      border:1px solid #dbe4ef;
+      border-radius:16px;
+      background:#fbfcfe;
+    }
+    .myspace-todo.done{opacity:.72}
+    .myspace-todo.done .myspace-title-input{text-decoration:line-through;color:#667085}
+    .myspace-check{display:flex;align-items:flex-start;justify-content:center;padding-top:9px}
+    .myspace-check input{display:none}
+    .myspace-check span{
+      width:24px;
+      height:24px;
+      border-radius:999px;
+      border:2px solid #cbd5e1;
+      background:#fff;
+      position:relative;
+      cursor:pointer;
+    }
+    .myspace-check input:checked + span{
+      border-color:#16a34a;
+      background:#16a34a;
+    }
+    .myspace-check input:checked + span::after{
+      content:"";
+      position:absolute;
+      left:7px;
+      top:3px;
+      width:6px;
+      height:12px;
+      border:solid #fff;
+      border-width:0 2px 2px 0;
+      transform:rotate(45deg);
+    }
+    .myspace-todo-main{display:flex;flex-direction:column;gap:8px;min-width:0}
+    .myspace-title-input{
+      border:none !important;
+      box-shadow:none !important;
+      padding:3px 0 !important;
+      background:transparent !important;
+      font-weight:900;
+      font-size:15px;
+      color:#101828;
+    }
+    .myspace-todo textarea,.myspace-note{
+      width:100%;
+      min-height:72px;
+      resize:vertical;
+      border:1px solid #dbe4ef;
+      border-radius:14px;
+      padding:10px 12px;
+      font-size:13px;
+      line-height:1.45;
+      outline:none;
+      background:#fff;
+    }
+    .myspace-note{min-height:320px;margin-top:14px}
+    .myspace-todo-meta{display:flex;gap:6px;flex-wrap:wrap}
+    .myspace-todo-actions{
+      display:grid;
+      grid-template-columns:1fr;
+      gap:8px;
+      align-content:start;
+    }
+    .myspace-privacy{
+      border:1px solid rgba(22,163,74,.22);
+      background:rgba(22,163,74,.08);
+      color:#166534;
+      padding:12px;
+      border-radius:14px;
+      font-size:13px;
+      line-height:1.45;
+      margin-top:14px;
+    }
+    @media (max-width: 1050px){
+      .myspace-grid{grid-template-columns:1fr}
+      .myspace-add{grid-template-columns:1fr 1fr}
+      .myspace-todo{grid-template-columns:38px minmax(0, 1fr)}
+      .myspace-todo-actions{grid-column:2}
+    }
+    @media (max-width: 640px){
+      .myspace-add{grid-template-columns:1fr}
+      .myspace-todo{grid-template-columns:1fr}
+      .myspace-check{justify-content:flex-start;padding-top:0}
+      .myspace-todo-actions{grid-column:auto}
+    }
+
     /* Modal */
     .modal-backdrop{
       position:fixed; inset:0;
@@ -1707,6 +1849,7 @@
                 </button>
                 <nav class="side-nav">
                     <a id="navPortal" class="active" href="javascript:void(0)" onclick="switchDashboardTab('portal')" title="Portal Hub"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1"></rect><rect x="13" y="4" width="7" height="5" rx="1"></rect><rect x="13" y="11" width="7" height="9" rx="1"></rect><rect x="4" y="13" width="7" height="7" rx="1"></rect></svg></span><span class="nav-label">Portal Hub</span></a>
+                    <a id="navMySpace" href="javascript:void(0)" onclick="switchDashboardTab('myspace')" title="My Space"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4 8v11h16V8z"></path><path d="M9 21v-7h6v7"></path><path d="M9 9h6"></path></svg></span><span class="nav-label">My Space</span></a>
                     <a id="navInbox" href="javascript:void(0)" onclick="switchDashboardTab('inbox')" title="Email Manager"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="6" width="16" height="12" rx="2"></rect><path d="m4 8 8 6 8-6"></path></svg></span><span class="nav-label">Email Manager</span></a>
                     <a id="navRentTracker" href="javascript:void(0)" onclick="switchDashboardTab('rent')" title="Rent Tracker"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11 12 4l8 7"></path><path d="M6 10v10h12V10"></path><path d="M10 20v-5h4v5"></path></svg></span><span class="nav-label">Rent Tracker</span></a>
                     <a id="navCompliance" href="javascript:void(0)" onclick="switchDashboardTab('compliance')" title="Compliance"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"></circle><path d="m8.5 12.5 2.2 2.2 4.8-5.2"></path></svg></span><span class="nav-label">Compliance</span></a>
@@ -1832,6 +1975,12 @@
                     <p>Integrated tools for property management and compliance.</p>
                 </div>
                 <div class="hub-grid">
+                    <div class="hub-tile" data-page-tile="myspace" onclick="switchDashboardTab('myspace')">
+                        <div class="tile-mark">MS</div>
+                        <h3>My Space</h3>
+                        <p>Your private workspace for personal to-dos, notes, and daily focus items.</p>
+                        <div class="tile-action">Open my space</div>
+                    </div>
                     <div class="hub-tile" data-page-tile="inbox" onclick="switchDashboardTab('inbox')">
                         <div class="tile-mark">EM</div>
                         <h3>Email Manager</h3>
@@ -1869,6 +2018,59 @@
                         <div class="tile-action">Manage access</div>
                     </div>
                 </div>
+            </div>
+
+            <div id="mySpacePanel" class="hidden">
+                <section class="myspace-workspace">
+                    <div class="myspace-hero">
+                        <div class="login-kicker" style="color:#f9e7a7;margin-bottom:10px">Private Workspace</div>
+                        <h2>My Space</h2>
+                        <p>Your personal area for the work that belongs only to you. Tasks and notes are saved in the backend so you can continue tomorrow.</p>
+                    </div>
+
+                    <div class="system-stats" id="mySpaceStats"></div>
+
+                    <div class="myspace-grid">
+                        <div class="myspace-card">
+                            <h3>Private To-Do List</h3>
+                            <p>Add personal follow-ups, reminders, and focus items. Only your login can access this list.</p>
+                            <div class="myspace-add">
+                                <div class="field">
+                                    <div class="label">Task</div>
+                                    <input type="text" id="mySpaceNewTitle" placeholder="What do you need to get done?" />
+                                </div>
+                                <div class="field">
+                                    <div class="label">Due Date</div>
+                                    <input type="date" id="mySpaceNewDue" />
+                                </div>
+                                <div class="field">
+                                    <div class="label">Priority</div>
+                                    <select id="mySpaceNewPriority">
+                                        <option value="normal">Normal</option>
+                                        <option value="high">High</option>
+                                        <option value="low">Low</option>
+                                    </select>
+                                </div>
+                                <button class="btn primary" onclick="addMySpaceTodo()">Add Task</button>
+                            </div>
+                            <div id="mySpaceTodoList" class="myspace-todo-list"></div>
+                        </div>
+
+                        <div class="myspace-card">
+                            <div class="row space">
+                                <div>
+                                    <h3>Private Notes</h3>
+                                    <p>A simple scratchpad for today’s reminders, call notes, or planning.</p>
+                                </div>
+                                <span class="small muted" id="mySpaceNoteStatus">Autosaves</span>
+                            </div>
+                            <textarea id="mySpaceNote" class="myspace-note" oninput="scheduleMySpaceNoteSave()" placeholder="Write private notes here..."></textarea>
+                            <div class="myspace-privacy">
+                                This page is private to your account in the portal. Administrators can assign access to the My Space page, but there is no admin screen to view another staff member's tasks or notes.
+                            </div>
+                        </div>
+                    </div>
+                </section>
             </div>
 
             <div id="inboxPanel" class="hidden">
@@ -2498,7 +2700,7 @@
             </div>
         </div>
 
-        <script src="/static/app.js?v=13"></script>
+        <script src="/static/app.js?v=14"></script>
 
         <script>
   // Wire segmented status buttons to existing tab logic
