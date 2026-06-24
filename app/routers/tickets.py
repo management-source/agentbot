@@ -91,7 +91,9 @@ def _tab_filter(q, tab: str):
 
     if tab in ("awaiting_reply", "awaiting"):
         # Canonical KPI tab
-        return q.filter(ThreadTicket.is_not_replied == True)
+        return q.filter(ThreadTicket.is_not_replied == True).filter(
+            ThreadTicket.status.notin_([TicketStatus.RESPONDED, TicketStatus.NO_REPLY_NEEDED])
+        )
 
     if tab == "in_progress":
         return q.filter(ThreadTicket.status == TicketStatus.IN_PROGRESS)
@@ -201,7 +203,9 @@ def list_tickets(
     )
     counts = {
         "all": base.count(),
-        "awaiting_reply": base.filter(ThreadTicket.is_not_replied == True).count(),
+        "awaiting_reply": base.filter(ThreadTicket.is_not_replied == True)
+        .filter(ThreadTicket.status.notin_([TicketStatus.RESPONDED, TicketStatus.NO_REPLY_NEEDED]))
+        .count(),
         "in_progress": base.filter(ThreadTicket.status == TicketStatus.IN_PROGRESS).count(),
         "responded": base.filter(ThreadTicket.status == TicketStatus.RESPONDED).count(),
         "no_reply_needed": base.filter(ThreadTicket.status == TicketStatus.NO_REPLY_NEEDED).count(),
@@ -229,9 +233,11 @@ def update_status(
     old = t.status
     t.status = payload.status
 
-    # Optional: keep ALL clean + not_replied logic
+    # Keep tab membership deterministic after manual status changes.
     if payload.status in [TicketStatus.RESPONDED, TicketStatus.NO_REPLY_NEEDED]:
         t.is_not_replied = False
+    elif payload.status in [TicketStatus.PENDING, TicketStatus.IN_PROGRESS]:
+        t.is_not_replied = True
 
     t.updated_at = datetime.utcnow()
     add_audit(
@@ -243,7 +249,12 @@ def update_status(
         detail={"from": old.value, "to": t.status.value},
     )
     db.commit()
-    return {"ok": True, "thread_id": t.thread_id, "status": t.status.value}
+    return {
+        "ok": True,
+        "thread_id": t.thread_id,
+        "status": t.status.value,
+        "is_not_replied": bool(t.is_not_replied),
+    }
 
 @router.post("/{thread_id}/draft-ack", response_model=DraftAckOut)
 def draft_ack(

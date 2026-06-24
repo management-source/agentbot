@@ -1101,32 +1101,83 @@
     /* iframe email viewer */
     .viewer-backdrop{
       position:fixed; inset:0;
-      background: rgba(16,24,40,.45);
+      background: rgba(7,12,20,.62);
       display:none;
       z-index:60;
-      padding:18px;
+      padding:24px;
+      overflow:auto;
+      backdrop-filter: blur(5px);
     }
-    .viewer-backdrop.show{display:block}
+    .viewer-backdrop.show{
+      display:flex;
+      align-items:center;
+      justify-content:center;
+    }
     .viewer{
-      height: calc(100vh - 36px);
-      background:#fff;
-      border:1px solid var(--border);
-      border-radius:18px;
+      width:min(1180px, 100%);
+      height:min(920px, calc(100dvh - 48px));
+      min-height:520px;
+      background:#f8fafc;
+      border:1px solid rgba(255,255,255,.18);
+      border-radius:22px;
       overflow:hidden;
       display:flex;
       flex-direction:column;
+      box-shadow:0 30px 80px rgba(0,0,0,.34);
     }
     .viewer-head{
-      padding:12px 14px;
-      border-bottom:1px solid var(--border);
+      padding:16px 18px;
+      border-bottom:1px solid rgba(255,255,255,.1);
       display:flex;
       align-items:center;
       justify-content:space-between;
-      gap:10px;
+      gap:14px;
+      color:#f8fafc;
+      background:linear-gradient(135deg, #080808 0%, #141923 58%, #8f6f1d 100%);
     }
-    .viewer-head .title{font-weight:800; font-size:13px}
-    .viewer-body{flex:1; background:#fff}
+    .viewer-title-wrap{min-width:0}
+    .viewer-head .title{
+      font-weight:900;
+      font-size:16px;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      white-space:nowrap;
+      max-width:760px;
+    }
+    .viewer-subtitle{
+      margin-top:4px;
+      color:#c8d2df;
+      font-size:12px;
+      font-weight:700;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      white-space:nowrap;
+      max-width:760px;
+    }
+    .viewer-actions{
+      display:flex;
+      gap:8px;
+      align-items:center;
+      flex-shrink:0;
+    }
+    .viewer-head .btn{
+      background:rgba(255,255,255,.08);
+      color:#f8fafc;
+      border-color:rgba(255,255,255,.18);
+      box-shadow:none;
+    }
+    .viewer-head .btn:hover{background:rgba(255,255,255,.14)}
+    .viewer-body{flex:1; background:#eef3f8}
     .viewer-body iframe{width:100%; height:100%; border:none}
+    @media (max-width: 760px){
+      .viewer-backdrop{padding:10px}
+      .viewer{height:calc(100dvh - 20px); min-height:0; border-radius:16px}
+      .viewer-head{align-items:flex-start; flex-direction:column}
+      .viewer-actions{width:100%}
+      .viewer-actions .btn{flex:1}
+      .viewer-head .title,
+      .viewer-subtitle{max-width:100%}
+    }
   </style>
     </head>
 
@@ -1892,10 +1943,15 @@
         <div class="viewer-backdrop" id="viewerBackdrop">
             <div class="viewer">
                 <div class="viewer-head">
-                    <div class="title" id="viewerTitle">Thread</div>
-                    <a class="btn" id="gmailLink" href="#" target="_blank" rel="noreferrer">Open in Gmail</a>
-                    <button class="btn" id="btnViewerClose"
-                        onclick="closeThreadModal()">Close</button>
+                    <div class="viewer-title-wrap">
+                        <div class="title" id="viewerTitle">Thread</div>
+                        <div class="viewer-subtitle" id="viewerSubtitle">Loading conversation...</div>
+                    </div>
+                    <div class="viewer-actions">
+                        <a class="btn" id="gmailLink" href="#" target="_blank" rel="noreferrer">Open in Gmail</a>
+                        <button class="btn" id="btnViewerClose"
+                            onclick="closeThreadModal()">Close</button>
+                    </div>
                 </div>
                 <div class="viewer-body">
                     <iframe id="viewerFrame"
@@ -1953,7 +2009,7 @@
             </div>
         </div>
 
-        <script src="/static/app.js?v=6"></script>
+        <script src="/static/app.js?v=7"></script>
 
         <script>
   // Wire segmented status buttons to existing tab logic

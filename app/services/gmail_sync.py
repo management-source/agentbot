@@ -15,6 +15,10 @@ from app.services.state import get_state, set_state
 
 logger = logging.getLogger(__name__)
 
+THREAD_METADATA_HEADERS = ['From', 'Subject', 'Date', 'Message-ID', 'In-Reply-To', 'References']
+THREAD_METADATA_FIELDS = "id,historyId,messages(id,labelIds,internalDate,snippet,payload/headers)"
+GMAIL_BATCH_SIZE = 50
+
 
 def _get_header(headers: List[dict], name: str) -> str | None:
     for h in headers or []:
@@ -215,6 +219,66 @@ def _list_thread_ids_in_range(service, start: str | None, end: str | None, max_t
     return thread_ids, hit_limit
 
 
+def _thread_metadata_request(service, thread_id: str, *, compact: bool = True):
+    kwargs = {
+        "userId": gmail_user_id(),
+        "id": thread_id,
+        "format": 'metadata',
+        "metadataHeaders": THREAD_METADATA_HEADERS,
+    }
+    if compact:
+        kwargs["fields"] = THREAD_METADATA_FIELDS
+    return service.users().threads().get(**kwargs)
+
+
+def _chunks(values: List[str], size: int):
+    for idx in range(0, len(values), size):
+        yield values[idx:idx + size]
+
+
+def _fetch_thread_metadata(service, thread_ids: List[str]) -> tuple[dict[str, dict], int]:
+    """Fetch Gmail thread metadata in HTTP batches to avoid one round trip per thread."""
+    threads: dict[str, dict] = {}
+    failures = 0
+
+    for chunk in _chunks(thread_ids, GMAIL_BATCH_SIZE):
+        batch = service.new_batch_http_request()
+        failed_ids: set[str] = set()
+
+        def callback(request_id, response, exception):
+            if exception is not None:
+                failed_ids.add(str(request_id))
+                logger.warning("Failed to batch-fetch thread %s: %s", request_id, exception)
+                return
+            if response:
+                threads[str(request_id)] = response
+
+        for tid in chunk:
+            batch.add(_thread_metadata_request(service, tid), request_id=tid, callback=callback)
+
+        try:
+            batch.execute()
+        except Exception as e:
+            logger.warning("Gmail batch fetch failed; falling back to sequential fetch for %s threads: %s", len(chunk), e)
+            for tid in chunk:
+                try:
+                    threads[tid] = _thread_metadata_request(service, tid, compact=False).execute()
+                except HttpError as he:
+                    logger.warning("Failed to fetch thread %s: %s", tid, he)
+                    failures += 1
+            continue
+
+        missing_ids = [tid for tid in chunk if tid not in threads]
+        for tid in missing_ids:
+            try:
+                threads[tid] = _thread_metadata_request(service, tid, compact=False).execute()
+            except HttpError as he:
+                logger.warning("Failed to fetch thread %s%s: %s", tid, " after batch retry" if tid in failed_ids else "", he)
+                failures += 1
+
+    return threads, failures
+
+
 def _upsert_ticket_from_thread(
     db: Session,
     service,
@@ -223,6 +287,9 @@ def _upsert_ticket_from_thread(
     *,
     awaiting_only: bool = True,
     auto_triage: bool = True,
+    thread: dict | None = None,
+    existing_ticket: ThreadTicket | None = None,
+    blacklisted_senders: set[str] | None = None,
 ) -> bool:
     """Fetch thread metadata and upsert a ThreadTicket row.
 
@@ -236,12 +303,7 @@ def _upsert_ticket_from_thread(
     Notes:
       - This is only as "airtight" as your MY_EMAILS list. Add all aliases/shared mailbox addresses there.
     """
-    th = service.users().threads().get(
-        userId=gmail_user_id(),
-        id=thread_id,
-        format='metadata',
-        metadataHeaders=['From', 'Subject', 'Date', 'Message-ID', 'In-Reply-To', 'References'],
-    ).execute()
+    th = thread or _thread_metadata_request(service, thread_id).execute()
 
     messages = th.get('messages', []) or []
     if not messages:
@@ -295,11 +357,15 @@ def _upsert_ticket_from_thread(
 
     from_name, from_email = parse_email_address(from_h)
     if from_email:
-        is_blacklisted = db.query(BlacklistedSender).filter(BlacklistedSender.mailbox == mailbox).filter(BlacklistedSender.email == from_email.lower()).first() is not None
+        normalized_from = from_email.lower()
+        if blacklisted_senders is not None:
+            is_blacklisted = normalized_from in blacklisted_senders
+        else:
+            is_blacklisted = db.query(BlacklistedSender).filter(BlacklistedSender.mailbox == mailbox).filter(BlacklistedSender.email == normalized_from).first() is not None
         if is_blacklisted:
             return False
 
-    ticket = db.get(ThreadTicket, f"{mailbox}:{thread_id}")
+    ticket = existing_ticket or db.get(ThreadTicket, f"{mailbox}:{thread_id}")
 
     # If we only want awaiting-reply threads, do not create new tickets for threads that do not need a reply.
     if ticket is None and awaiting_only and not awaiting_reply:
@@ -330,13 +396,17 @@ def _upsert_ticket_from_thread(
         days = {'high': 0, 'medium': 2, 'low': 3}.get(ticket.priority, 2)
         ticket.due_at = (last_dt + timedelta(days=days))
 
-    ticket.is_not_replied = bool(awaiting_reply)
+    terminal_status = ticket.status in (TicketStatus.RESPONDED, TicketStatus.NO_REPLY_NEEDED)
+    message_after_manual_status = bool(last_dt and ticket.updated_at and last_dt > ticket.updated_at)
 
-    # Keep status aligned with awaiting_reply, but do not overwrite NO_REPLY_NEEDED.
+    # Keep status aligned without undoing a deliberate manual close on the next sync.
     if awaiting_reply:
-        if ticket.status == TicketStatus.RESPONDED:
+        if terminal_status and message_after_manual_status:
             ticket.status = TicketStatus.PENDING
+            terminal_status = False
+        ticket.is_not_replied = not terminal_status
     else:
+        ticket.is_not_replied = False
         if ticket.status not in (TicketStatus.NO_REPLY_NEEDED,):
             ticket.status = TicketStatus.RESPONDED
 
@@ -437,11 +507,44 @@ def sync_inbox_threads(
                 recent_start = (date.today() - timedelta(days=30)).isoformat()
                 thread_ids, hit_limit = _list_thread_ids_in_range(service, start=recent_start, end=None, max_threads=max_threads, include_anywhere=False)
 
+        blacklisted_senders = {
+            (email or "").lower()
+            for (email,) in db.query(BlacklistedSender.email)
+            .filter(BlacklistedSender.mailbox == mailbox)
+            .all()
+            if email
+        }
+        existing_tickets = {}
+        if thread_ids:
+            existing_tickets = {
+                ticket.gmail_thread_id: ticket
+                for ticket in db.query(ThreadTicket)
+                .filter(ThreadTicket.mailbox == mailbox)
+                .filter(ThreadTicket.gmail_thread_id.in_(thread_ids))
+                .all()
+            }
+
+        threads_by_id, fetch_failures = _fetch_thread_metadata(service, thread_ids)
+
         upserted = 0
         skipped = 0
         for tid in thread_ids:
+            thread = threads_by_id.get(tid)
+            if not thread:
+                skipped += 1
+                continue
             try:
-                if _upsert_ticket_from_thread(db, service, mailbox, tid, awaiting_only=awaiting_only, auto_triage=auto_triage):
+                if _upsert_ticket_from_thread(
+                    db,
+                    service,
+                    mailbox,
+                    tid,
+                    awaiting_only=awaiting_only,
+                    auto_triage=auto_triage,
+                    thread=thread,
+                    existing_ticket=existing_tickets.get(tid),
+                    blacklisted_senders=blacklisted_senders,
+                ):
                     upserted += 1
                 else:
                     skipped += 1
@@ -463,6 +566,8 @@ def sync_inbox_threads(
             "mode": "history" if used_history else ("range" if (start or end) else "recent"),
             "watermark": current_history_id,
             "hit_limit": hit_limit,
+            "fetch_failures": fetch_failures,
+            "batch_size": GMAIL_BATCH_SIZE,
             "target_mailbox": gmail_user_id(),
             "include_anywhere": bool(include_anywhere),
             "awaiting_only": bool(awaiting_only),

@@ -2071,6 +2071,8 @@ function renderTicket(t) {
     if (useGoodUi) {
         const card = document.createElement("div");
         card.className = "ticket";
+        card.setAttribute("data-ticket-card", "1");
+        card.setAttribute("data-thread-id", t.thread_id || "");
 
         const priority = String(t.priority || "medium").toLowerCase();
         const priBadge = priority === "high"
@@ -2114,7 +2116,7 @@ function renderTicket(t) {
             <div class="ticket-controls">
               <div class="field">
                 <div class="label">Status</div>
-                <select onchange="updateStatus('${t.thread_id}', this.value)">
+                <select data-current-status="${escapeHtml(t.status || "")}" onchange="updateStatus('${t.thread_id}', this.value, this)">
                   ${statusOptions(t.status)}
                 </select>
               </div>
@@ -2131,6 +2133,8 @@ function renderTicket(t) {
     card.className = settings.compactTickets
         ? "bg-white rounded-xl shadow border p-4 flex items-start justify-between gap-4"
         : "bg-white rounded-xl shadow border p-5 flex items-start justify-between gap-4";
+    card.setAttribute("data-ticket-card", "1");
+    card.setAttribute("data-thread-id", t.thread_id || "");
 
     const catBadge = ""; // legacy manual category removed; use AI category badge instead
     const assigneeBadge = `<span class="px-2 py-0.5 rounded-full text-xs bg-slate-50 text-slate-700 border">${assignee}</span>`;
@@ -2173,7 +2177,8 @@ function renderTicket(t) {
     <div class="flex flex-col items-end gap-2 w-56">
       <label class="w-full text-xs text-slate-500">Status</label>
       <select class="w-full px-3 py-2 rounded-lg border bg-white"
-        onchange="updateStatus('${t.thread_id}', this.value)">
+        data-current-status="${escapeHtml(t.status || "")}"
+        onchange="updateStatus('${t.thread_id}', this.value, this)">
         ${statusOptions(t.status)}
       </select>
       <!-- Manual category removed; AI category is computed automatically -->
@@ -2202,16 +2207,6 @@ async function loadTickets() {
     const data = await r.json();
 
     const items = Array.isArray(data.items) ? data.items : [];
-    // If there are no items returned, force KPIs to zero to avoid displaying stale counts.
-    if (items.length === 0) {
-        data.counts = {
-            awaiting_reply: 0,
-            in_progress: 0,
-            responded: 0,
-            no_reply_needed: 0,
-        };
-    }
-
     const c = data.counts || {};
     const setText = (id, val) => {
         const el = document.getElementById(id);
@@ -2278,13 +2273,53 @@ function nextPage() {
 }
 
 
-async function updateStatus(threadId, status) {
-    await apiFetch(`/tickets/${threadId}/status`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status })
-    });
-    await loadTickets();
+function ticketBelongsToCurrentTab(status, isNotReplied) {
+    const key = String(status || "").toUpperCase();
+    if (currentTab === "all") return true;
+    if (currentTab === "awaiting_reply") {
+        return Boolean(isNotReplied) && key !== "RESPONDED" && key !== "NO_REPLY_NEEDED";
+    }
+    if (currentTab === "in_progress") return key === "IN_PROGRESS";
+    if (currentTab === "responded") return key === "RESPONDED";
+    if (currentTab === "no_reply_needed") return key === "NO_REPLY_NEEDED";
+    return true;
+}
+
+async function updateStatus(threadId, status, control = null) {
+    const previous = control ? (control.getAttribute("data-current-status") || control.value || "") : "";
+    if (control) control.disabled = true;
+    try {
+        const r = await apiFetch(`/tickets/${encodeURIComponent(threadId)}/status`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ status })
+        });
+        const text = await r.text();
+        if (!r.ok) {
+            if (control && previous) control.value = previous;
+            alert(`Status update failed (${r.status}):\n\n${text}`);
+            await loadTickets();
+            return;
+        }
+        let result = {};
+        try { result = JSON.parse(text); } catch { result = {}; }
+        const nextStatus = result.status || status;
+        if (control) {
+            control.value = nextStatus;
+            control.setAttribute("data-current-status", nextStatus);
+        }
+        const card = control ? control.closest(".ticket, [data-ticket-card]") : null;
+        if (card && !ticketBelongsToCurrentTab(nextStatus, result.is_not_replied)) {
+            card.remove();
+        }
+        await loadTickets();
+    } catch (e) {
+        if (control && previous) control.value = previous;
+        alert("Status update failed: " + e);
+        await loadTickets();
+    } finally {
+        if (control) control.disabled = false;
+    }
 }
 
 async function openThread(threadId) {
@@ -2295,13 +2330,15 @@ async function openThread(threadId) {
     const viewerBackdrop = document.getElementById("viewerBackdrop");
     const viewerFrame = document.getElementById("viewerFrame");
     const viewerTitle = document.getElementById("viewerTitle");
+    const viewerSubtitle = document.getElementById("viewerSubtitle");
 
     const useViewer = (!modal || !content) && viewerBackdrop && viewerFrame;
 
     if (useViewer) {
         viewerBackdrop.classList.add("show");
         if (viewerTitle) viewerTitle.textContent = "Thread";
-        viewerFrame.srcdoc = `<div style="font-family:system-ui; padding:16px; color:#334155">Loading thread...</div>`;
+        if (viewerSubtitle) viewerSubtitle.textContent = "Loading conversation...";
+        viewerFrame.srcdoc = `<div style="font-family:Segoe UI,system-ui,sans-serif; padding:24px; color:#334155">Loading conversation...</div>`;
     } else if (modal && content) {
         modal.classList.remove("hidden");
         content.innerHTML = `<div class="text-sm text-slate-600">Loading thread...</div>`;
@@ -2310,7 +2347,7 @@ async function openThread(threadId) {
         return;
     }
 
-    const r = await apiFetch(`/threads/${threadId}`);
+    const r = await apiFetch(`/threads/${encodeURIComponent(threadId)}`);
     const t = await r.text();
     if (!r.ok) {
         if (useViewer) viewerFrame.srcdoc = `<pre style="white-space:pre-wrap; color:#b91c1c; padding:16px">${escapeHtml(t)}</pre>`;
@@ -2320,6 +2357,14 @@ async function openThread(threadId) {
 
     const j = JSON.parse(t);
     if (gmailLink) gmailLink.href = j.gmail_url || j.gmail_thread_url || "#";
+    const messages = Array.isArray(j.messages) ? j.messages : [];
+    const threadSubject = messages.find((m) => m.subject)?.subject || "Email conversation";
+    const lastMessageDate = messages.length ? (messages[messages.length - 1].date || "") : "";
+    if (viewerTitle) viewerTitle.textContent = threadSubject;
+    if (viewerSubtitle) {
+        const countText = `${messages.length} message${messages.length === 1 ? "" : "s"}`;
+        viewerSubtitle.textContent = [countText, lastMessageDate].filter(Boolean).join(" - ");
+    }
 
     const escapeHtmlLocal = (s) => (s || "")
         .replaceAll("&", "&amp;")
@@ -2354,9 +2399,9 @@ async function openThread(threadId) {
         else if (mime.startsWith("application/vnd")) label = "DOC";
         const mimeQ = encodeURIComponent(a.mime_type || "");
         const url = `/assets/attachment/${encodeURIComponent(messageIdArg || "")}/${encodeURIComponent(a.attachment_id)}?filename=${encodeURIComponent(name)}&mime=${mimeQ}`;
-        return `<a style="display:inline-flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid #e5e7eb;border-radius:999px;text-decoration:none;color:#334155;background:#fff" href="${url}" target="_blank" rel="noreferrer">
-          <span style="font-size:12px;padding:2px 8px;border-radius:999px;background:#f1f5f9;color:#475569;border:1px solid #e5e7eb">${label}</span>
-          <span style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtmlLocal(name)}</span>
+        return `<a class="attachment-chip" href="${url}" target="_blank" rel="noreferrer">
+          <span>${label}</span>
+          <strong>${escapeHtmlLocal(name)}</strong>
         </a>`;
     };
 
@@ -2371,43 +2416,176 @@ async function openThread(threadId) {
         }
 
         const atts = (m.attachments || []).map(a => ({ ...a, message_id: msgId })).filter(a => !a.is_inline);
-        const attachmentsHtml = atts.length ? `<div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:8px">${atts.map(a => attachmentBadge(a, threadId, msgId)).join("")}</div>` : "";
+        const attachmentsHtml = atts.length ? `<div class="attachments">${atts.map(a => attachmentBadge(a, threadId, msgId)).join("")}</div>` : "";
 
-        const canHtml = (html || "").trim();
         const htmlBlock = `
-          <div style="margin-top:12px" data-mode="html">
-            <iframe id="${iframeId}" style="width:100%;height:520px;border:1px solid #e5e7eb;border-radius:12px;background:#fff"
+          <div class="message-body" data-mode="html">
+            <iframe id="${iframeId}" class="message-frame"
               sandbox="allow-popups allow-forms allow-same-origin" referrerpolicy="no-referrer"></iframe>
           </div>
         `;
 
+        const sender = escapeHtmlLocal(m.from || "(unknown sender)");
+        const recipient = escapeHtmlLocal(m.to || "");
+        const subject = escapeHtmlLocal(m.subject || "(no subject)");
+        const date = escapeHtmlLocal(m.date || "");
+        const avatarText = escapeHtmlLocal((m.from || "?").trim().slice(0, 1).toUpperCase() || "?");
+
         return `
-        <div data-msg-card="1" style="border:1px solid #e5e7eb;border-radius:14px;padding:14px;background:#f8fafc;margin-top:12px">
-          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
-            <div>
-              <div style="font-size:12px;color:#64748b">${escapeHtmlLocal(m.date || "")}</div>
-              <div style="font-size:13px;color:#0f172a;margin-top:2px"><b>From:</b> ${escapeHtmlLocal(m.from || "")}</div>
-              <div style="font-size:13px;color:#0f172a"><b>To:</b> ${escapeHtmlLocal(m.to || "")}</div>
-              <div style="font-size:13px;color:#0f172a"><b>Subject:</b> ${escapeHtmlLocal(m.subject || "")}</div>
+        <article class="message-card" data-msg-card="1">
+          <div class="message-head">
+            <div class="sender-mark">${avatarText}</div>
+            <div class="message-meta">
+              <div class="message-from">${sender}</div>
+              <div class="message-subject">${subject}</div>
+              <div class="message-route">${recipient ? `To ${recipient}` : ""}</div>
               ${attachmentsHtml}
             </div>
-
-            
+            <div class="message-date">${date}</div>
           </div>
-
-          <div style="margin-top:12px">
-            ${htmlBlock}
-          </div>
-        </div>
+          ${htmlBlock}
+        </article>
       `;
     };
 
     const threadHtml = `
-      <div style="font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; padding:16px; color:#0f172a">
-        <div style="font-weight:800;font-size:14px">Thread</div>
-        ${(j.messages || []).map((m, idx) => renderMessage(m, idx)).join("")}
+      <!doctype html>
+      <html>
+      <head>
+        <meta charset="utf-8" />
+        <style>
+          *{box-sizing:border-box}
+          body{
+            margin:0;
+            font-family:"Segoe UI", Aptos, ui-sans-serif, system-ui, -apple-system, sans-serif;
+            color:#101828;
+            background:#eef3f8;
+          }
+          .thread-shell{padding:22px; max-width:1040px; margin:0 auto}
+          .thread-summary{
+            border:1px solid #d8e2ee;
+            background:#fff;
+            border-radius:18px;
+            padding:18px 20px;
+            box-shadow:0 12px 28px rgba(15,23,42,.08);
+            margin-bottom:16px;
+          }
+          .thread-summary h1{margin:0; font-size:20px; line-height:1.25; letter-spacing:-.01em}
+          .thread-summary p{margin:8px 0 0; color:#667085; font-size:13px}
+          .message-card{
+            border:1px solid #d8e2ee;
+            border-radius:18px;
+            background:#fff;
+            box-shadow:0 10px 26px rgba(15,23,42,.07);
+            margin-top:14px;
+            overflow:hidden;
+          }
+          .message-head{
+            display:grid;
+            grid-template-columns:42px minmax(0, 1fr) auto;
+            gap:12px;
+            padding:16px;
+            border-bottom:1px solid #edf1f6;
+            background:linear-gradient(180deg,#ffffff 0%,#f8fafc 100%);
+          }
+          .sender-mark{
+            width:42px;
+            height:42px;
+            border-radius:14px;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            background:#111827;
+            color:#f9e7a7;
+            font-weight:900;
+          }
+          .message-meta{min-width:0}
+          .message-from{font-weight:900; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+          .message-subject{margin-top:3px; color:#344054; font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+          .message-route{margin-top:3px; color:#667085; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+          .message-date{color:#667085; font-size:12px; white-space:nowrap; text-align:right; padding-top:2px}
+          .message-body{padding:14px 16px 16px}
+          .message-frame{
+            width:100%;
+            min-height:180px;
+            height:260px;
+            border:1px solid #e4e9f1;
+            border-radius:14px;
+            background:#fff;
+            display:block;
+          }
+          .attachments{display:flex; flex-wrap:wrap; gap:8px; margin-top:10px}
+          .attachment-chip{
+            display:inline-flex;
+            align-items:center;
+            gap:8px;
+            min-width:0;
+            max-width:320px;
+            padding:7px 9px;
+            border:1px solid #d8e2ee;
+            border-radius:999px;
+            background:#fff;
+            color:#344054;
+            text-decoration:none;
+            font-size:12px;
+          }
+          .attachment-chip span{
+            padding:2px 7px;
+            border-radius:999px;
+            background:#f1f5f9;
+            color:#475569;
+            border:1px solid #e2e8f0;
+            font-weight:900;
+            flex:0 0 auto;
+          }
+          .attachment-chip strong{
+            min-width:0;
+            overflow:hidden;
+            text-overflow:ellipsis;
+            white-space:nowrap;
+            font-weight:800;
+          }
+          @media (max-width:720px){
+            .thread-shell{padding:12px}
+            .message-head{grid-template-columns:38px minmax(0, 1fr); gap:10px}
+            .message-date{grid-column:2; text-align:left; padding-top:0}
+          }
+        </style>
+      </head>
+      <body>
+      <div class="thread-shell">
+        <section class="thread-summary">
+          <h1>${escapeHtmlLocal(threadSubject)}</h1>
+          <p>${messages.length} message${messages.length === 1 ? "" : "s"}${lastMessageDate ? ` - Latest ${escapeHtmlLocal(lastMessageDate)}` : ""}</p>
+        </section>
+        ${messages.map((m, idx) => renderMessage(m, idx)).join("")}
       </div>
+      </body>
+      </html>
     `;
+
+    const populateIframes = (rootDoc) => {
+        messages.forEach((m, idx) => {
+            const iframe = rootDoc.getElementById(`msg_iframe_${idx}`);
+            if (!iframe) return;
+            let html = rewriteCid(m.body_html || "", m.id);
+            if (settings.proxyRemoteImages) {
+                html = rewriteRemoteImagesToProxy(html);
+            }
+            iframe.onload = () => {
+                try {
+                    const doc = iframe.contentDocument || iframe.contentWindow?.document;
+                    const height = Math.max(
+                        doc?.body?.scrollHeight || 0,
+                        doc?.documentElement?.scrollHeight || 0,
+                        180
+                    );
+                    iframe.style.height = `${Math.min(height + 28, 900)}px`;
+                } catch (e) { }
+            };
+            iframe.srcdoc = `<!doctype html><html><head><base target="_blank"><style>html,body{margin:0;padding:0;background:#fff}body{padding:16px;font-family:"Segoe UI",Arial,sans-serif;color:#101828;font-size:14px;line-height:1.5}img{max-width:100%;height:auto}</style></head><body>${html}</body></html>`;
+        });
+    };
 
     if (useViewer) {
         // Populate message iframes after the viewer frame loads its srcdoc.
@@ -2416,23 +2594,9 @@ async function openThread(threadId) {
         };
         viewerFrame.srcdoc = threadHtml;
     } else {
-        content.innerHTML = (j.messages || []).map((m, idx) => renderMessage(m, idx)).join("");
+        content.innerHTML = threadHtml;
+        populateIframes(document);
     }
-
-    // Populate iframes AFTER insertion (in document for modal, in iframe for viewer)
-    const populateIframes = (rootDoc) => {
-        (j.messages || []).forEach((m, idx) => {
-            const iframe = rootDoc.getElementById(`msg_iframe_${idx}`);
-            if (!iframe) return;
-            let html = rewriteCid(m.body_html || "", m.id);
-            if (settings.proxyRemoteImages) {
-                html = rewriteRemoteImagesToProxy(html);
-            }
-            iframe.srcdoc = html;
-        });
-    };
-
-    if (!useViewer) populateIframes(document);
 }
 
 function clearDateFilter() {
@@ -2449,6 +2613,8 @@ function closeThreadModal() {
     if (m) m.classList.add("hidden");
     const v = document.getElementById("viewerBackdrop");
     if (v) v.classList.remove("show");
+    const frame = document.getElementById("viewerFrame");
+    if (frame) frame.srcdoc = "";
 }
 
 async function openAckModal(threadId) {
