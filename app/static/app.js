@@ -783,7 +783,7 @@ function renderMySpaceGuides(items) {
                 <span class="small muted">Uploaded ${escapeHtml(formatDateShort(guide.created_at))}</span>
             </div>
             <div class="myspace-guide-actions">
-                <a class="btn" href="/my-space/staff-guides/${guide.id}/view" target="_blank" rel="noopener noreferrer">View PDF</a>
+                <button class="btn primary" onclick="openMySpaceGuide(${guide.id})">View PDF</button>
                 ${canManage ? `<button class="btn danger" onclick="deleteMySpaceGuide(${guide.id})">Delete</button>` : ""}
             </div>
         </article>
@@ -799,10 +799,11 @@ function toggleMySpaceFollowField(todoId, value) {
 }
 
 function toggleMySpaceNewFollowField(value) {
+    const field = document.getElementById("mySpaceNewFollowField");
     const followEl = document.getElementById("mySpaceNewFollowUpWith");
-    if (!followEl) return;
+    if (!followEl || !field) return;
     const show = mySpaceCleanType(value) === "follow_up";
-    followEl.classList.toggle("hidden", !show);
+    field.classList.toggle("hidden", !show);
     if (!show) followEl.value = "";
 }
 
@@ -860,8 +861,8 @@ async function addMySpaceTodo() {
     if (typeEl) typeEl.value = "task";
     if (followEl) {
         followEl.value = "";
-        followEl.classList.add("hidden");
     }
+    toggleMySpaceNewFollowField("task");
     await loadMySpace();
 }
 
@@ -1099,6 +1100,27 @@ async function uploadMySpaceGuide() {
     if (descriptionEl) descriptionEl.value = "";
     if (fileEl) fileEl.value = "";
     await loadMySpace();
+}
+
+async function openMySpaceGuide(guideId) {
+    const viewer = window.open("", "_blank");
+    if (viewer) {
+        viewer.document.write("<title>Loading staff guide...</title><body style='font-family:Arial,sans-serif;padding:24px'>Loading staff guide...</body>");
+    }
+    const r = await apiFetch(`/my-space/staff-guides/${guideId}/view`);
+    if (!r.ok) {
+        if (viewer) viewer.close();
+        alert(`Failed to open staff guide: ${await extractErrorMessage(r)}`);
+        return;
+    }
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    if (viewer) {
+        viewer.location.href = url;
+    } else {
+        window.open(url, "_blank");
+    }
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
 
 async function deleteMySpaceGuide(guideId) {

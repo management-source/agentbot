@@ -1335,6 +1335,30 @@
     }
     .myspace-hero h2{margin:0;font-size:clamp(32px,4vw,56px);letter-spacing:-.055em;line-height:1}
     .myspace-hero p{margin:12px 0 0;color:#d8dee9;font-size:15px;line-height:1.55;max-width:760px}
+    .myspace-jumpbar{
+      position:relative;
+      z-index:1;
+      display:flex;
+      flex-wrap:wrap;
+      gap:8px;
+      margin-top:18px;
+    }
+    .myspace-jumpbar a{
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      min-height:36px;
+      padding:8px 12px;
+      border:1px solid rgba(249,231,167,.3);
+      border-radius:999px;
+      color:#f9e7a7;
+      text-decoration:none;
+      background:rgba(255,255,255,.08);
+      backdrop-filter:blur(10px);
+      font-weight:800;
+      font-size:12px;
+    }
+    .myspace-jumpbar a:hover{background:rgba(249,231,167,.16);border-color:rgba(249,231,167,.52)}
     .myspace-grid{
       display:grid;
       grid-template-columns:minmax(0, 1.16fr) minmax(320px, .84fr);
@@ -1349,15 +1373,36 @@
       box-shadow:0 8px 24px rgba(15,23,42,.055);
     }
     .myspace-card.wide{grid-column:1 / -1}
-    .myspace-card h3{margin:0;color:#101828;font-size:17px;letter-spacing:-.02em}
+    .myspace-planner-card{
+      border-color:#cbd7e6;
+      background:
+        radial-gradient(circle at 100% 0%, rgba(249,231,167,.24), transparent 28%),
+        linear-gradient(180deg, #fff, #f8fafc);
+    }
+    .myspace-card h3{margin:0;color:#101828;font-size:18px;letter-spacing:-.025em}
     .myspace-card p{margin:6px 0 0;color:#667085;font-size:13px;line-height:1.45}
     .myspace-add{
       display:grid;
-      grid-template-columns:minmax(220px, 1.4fr) 118px 124px 120px 146px minmax(150px, .8fr) auto;
-      gap:10px;
+      grid-template-columns:minmax(240px, 2fr) repeat(4, minmax(125px, 1fr));
+      gap:12px;
       align-items:end;
-      margin-top:14px;
+      margin-top:16px;
+      padding:14px;
+      border:1px solid #dbe4ef;
+      border-radius:18px;
+      background:rgba(255,255,255,.78);
     }
+    .myspace-add .field{min-width:0}
+    .myspace-follow-field{grid-column:1 / -1;max-width:520px}
+    .myspace-form-actions{
+      grid-column:1 / -1;
+      display:flex;
+      justify-content:flex-end;
+      align-items:center;
+      gap:10px;
+      padding-top:2px;
+    }
+    .myspace-form-actions .btn{min-width:180px;min-height:44px}
     .myspace-planner{
       display:grid;
       grid-template-columns:repeat(3, minmax(0, 1fr));
@@ -1365,7 +1410,7 @@
       margin-top:16px;
     }
     .myspace-lane{
-      min-height:210px;
+      min-height:190px;
       border:1px solid #dbe4ef;
       border-radius:18px;
       padding:12px;
@@ -1528,6 +1573,7 @@
     .myspace-snippet-body{min-height:110px !important}
     .myspace-guide-item strong{display:block;color:#101828;font-size:14px}
     .myspace-guide-item p{margin:4px 0 6px;color:#667085;font-size:13px}
+    .myspace-guide-actions .btn.primary{background:#111827;color:#f9e7a7;border-color:#111827}
     .myspace-privacy{
       border:1px solid rgba(22,163,74,.22);
       background:rgba(22,163,74,.08);
@@ -1539,8 +1585,8 @@
       margin-top:14px;
     }
     @media (max-width: 1220px){
-      .myspace-add{grid-template-columns:1fr 1fr 1fr}
-      .myspace-add .btn{grid-column:1 / -1}
+      .myspace-add{grid-template-columns:1fr 1fr}
+      .myspace-follow-field,.myspace-form-actions{grid-column:1 / -1}
       .myspace-planner,.myspace-tool-grid{grid-template-columns:1fr}
     }
     @media (max-width: 1050px){
@@ -2144,16 +2190,22 @@
                         <div class="login-kicker" style="color:#f9e7a7;margin-bottom:10px">Private Workspace</div>
                         <h2>My Space</h2>
                         <p>Your personal command centre for daily planning, follow-ups, quick links, email snippets, private notes, and shared staff guides.</p>
+                        <div class="myspace-jumpbar">
+                            <a href="#mySpacePlannerCard">Planner</a>
+                            <a href="#mySpaceQuickLinksCard">Quick Links</a>
+                            <a href="#mySpaceSnippetsCard">Snippets</a>
+                            <a href="#mySpaceGuidesCard">Staff Guides</a>
+                        </div>
                     </div>
 
                     <div class="system-stats" id="mySpaceStats"></div>
 
                     <div class="myspace-grid">
-                        <div class="myspace-card">
+                        <div class="myspace-card wide myspace-planner-card" id="mySpacePlannerCard">
                             <h3>Daily Planner + Follow-Up Tracker</h3>
                             <p>Plan today, park work for later, and keep chase-ups visible. Only your login can access these items.</p>
                             <div class="myspace-add">
-                                <div class="field">
+                                <div class="field myspace-task-field">
                                     <div class="label">Task</div>
                                     <input type="text" id="mySpaceNewTitle" placeholder="What needs attention?" />
                                 </div>
@@ -2184,11 +2236,14 @@
                                     <div class="label">Due Date</div>
                                     <input type="date" id="mySpaceNewDue" />
                                 </div>
-                                <div class="field">
+                                <div class="field myspace-follow-field hidden" id="mySpaceNewFollowField">
                                     <div class="label">Follow Up With</div>
-                                    <input type="text" id="mySpaceNewFollowUpWith" class="hidden" placeholder="Tenant, owner, supplier..." />
+                                    <input type="text" id="mySpaceNewFollowUpWith" placeholder="Tenant, owner, supplier..." />
                                 </div>
-                                <button class="btn primary" onclick="addMySpaceTodo()">Add Task</button>
+                                <div class="myspace-form-actions">
+                                    <span class="small muted">Saved to your private workspace.</span>
+                                    <button class="btn primary" onclick="addMySpaceTodo()">Add Task</button>
+                                </div>
                             </div>
                             <div class="myspace-planner">
                                 <div class="myspace-lane">
@@ -2215,7 +2270,7 @@
                             </div>
                         </div>
 
-                        <div class="myspace-card">
+                        <div class="myspace-card" id="mySpaceNotesCard">
                             <div class="row space">
                                 <div>
                                     <h3>Private Notes</h3>
@@ -2231,7 +2286,7 @@
                     </div>
 
                     <div class="myspace-tool-grid">
-                        <div class="myspace-card">
+                        <div class="myspace-card" id="mySpaceQuickLinksCard">
                             <h3>Quick Links</h3>
                             <p>Keep your daily portals, report URLs, calendars, and supplier pages one click away.</p>
                             <div class="myspace-tool-form">
@@ -2243,7 +2298,7 @@
                             <div id="mySpaceQuickLinks" class="myspace-tool-list"></div>
                         </div>
 
-                        <div class="myspace-card">
+                        <div class="myspace-card" id="mySpaceSnippetsCard">
                             <h3>Email Snippets</h3>
                             <p>Save repeat wording for rent follow-ups, compliance requests, tenant updates, and owner replies.</p>
                             <div class="myspace-tool-form">
@@ -2258,7 +2313,7 @@
                         </div>
                     </div>
 
-                    <div class="myspace-card">
+                    <div class="myspace-card" id="mySpaceGuidesCard">
                         <div class="row space">
                             <div>
                                 <h3>Staff Guides</h3>
@@ -2904,7 +2959,7 @@
             </div>
         </div>
 
-        <script src="/static/app.js?v=15"></script>
+        <script src="/static/app.js?v=16"></script>
 
         <script>
   // Wire segmented status buttons to existing tab logic
