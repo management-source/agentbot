@@ -1948,7 +1948,8 @@
                         <div class="viewer-subtitle" id="viewerSubtitle">Loading conversation...</div>
                     </div>
                     <div class="viewer-actions">
-                        <a class="btn" id="gmailLink" href="#" target="_blank" rel="noreferrer">Open in Gmail</a>
+                        <button class="btn" id="gmailAccessBtn" type="button" onclick="configureDelegatedGmailFromViewer()" style="display:none">Gmail Access</button>
+                        <a class="btn" id="gmailLink" href="#" target="_blank" rel="noreferrer" onclick="return openGmailThreadFromViewer()">Open in Gmail</a>
                         <button class="btn" id="btnViewerClose"
                             onclick="closeThreadModal()">Close</button>
                     </div>
@@ -2009,7 +2010,7 @@
             </div>
         </div>
 
-        <script src="/static/app.js?v=7"></script>
+        <script src="/static/app.js?v=8"></script>
 
         <script>
   // Wire segmented status buttons to existing tab logic

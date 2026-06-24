@@ -10,6 +10,7 @@ let currentDashboardTab = "portal";
 
 // Mailbox context (multi-inbox)
 let currentMailbox = localStorage.getItem("agent_mailbox") || "";
+const delegatedGmailMailboxes = new Set(["admin@donspremier.com.au"]);
 
 
 // Local user auth (JWT)
@@ -45,6 +46,104 @@ function escapeHtml(text) {
         .replace(/>/g, "&gt;")
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#039;");
+}
+
+function gmailDelegateStorageKey(mailbox) {
+    return `agent_gmail_delegate_base:${String(mailbox || "default").trim().toLowerCase()}`;
+}
+
+function needsDelegatedGmailUrl(mailbox) {
+    return delegatedGmailMailboxes.has(String(mailbox || "").trim().toLowerCase());
+}
+
+function normalizeGmailBaseUrl(value) {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    const url = new URL(raw);
+    if (url.hostname !== "mail.google.com") {
+        throw new Error("Use a mail.google.com Gmail URL.");
+    }
+    let path = url.pathname || "/mail/u/0/";
+    if (!path.startsWith("/mail/")) path = "/mail/u/0/";
+    if (!path.endsWith("/")) path += "/";
+    return `${url.origin}${path}${url.search}`;
+}
+
+function buildGmailThreadUrl(baseUrl, gmailThreadId) {
+    const base = normalizeGmailBaseUrl(baseUrl);
+    const tid = String(gmailThreadId || "").trim();
+    return base && tid ? `${base}#inbox/${encodeURIComponent(tid)}` : "";
+}
+
+function getStoredDelegatedGmailBase(mailbox) {
+    return localStorage.getItem(gmailDelegateStorageKey(mailbox)) || "";
+}
+
+function configureDelegatedGmailBase(mailbox) {
+    const key = gmailDelegateStorageKey(mailbox);
+    const existing = localStorage.getItem(key) || "";
+    const raw = prompt(
+        "Open Gmail as management@donspremier.com, select the delegated admin@donspremier.com.au inbox, then paste that delegated Gmail URL here.\n\nExample format:\nhttps://mail.google.com/mail/b/126/u/0/#inbox\n\nThis is stored only in this browser.",
+        existing
+    );
+    if (raw === null) return "";
+    if (!raw.trim()) {
+        localStorage.removeItem(key);
+        return "";
+    }
+    try {
+        const base = normalizeGmailBaseUrl(raw);
+        localStorage.setItem(key, base);
+        return base;
+    } catch (e) {
+        alert("That does not look like a valid Gmail URL. Please open the delegated admin inbox, copy the URL from the address bar, and try again.");
+        return "";
+    }
+}
+
+function getViewerGmailData() {
+    const link = document.getElementById("gmailLink");
+    return {
+        link,
+        mailbox: link?.dataset.mailbox || currentMailbox || "",
+        gmailThreadId: link?.dataset.gmailThreadId || "",
+        fallbackUrl: link?.dataset.gmailUrl || link?.href || "",
+    };
+}
+
+function getGmailUrlForThread(mailbox, gmailThreadId, fallbackUrl) {
+    const storedBase = getStoredDelegatedGmailBase(mailbox);
+    if (storedBase && gmailThreadId) {
+        return buildGmailThreadUrl(storedBase, gmailThreadId);
+    }
+    if (needsDelegatedGmailUrl(mailbox)) return "";
+    return fallbackUrl || "";
+}
+
+function configureDelegatedGmailFromViewer() {
+    const { mailbox, gmailThreadId, link } = getViewerGmailData();
+    const base = configureDelegatedGmailBase(mailbox);
+    if (base && link && gmailThreadId) {
+        const url = buildGmailThreadUrl(base, gmailThreadId);
+        link.href = url || "#";
+    }
+    return false;
+}
+
+function openGmailThreadFromViewer() {
+    const { mailbox, gmailThreadId, fallbackUrl } = getViewerGmailData();
+    let url = getGmailUrlForThread(mailbox, gmailThreadId, fallbackUrl);
+    if (!url && needsDelegatedGmailUrl(mailbox)) {
+        const base = configureDelegatedGmailBase(mailbox);
+        if (!base) return false;
+        url = buildGmailThreadUrl(base, gmailThreadId);
+    }
+    if (!url || url === "#") {
+        alert("Could not build a Gmail link for this thread.");
+        return false;
+    }
+    window.open(url, "_blank", "noopener,noreferrer");
+    return false;
 }
 
 // Date filter applied to ticket list (set when you click Fetch Now).
@@ -2356,7 +2455,18 @@ async function openThread(threadId) {
     }
 
     const j = JSON.parse(t);
-    if (gmailLink) gmailLink.href = j.gmail_url || j.gmail_thread_url || "#";
+    const gmailThreadId = j.gmail_thread_id || "";
+    const threadMailbox = j.mailbox || currentMailbox || "";
+    if (gmailLink) {
+        gmailLink.dataset.gmailThreadId = gmailThreadId;
+        gmailLink.dataset.mailbox = threadMailbox;
+        gmailLink.dataset.gmailUrl = j.gmail_url || j.gmail_thread_url || "";
+        gmailLink.href = getGmailUrlForThread(threadMailbox, gmailThreadId, gmailLink.dataset.gmailUrl) || "#";
+    }
+    const gmailAccessBtn = document.getElementById("gmailAccessBtn");
+    if (gmailAccessBtn) {
+        gmailAccessBtn.style.display = needsDelegatedGmailUrl(threadMailbox) ? "inline-flex" : "none";
+    }
     const messages = Array.isArray(j.messages) ? j.messages : [];
     const threadSubject = messages.find((m) => m.subject)?.subject || "Email conversation";
     const lastMessageDate = messages.length ? (messages[messages.length - 1].date || "") : "";
@@ -2615,6 +2725,13 @@ function closeThreadModal() {
     if (v) v.classList.remove("show");
     const frame = document.getElementById("viewerFrame");
     if (frame) frame.srcdoc = "";
+    const gmailLink = document.getElementById("gmailLink");
+    if (gmailLink) {
+        gmailLink.href = "#";
+        gmailLink.dataset.gmailThreadId = "";
+        gmailLink.dataset.mailbox = "";
+        gmailLink.dataset.gmailUrl = "";
+    }
 }
 
 async function openAckModal(threadId) {

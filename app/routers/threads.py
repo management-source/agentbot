@@ -3,7 +3,7 @@ from __future__ import annotations
 import base64
 import re
 import ipaddress
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 import html as _html
 
 import bleach
@@ -320,16 +320,13 @@ def get_thread(thread_id: str, db: Session = Depends(get_db), user=Depends(get_c
 
     return {
         "thread_id": thread_id,
+        "gmail_thread_id": ticket.gmail_thread_id,
+        "mailbox": ticket.mailbox,
         "messages": messages_out,
-        "gmail_url": _gmail_thread_url(thread_id),
+        "gmail_url": _gmail_thread_url(ticket.gmail_thread_id),
     }
 
 
 def _gmail_thread_url(thread_id: str) -> str:
-    """Build a Gmail web URL that always opens the correct mailbox.
-
-    We force the mailbox via authuser so clicking "Open in Gmail" reliably
-    opens admin@donspremier.com.au even if the browser has multiple accounts.
-    """
-    auth_user = "admin@donspremier.com.au"
-    return f"https://mail.google.com/mail/u/0/?authuser={auth_user}#inbox/{thread_id}"
+    """Build a direct Gmail URL for accounts with direct mailbox access."""
+    return f"https://mail.google.com/mail/u/0/#inbox/{quote(thread_id)}"
