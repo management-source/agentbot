@@ -394,11 +394,15 @@
     .dashboard-shell.properties-mode{
       grid-template-columns: 1fr;
     }
+    .dashboard-shell.system-mode{
+      grid-template-columns: 1fr;
+    }
     .dashboard-shell.rent-mode .left-rail,
     .dashboard-shell.portal-mode .left-rail,
     .dashboard-shell.compliance-mode .left-rail,
     .dashboard-shell.coverage-mode .left-rail,
-    .dashboard-shell.properties-mode .left-rail{
+    .dashboard-shell.properties-mode .left-rail,
+    .dashboard-shell.system-mode .left-rail{
       display:none;
     }
     @media (max-width: 1080px){
@@ -1131,6 +1135,28 @@
     .role-card-head span{font-size:13px;font-weight:900;color:#101828}
     .role-card-head small{font-size:11px;color:#667085;font-weight:800}
     .role-card p{margin:7px 0 0;color:#667085;font-size:12px;line-height:1.4}
+    .page-permission-grid{
+      display:grid;
+      grid-template-columns:1fr;
+      gap:8px;
+      margin-top:12px;
+    }
+    .page-permission{
+      display:flex;
+      align-items:flex-start;
+      gap:9px;
+      padding:9px 10px;
+      border:1px solid #dbe4ef;
+      border-radius:12px;
+      background:#fff;
+    }
+    .page-permission input{margin-top:3px}
+    .page-permission strong{display:block;color:#101828;font-size:12px}
+    .page-permission small{display:block;color:#667085;font-size:11px;line-height:1.35;margin-top:2px}
+    .page-permission.locked{
+      background:#f8fafc;
+      color:#667085;
+    }
     .access-chip-row,.user-chip-row{
       display:flex;
       flex-wrap:wrap;
@@ -1690,7 +1716,7 @@
                     <div class="side-section-label">Setup</div>
                     <nav class="side-nav">
                         <a id="navProperties" href="javascript:void(0)" onclick="switchDashboardTab('properties')" title="Properties"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h16"></path><path d="M6 20V7l6-3 6 3v13"></path><path d="M9 10h2"></path><path d="M13 10h2"></path><path d="M9 14h2"></path><path d="M13 14h2"></path></svg></span><span class="nav-label">Properties</span></a>
-                        <a id="btnSystemUsers" href="javascript:void(0)" style="display:none" onclick="switchDashboardTab('system')" title="System"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M12 3v3"></path><path d="M12 18v3"></path><path d="m4.8 4.8 2.1 2.1"></path><path d="m17.1 17.1 2.1 2.1"></path><path d="M3 12h3"></path><path d="M18 12h3"></path><path d="m4.8 19.2 2.1-2.1"></path><path d="m17.1 6.9 2.1-2.1"></path></svg></span><span class="nav-label">System</span></a>
+                        <a id="btnSystemUsers" class="hidden" href="javascript:void(0)" onclick="switchDashboardTab('system')" title="System"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M12 3v3"></path><path d="M12 18v3"></path><path d="m4.8 4.8 2.1 2.1"></path><path d="m17.1 17.1 2.1 2.1"></path><path d="M3 12h3"></path><path d="M18 12h3"></path><path d="m4.8 19.2 2.1-2.1"></path><path d="m17.1 6.9 2.1-2.1"></path></svg></span><span class="nav-label">System</span></a>
                     </nav>
                 </div>
             </aside>
@@ -1721,7 +1747,7 @@
         </div>
 
         <div class="page">
-            <div class="dashboard-shell" id="dashboardShell">
+            <div class="dashboard-shell portal-mode" id="dashboardShell">
                 <aside class="left-rail">
                     <div class="top-grid">
                 <div class="card brand">
@@ -1806,37 +1832,37 @@
                     <p>Integrated tools for property management and compliance.</p>
                 </div>
                 <div class="hub-grid">
-                    <div class="hub-tile" onclick="switchDashboardTab('inbox')">
+                    <div class="hub-tile" data-page-tile="inbox" onclick="switchDashboardTab('inbox')">
                         <div class="tile-mark">EM</div>
                         <h3>Email Manager</h3>
                         <p>Manage inbox queues, quick replies, AI drafts, sync controls, and active conversations.</p>
                         <div class="tile-action">Open emails</div>
                     </div>
-                    <div class="hub-tile" onclick="switchDashboardTab('rent')">
+                    <div class="hub-tile" data-page-tile="rent" onclick="switchDashboardTab('rent')">
                         <div class="tile-mark">RT</div>
                         <h3>Rent Tracker</h3>
                         <p>Import rent schedules and monitor overdue, due soon, paid, partial, and vacant statuses.</p>
                         <div class="tile-action">Track rent</div>
                     </div>
-                    <div class="hub-tile" onclick="switchDashboardTab('compliance')">
+                    <div class="hub-tile" data-page-tile="compliance" onclick="switchDashboardTab('compliance')">
                         <div class="tile-mark">CL</div>
                         <h3>Compliance</h3>
                         <p>Add checks, update providers, completion dates, findings, and automatically calculate due dates.</p>
                         <div class="tile-action">Manage checks</div>
                     </div>
-                    <div class="hub-tile" onclick="switchDashboardTab('coverage')">
+                    <div class="hub-tile" data-page-tile="coverage" onclick="switchDashboardTab('coverage')">
                         <div class="tile-mark">CR</div>
                         <h3>Compliance Report</h3>
                         <p>See which properties are missing or have incomplete MRS, Smoke, Gas, and Electrical checks.</p>
                         <div class="tile-action">Review gaps</div>
                     </div>
-                    <div class="hub-tile" onclick="switchDashboardTab('properties')">
+                    <div class="hub-tile" data-page-tile="properties" onclick="switchDashboardTab('properties')">
                         <div class="tile-mark">PR</div>
                         <h3>Properties</h3>
                         <p>Import, add, search, and maintain your active Victorian managed property register.</p>
                         <div class="tile-action">Open register</div>
                     </div>
-                    <div class="hub-tile hidden" id="portalSystemTile" onclick="switchDashboardTab('system')">
+                    <div class="hub-tile hidden" id="portalSystemTile" data-page-tile="system" onclick="switchDashboardTab('system')">
                         <div class="tile-mark">AD</div>
                         <h3>System</h3>
                         <p>Admin-only user management and access control tools for the portal.</p>
@@ -2341,7 +2367,10 @@
                                     <h3>Access Control</h3>
                                     <p>Role assignments define what each staff member should access inside the portal.</p>
                                 </div>
-                                <button class="btn" id="btnUsersRefresh" onclick="renderUsersList()">Refresh</button>
+                                <div class="row">
+                                    <button class="btn" id="btnUsersRefresh" onclick="renderUsersList()">Refresh</button>
+                                    <button class="btn primary" onclick="saveRolePageAccess()">Save Access</button>
+                                </div>
                             </div>
                             <div id="roleMatrix" class="role-matrix"></div>
                         </div>
@@ -2469,7 +2498,7 @@
             </div>
         </div>
 
-        <script src="/static/app.js?v=11"></script>
+        <script src="/static/app.js?v=13"></script>
 
         <script>
   // Wire segmented status buttons to existing tab logic

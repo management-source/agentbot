@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import imghdr
+import json
 import re
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -15,7 +16,7 @@ from sqlalchemy.orm import Session
 from app.authz import get_current_user, require_role
 from app.config import settings
 from app.db import get_db
-from app.models import ThreadTicket, ThreadTicketAudit, ThreadTicketNote, User, UserRole
+from app.models import AppState, ThreadTicket, ThreadTicketAudit, ThreadTicketNote, User, UserRole
 from app.schemas import UserOut
 from app.security import create_access_token, hash_password, verify_password
 
@@ -23,6 +24,65 @@ router = APIRouter(prefix="/user-auth", tags=["user-auth"])
 MAX_AVATAR_BYTES = 2 * 1024 * 1024
 MAX_LOGIN_ATTEMPTS = 5
 LOCKOUT_MINUTES = 15
+ROLE_PAGE_ACCESS_KEY = "system:role_page_access"
+
+
+PAGE_REGISTRY = [
+    {
+        "id": "portal",
+        "label": "Portal Hub",
+        "description": "Landing dashboard and shortcuts to assigned workspaces.",
+        "section": "Core",
+        "locked": True,
+    },
+    {
+        "id": "inbox",
+        "label": "Email Manager",
+        "description": "Shared mailbox triage, ticket queues, replies, and Gmail sync.",
+        "section": "Operations",
+    },
+    {
+        "id": "rent",
+        "label": "Rent Tracker",
+        "description": "Rent due tracking, arrears, payments, and yearly reporting.",
+        "section": "Operations",
+    },
+    {
+        "id": "compliance",
+        "label": "Compliance",
+        "description": "Create and maintain compliance records for managed properties.",
+        "section": "Compliance",
+    },
+    {
+        "id": "coverage",
+        "label": "Compliance Report",
+        "description": "Review missing and incomplete MRS, Smoke, Gas, and Electrical checks.",
+        "section": "Compliance",
+    },
+    {
+        "id": "properties",
+        "label": "Properties",
+        "description": "Import, add, search, and manage the property register.",
+        "section": "Setup",
+    },
+    {
+        "id": "system",
+        "label": "System",
+        "description": "Admin-only user accounts, avatars, roles, and page access controls.",
+        "section": "Setup",
+        "admin_only": True,
+    },
+]
+
+
+DEFAULT_ROLE_PAGE_ACCESS = {
+    UserRole.ADMIN.value: ["portal", "inbox", "rent", "compliance", "coverage", "properties", "system"],
+    UserRole.PM.value: ["portal", "inbox", "rent", "compliance", "coverage", "properties"],
+    UserRole.LEASING.value: ["portal", "inbox", "properties"],
+    UserRole.SALES.value: ["portal", "inbox", "properties"],
+    UserRole.ACCOUNTS.value: ["portal", "inbox", "rent"],
+    UserRole.READONLY.value: ["portal"],
+}
 
 
 class LoginIn(BaseModel):
@@ -63,6 +123,10 @@ class AdminResetPasswordIn(BaseModel):
     force_change_on_next_login: bool = True
 
 
+class RolePageAccessIn(BaseModel):
+    permissions: dict[str, list[str]]
+
+
 def _to_user_out(u: User) -> UserOut:
     return UserOut(
         id=u.id,
@@ -98,6 +162,72 @@ def _active_admin_count(db: Session) -> int:
         .scalar()
         or 0
     )
+
+
+def _page_ids() -> list[str]:
+    return [str(page["id"]) for page in PAGE_REGISTRY]
+
+
+def _role_key(role: UserRole | str) -> str:
+    if isinstance(role, UserRole):
+        return role.value
+    return str(role or "").strip().upper()
+
+
+def _ordered_page_list(values: list[str] | set[str]) -> list[str]:
+    selected = {str(v).strip() for v in values if str(v or "").strip()}
+    return [page_id for page_id in _page_ids() if page_id in selected]
+
+
+def _normalize_role_page_access(raw: dict | None) -> dict[str, list[str]]:
+    raw = raw if isinstance(raw, dict) else {}
+    page_ids = set(_page_ids())
+    normalized: dict[str, list[str]] = {}
+
+    for role in UserRole:
+        key = role.value
+        requested = raw.get(key, DEFAULT_ROLE_PAGE_ACCESS.get(key, ["portal"]))
+        if not isinstance(requested, list):
+            requested = DEFAULT_ROLE_PAGE_ACCESS.get(key, ["portal"])
+        selected = {str(page_id).strip() for page_id in requested if str(page_id or "").strip() in page_ids}
+
+        # Portal prevents blank workspaces. System stays admin-only so access
+        # control cannot lock itself out or appear for non-admin users.
+        selected.add("portal")
+        if role == UserRole.ADMIN:
+            selected.add("system")
+        else:
+            selected.discard("system")
+
+        normalized[key] = _ordered_page_list(selected)
+
+    return normalized
+
+
+def _get_role_page_access(db: Session) -> dict[str, list[str]]:
+    row = db.get(AppState, ROLE_PAGE_ACCESS_KEY)
+    raw: dict | None = None
+    if row and row.value:
+        try:
+            parsed = json.loads(row.value)
+            raw = parsed if isinstance(parsed, dict) else None
+        except json.JSONDecodeError:
+            raw = None
+    return _normalize_role_page_access(raw)
+
+
+def _save_role_page_access(db: Session, permissions: dict) -> dict[str, list[str]]:
+    normalized = _normalize_role_page_access(permissions)
+    row = db.get(AppState, ROLE_PAGE_ACCESS_KEY)
+    value = json.dumps(normalized, sort_keys=True)
+    if row:
+        row.value = value
+        row.updated_at = datetime.utcnow()
+    else:
+        row = AppState(key=ROLE_PAGE_ACCESS_KEY, value=value, updated_at=datetime.utcnow())
+        db.add(row)
+    db.commit()
+    return normalized
 
 
 def _verify_recaptcha(token: str | None, remote_ip: str | None) -> None:
@@ -191,6 +321,43 @@ def login(payload: LoginIn, request: Request, db: Session = Depends(get_db)):
 @router.get("/me", response_model=UserOut)
 def me(user: User = Depends(get_current_user)):
     return _to_user_out(user)
+
+
+@router.get("/page-access")
+def page_access(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    permissions = _get_role_page_access(db)
+    role = _role_key(user.role)
+    return {
+        "pages": PAGE_REGISTRY,
+        "role": role,
+        "allowed_pages": permissions.get(role, ["portal"]),
+    }
+
+
+@router.get("/role-page-access")
+def get_role_page_access(
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_role(UserRole.ADMIN)),
+):
+    return {
+        "pages": PAGE_REGISTRY,
+        "permissions": _get_role_page_access(db),
+    }
+
+
+@router.put("/role-page-access")
+def update_role_page_access(
+    payload: RolePageAccessIn,
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_role(UserRole.ADMIN)),
+):
+    return {
+        "pages": PAGE_REGISTRY,
+        "permissions": _save_role_page_access(db, payload.permissions),
+    }
 
 
 @router.get("/users", response_model=list[UserOut])

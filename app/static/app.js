@@ -181,6 +181,9 @@ let complianceLoadedOnce = false;
 let currentCoveragePage = 1;
 let coverageLoadedOnce = false;
 let usersLoadedOnce = false;
+let pageRegistry = [];
+let rolePagePermissions = {};
+let allowedPages = new Set(["portal"]);
 let propertyOptionsCache = [];
 let propertyOptionsByLabel = {};
 let addressSuggestionsByLabel = {};
@@ -603,8 +606,32 @@ const USER_ROLE_ACCESS = {
     },
 };
 
+const FALLBACK_PAGE_REGISTRY = [
+    { id: "portal", label: "Portal Hub", description: "Landing dashboard and shortcuts.", section: "Core", locked: true },
+    { id: "inbox", label: "Email Manager", description: "Email tickets and inbox operations.", section: "Operations" },
+    { id: "rent", label: "Rent Tracker", description: "Rent tracking and reports.", section: "Operations" },
+    { id: "compliance", label: "Compliance", description: "Compliance records and due dates.", section: "Compliance" },
+    { id: "coverage", label: "Compliance Report", description: "Missing and incomplete compliance checks.", section: "Compliance" },
+    { id: "properties", label: "Properties", description: "Managed property register.", section: "Setup" },
+    { id: "system", label: "System", description: "Admin user and access controls.", section: "Setup", admin_only: true },
+];
+
 function userRoleKeys() {
     return Object.keys(USER_ROLE_ACCESS);
+}
+
+function allPageDefinitions() {
+    return Array.isArray(pageRegistry) && pageRegistry.length ? pageRegistry : FALLBACK_PAGE_REGISTRY;
+}
+
+function pageLabel(pageId) {
+    const page = allPageDefinitions().find((p) => p.id === pageId);
+    return page ? page.label : pageId;
+}
+
+function normalizePageList(values) {
+    const selected = new Set(Array.isArray(values) ? values : []);
+    return allPageDefinitions().map((p) => p.id).filter((id) => selected.has(id));
 }
 
 function setUsersError(message = "", type = "error") {
@@ -613,6 +640,79 @@ function setUsersError(message = "", type = "error") {
     el.textContent = message;
     el.style.display = message ? "block" : "none";
     el.classList.toggle("success", type === "success");
+}
+
+function canAccessPage(pageId) {
+    if (pageId === "portal") return true;
+    return allowedPages.has(pageId);
+}
+
+function firstAccessiblePage() {
+    const pages = allPageDefinitions().map((p) => p.id);
+    return pages.find((pageId) => canAccessPage(pageId)) || "portal";
+}
+
+function applyPageVisibility() {
+    const navMap = {
+        portal: "navPortal",
+        inbox: "navInbox",
+        rent: "navRentTracker",
+        compliance: "navCompliance",
+        coverage: "navComplianceCoverage",
+        properties: "navProperties",
+        system: "btnSystemUsers",
+    };
+    for (const [pageId, elementId] of Object.entries(navMap)) {
+        const el = document.getElementById(elementId);
+        if (!el) continue;
+        const visible = canAccessPage(pageId);
+        el.classList.toggle("hidden", !visible);
+        if (elementId === "btnSystemUsers") {
+            el.style.display = visible ? "flex" : "none";
+        }
+    }
+
+    document.querySelectorAll("[data-page-tile]").forEach((tile) => {
+        const pageId = tile.getAttribute("data-page-tile") || "";
+        tile.classList.toggle("hidden", !canAccessPage(pageId));
+    });
+
+    if (!canAccessPage(currentDashboardTab)) {
+        switchDashboardTab(firstAccessiblePage());
+    }
+}
+
+async function loadCurrentPageAccess() {
+    try {
+        const r = await apiFetch("/user-auth/page-access");
+        if (!r.ok) throw new Error(await extractErrorMessage(r));
+        const data = await r.json();
+        pageRegistry = Array.isArray(data.pages) ? data.pages : FALLBACK_PAGE_REGISTRY;
+        allowedPages = new Set(normalizePageList(data.allowed_pages || ["portal"]));
+        allowedPages.add("portal");
+    } catch {
+        pageRegistry = FALLBACK_PAGE_REGISTRY;
+        const role = String(currentUser?.role || "READONLY").toUpperCase();
+        const fallback = (USER_ROLE_ACCESS[role]?.access || []).map((label) => {
+            const match = FALLBACK_PAGE_REGISTRY.find((p) => p.label === label);
+            return match ? match.id : "";
+        }).filter(Boolean);
+        allowedPages = new Set(["portal", ...fallback]);
+        if (role === "ADMIN") allowedPages.add("system");
+    }
+    applyPageVisibility();
+}
+
+async function loadRolePageAccess() {
+    const r = await apiFetch("/user-auth/role-page-access");
+    if (!r.ok) {
+        setUsersError(`Failed to load access controls: ${await extractErrorMessage(r)}`);
+        return false;
+    }
+    const data = await r.json();
+    pageRegistry = Array.isArray(data.pages) ? data.pages : FALLBACK_PAGE_REGISTRY;
+    rolePagePermissions = data.permissions || {};
+    return true;
 }
 
 function openUsersModal() {
@@ -658,8 +758,11 @@ function roleOptions(selected) {
 }
 
 function accessChips(role) {
-    const meta = USER_ROLE_ACCESS[role] || USER_ROLE_ACCESS.READONLY;
-    return meta.access.map((item) => `<span class="access-chip">${escapeHtml(item)}</span>`).join("");
+    const allowed = rolePagePermissions[role] || [];
+    const labels = allowed.length
+        ? allowed.map(pageLabel)
+        : (USER_ROLE_ACCESS[role]?.access || ["Portal Hub"]);
+    return labels.map((item) => `<span class="access-chip">${escapeHtml(item)}</span>`).join("");
 }
 
 function renderRoleMatrix() {
@@ -667,6 +770,7 @@ function renderRoleMatrix() {
     if (!target) return;
     target.innerHTML = userRoleKeys().map((role) => {
         const meta = USER_ROLE_ACCESS[role];
+        const allowed = new Set(rolePagePermissions[role] || []);
         return `
             <div class="role-card">
                 <div class="role-card-head">
@@ -674,10 +778,56 @@ function renderRoleMatrix() {
                     <small>${escapeHtml(meta.label)}</small>
                 </div>
                 <p>${escapeHtml(meta.summary)}</p>
-                <div class="access-chip-row">${accessChips(role)}</div>
+                <div class="page-permission-grid">
+                    ${allPageDefinitions().map((page) => {
+                        const pageId = page.id;
+                        const isPortal = pageId === "portal";
+                        const isSystem = pageId === "system";
+                        const disabled = isPortal || (isSystem && role !== "ADMIN") || (isSystem && role === "ADMIN");
+                        const checked = isPortal || allowed.has(pageId) || (isSystem && role === "ADMIN");
+                        const lockedText = isPortal ? "Always shown" : (isSystem ? "Admin only" : "");
+                        return `
+                            <label class="page-permission ${disabled ? "locked" : ""}">
+                                <input type="checkbox" data-role-page="${role}" value="${escapeHtml(pageId)}" ${checked ? "checked" : ""} ${disabled ? "disabled" : ""} />
+                                <span>
+                                    <strong>${escapeHtml(page.label || pageId)}</strong>
+                                    <small>${escapeHtml(lockedText || page.description || "")}</small>
+                                </span>
+                            </label>
+                        `;
+                    }).join("")}
+                </div>
             </div>
         `;
     }).join("");
+}
+
+async function saveRolePageAccess() {
+    setUsersError("");
+    const next = {};
+    for (const role of userRoleKeys()) {
+        const values = Array.from(document.querySelectorAll(`[data-role-page="${role}"]:checked`))
+            .map((input) => input.value);
+        if (!values.includes("portal")) values.unshift("portal");
+        if (role === "ADMIN" && !values.includes("system")) values.push("system");
+        next[role] = normalizePageList(values);
+    }
+
+    const r = await apiFetch("/user-auth/role-page-access", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ permissions: next }),
+    });
+    if (!r.ok) {
+        setUsersError(`Failed to save page access: ${await extractErrorMessage(r)}`);
+        return;
+    }
+    const data = await r.json();
+    pageRegistry = Array.isArray(data.pages) ? data.pages : pageRegistry;
+    rolePagePermissions = data.permissions || next;
+    setUsersError("Page access updated. Staff will see the new menu after refresh or next login.", "success");
+    renderRoleMatrix();
+    await loadCurrentPageAccess();
 }
 
 function renderSystemStats() {
@@ -697,6 +847,7 @@ function renderSystemStats() {
 
 async function renderUsersList() {
     await loadUsersCache();
+    await loadRolePageAccess();
     usersLoadedOnce = true;
     renderSystemStats();
     renderRoleMatrix();
@@ -1084,9 +1235,9 @@ function formatDateShort(dt) {
 
 function switchDashboardTab(tab) {
     const requestedTab = ["portal", "rent", "compliance", "coverage", "properties", "system", "inbox"].includes(tab) ? tab : "portal";
-    if (requestedTab === "system" && String(currentUser?.role || "").toUpperCase() !== "ADMIN") {
-        alert("System access is available to admins only.");
-        currentDashboardTab = "portal";
+    if (!canAccessPage(requestedTab)) {
+        alert("This page is not assigned to your role.");
+        currentDashboardTab = firstAccessiblePage();
     } else {
         currentDashboardTab = requestedTab;
     }
@@ -1135,6 +1286,7 @@ function switchDashboardTab(tab) {
     if (navCompliance) navCompliance.classList.toggle("active", currentDashboardTab === "compliance");
     if (navCoverage) navCoverage.classList.toggle("active", currentDashboardTab === "coverage");
     if (shell) {
+        shell.classList.toggle("inbox-mode", currentDashboardTab === "inbox");
         shell.classList.toggle("portal-mode", currentDashboardTab === "portal");
         shell.classList.toggle("rent-mode", currentDashboardTab === "rent");
         shell.classList.toggle("compliance-mode", currentDashboardTab === "compliance");
@@ -3708,6 +3860,7 @@ async function ensureAuthenticated() {
     currentUser = await r.json();
     hideLoginModal();
     await loadUsersCache();
+    await loadCurrentPageAccess();
 
     // Legacy badge
     const badge = document.getElementById("userBadge");
@@ -3727,11 +3880,11 @@ async function ensureAuthenticated() {
         authDot.classList.add("green");
     }
     const systemBtn = document.getElementById("btnSystemUsers");
-    if (systemBtn) systemBtn.style.display = (String(currentUser.role || "").toUpperCase() === "ADMIN") ? "flex" : "none";
+    if (systemBtn) systemBtn.style.display = canAccessPage("system") ? "flex" : "none";
     const portalSystemTile = document.getElementById("portalSystemTile");
-    if (portalSystemTile) portalSystemTile.classList.toggle("hidden", String(currentUser.role || "").toUpperCase() !== "ADMIN");
-    if (currentDashboardTab === "system" && String(currentUser.role || "").toUpperCase() !== "ADMIN") {
-        switchDashboardTab("portal");
+    if (portalSystemTile) portalSystemTile.classList.toggle("hidden", !canAccessPage("system"));
+    if (!canAccessPage(currentDashboardTab)) {
+        switchDashboardTab(firstAccessiblePage());
     }
 
     if (currentUser.must_change_password) {
@@ -3798,6 +3951,9 @@ function logout() {
     authToken = "";
     currentUser = null;
     localStorage.removeItem("agent_auth_token");
+    allowedPages = new Set(["portal"]);
+    rolePagePermissions = {};
+    applyPageVisibility();
 
     const badge = document.getElementById("userBadge");
     if (badge) badge.textContent = "";
