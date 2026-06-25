@@ -350,6 +350,18 @@ class ThreadTicket(Base):
     owner = relationship("User", foreign_keys=[owner_user_id], back_populates="owned_tickets")
     assignee = relationship("User", foreign_keys=[assignee_user_id], back_populates="assigned_tickets")
 
+    @property
+    def assignee_name(self) -> str | None:
+        return self.assignee.name if self.assignee else None
+
+    @property
+    def assignee_email(self) -> str | None:
+        return self.assignee.email if self.assignee else None
+
+    @property
+    def assignee_avatar_url(self) -> str | None:
+        return self.assignee.avatar_url if self.assignee else None
+
 
 class RentDueTracker(Base):
     __tablename__ = "rent_due_tracker"

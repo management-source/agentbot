@@ -33,6 +33,7 @@ from app.routers import properties
 from app.routers import my_space
 from app.routers import settings as app_settings
 from app.routers import user_auth
+from app.routers import notifications
 from app.models import User, UserRole
 from app.security import hash_password
 from app.services.gmail_sync import sync_inbox_threads
@@ -216,6 +217,7 @@ app.include_router(rent_tracker.router, prefix="/rent-tracker", tags=["rent-trac
 app.include_router(properties.router, prefix="/properties", tags=["properties"])
 app.include_router(compliance.router, prefix="/compliance", tags=["compliance"])
 app.include_router(my_space.router)
+app.include_router(notifications.router)
 
 @app.on_event("startup")
 def on_startup():

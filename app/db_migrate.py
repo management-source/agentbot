@@ -94,10 +94,17 @@ def migrate(engine: Engine) -> None:
         ensure("ai_draft_subject", "ai_draft_subject VARCHAR")
         ensure("ai_draft_body", "ai_draft_body TEXT")
         ensure("ai_draft_updated_at", "ai_draft_updated_at TIMESTAMP")
+        ensure("assignee_user_id", "assignee_user_id INTEGER")
 
         if stmts:
-            logger.info("Applying DB migrations (AI fields)", extra={"table": tt, "count": len(stmts)})
+            logger.info("Applying DB migrations (ticket fields)", extra={"table": tt, "count": len(stmts)})
             _exec_statements(engine, stmts)
+
+        with engine.begin() as conn:
+            try:
+                conn.execute(text(f"CREATE INDEX IF NOT EXISTS ix_thread_tickets_assignee_user_id ON {tt}(assignee_user_id)"))
+            except Exception:
+                pass
 
     # -------------------------------------------------------------------------
     # 2) Multi-mailbox support (added 2026-02)

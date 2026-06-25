@@ -54,6 +54,9 @@ class TicketOut(BaseModel):
     category: TicketCategory
     owner_user_id: int | None = None
     assignee_user_id: int | None = None
+    assignee_name: str | None = None
+    assignee_email: str | None = None
+    assignee_avatar_url: str | None = None
     sla_due_at: datetime | None = None
     escalated_at: datetime | None = None
     escalation_level: int = 0

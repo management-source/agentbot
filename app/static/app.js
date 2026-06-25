@@ -20,6 +20,8 @@ const recaptchaEnabled = !!APP_CONFIG.recaptcha_enabled;
 let authToken = localStorage.getItem("agent_auth_token") || "";
 let currentUser = null;
 let usersCache = [];
+let assignableUsers = [];
+let notificationItems = [];
 let loginRecaptchaWidgetId = null;
 
 window.onRecaptchaLoad = function () {
@@ -281,6 +283,100 @@ function warnIfSyncHitLimit(payload) {
     alert("Sync completed, but Gmail reported more changed emails than the current Limit. Increase the Limit and run Check Updates or Fetch Now again before relying on the queue as complete.");
 }
 
+function notificationKindLabel(kind) {
+    const key = String(kind || "").toLowerCase();
+    if (key === "email") return "Email";
+    if (key === "rent") return "Rent";
+    if (key === "compliance") return "Compliance";
+    if (key === "myspace") return "My Space";
+    return "Portal";
+}
+
+function renderNotifications(data = {}) {
+    const bell = document.getElementById("notificationBell");
+    const countEl = document.getElementById("notificationCount");
+    const summary = document.getElementById("notificationSummary");
+    const list = document.getElementById("notificationList");
+    const total = Number(data.total || 0);
+    notificationItems = Array.isArray(data.items) ? data.items : [];
+
+    if (bell) bell.classList.toggle("has-alerts", total > 0);
+    if (countEl) countEl.textContent = total > 99 ? "99+" : String(total);
+    if (summary) {
+        const c = data.categories || {};
+        if (total > 0) {
+            summary.textContent = `${total} overdue item${total === 1 ? "" : "s"} - Email ${c.email || 0}, Rent ${c.rent || 0}, Compliance ${c.compliance || 0}, My Space ${c.myspace || 0}`;
+        } else {
+            summary.textContent = "No overdue emails, reminders, rent, or compliance items.";
+        }
+    }
+    if (!list) return;
+    if (!notificationItems.length) {
+        list.innerHTML = `<div class="notification-empty">Everything important is up to date.</div>`;
+        return;
+    }
+    list.innerHTML = notificationItems.map((item, idx) => {
+        const due = item.due_at ? `Due ${formatDateShort(item.due_at)}` : "Needs attention";
+        return `
+          <button class="notification-item" type="button" onclick="openNotificationTarget(${idx})">
+            <span class="notification-kind">${escapeHtml(notificationKindLabel(item.kind))}</span>
+            <strong>${escapeHtml(item.title || "Overdue item")}</strong>
+            <span>${escapeHtml(item.detail || "")}</span>
+            <span>${escapeHtml(due)}</span>
+          </button>
+        `;
+    }).join("");
+}
+
+async function loadNotifications() {
+    if (!authToken) return;
+    try {
+        const r = await apiFetch("/notifications");
+        if (!r.ok) return;
+        const data = await r.json();
+        renderNotifications(data);
+    } catch {
+        // Notification health should never interrupt daily workflow.
+    }
+}
+
+function toggleNotifications() {
+    const panel = document.getElementById("notificationPanel");
+    const menu = document.getElementById("accountMenuDropdown");
+    if (!panel) return;
+    if (menu) menu.classList.remove("show");
+    panel.classList.toggle("show");
+    if (panel.classList.contains("show")) {
+        loadNotifications();
+    }
+}
+
+function closeNotifications() {
+    const panel = document.getElementById("notificationPanel");
+    if (panel) panel.classList.remove("show");
+}
+
+function refreshNotifications(ev) {
+    if (ev) ev.stopPropagation();
+    loadNotifications();
+}
+
+async function openNotificationTarget(index) {
+    const item = notificationItems[index];
+    if (!item) return;
+    closeNotifications();
+    const page = item.page || "portal";
+    if (page === "inbox") {
+        switchDashboardTab("inbox");
+        setTab(item.tab || "awaiting_reply");
+        if (item.thread_id) {
+            setTimeout(() => openThread(item.thread_id), 400);
+        }
+        return;
+    }
+    switchDashboardTab(page);
+}
+
 let googleConnected = false;
 async function initMailboxes() {
     const sel = document.getElementById("mailboxSelect");
@@ -332,6 +428,7 @@ async function initMailboxes() {
             }
             refreshPropertyOptions();
             refreshGoogleStatus();
+            loadNotifications();
         });
 
         setMailboxSummary(currentMailbox || "-");
@@ -837,6 +934,7 @@ async function loadMySpace() {
     renderMySpaceSnippets(Array.isArray(data.snippets) ? data.snippets : []);
     renderMySpaceGuides(Array.isArray(data.staff_guides) ? data.staff_guides : []);
     mySpaceLoadedOnce = true;
+    loadNotifications();
 }
 
 async function addMySpaceTodo() {
@@ -1528,6 +1626,7 @@ async function saveUserEdits(userId) {
     }
     setUsersError("User account updated.", "success");
     await renderUsersList();
+    await refreshAssigneeViews();
     await ensureAuthenticated();
 }
 
@@ -1557,6 +1656,7 @@ async function createUserFromForm() {
     if (document.getElementById("newUserForcePassword")) document.getElementById("newUserForcePassword").checked = true;
     setUsersError("User account created.", "success");
     await renderUsersList();
+    await refreshAssigneeViews();
 }
 
 async function uploadUserAvatar(userId, input) {
@@ -1613,6 +1713,7 @@ async function deleteUser(userId) {
     }
     setUsersError("User deleted.", "success");
     await renderUsersList();
+    await refreshAssigneeViews();
 }
 
 function toggleAccountMenu() {
@@ -2088,6 +2189,7 @@ async function loadRentTracker(page = null) {
     const btnNext = document.getElementById("rentBtnNext");
     if (btnPrev) btnPrev.disabled = Number(data.page || 1) <= 1;
     if (btnNext) btnNext.disabled = !Boolean(data.has_more);
+    loadNotifications();
 }
 
 async function loadRentYearReport(page = null) {
@@ -2169,6 +2271,7 @@ async function loadRentYearReport(page = null) {
     const btnNext = document.getElementById("rentBtnNext");
     if (btnPrev) btnPrev.disabled = Number(data.page || 1) <= 1;
     if (btnNext) btnNext.disabled = !Boolean(data.has_more);
+    loadNotifications();
 }
 
 function prevRentPage() {
@@ -2782,6 +2885,7 @@ async function loadComplianceDashboard(page = null) {
     const btnNext = document.getElementById("complianceBtnNext");
     if (btnPrev) btnPrev.disabled = Number(data.page || 1) <= 1;
     if (btnNext) btnNext.disabled = !Boolean(data.has_more);
+    loadNotifications();
 }
 
 function prevCompliancePage() {
@@ -3036,6 +3140,7 @@ async function loadComplianceCoverage(page = null) {
     const btnNext = document.getElementById("coverageBtnNext");
     if (btnPrev) btnPrev.disabled = Number(data.page || 1) <= 1;
     if (btnNext) btnNext.disabled = !Boolean(data.has_more);
+    loadNotifications();
 }
 
 function prevCoveragePage() {
@@ -3137,6 +3242,7 @@ async function fetchNow() {
         setLastSyncSummary();
 
         await loadTickets();
+        await loadNotifications();
         console.log(j);
     } catch (e) {
         alert("Fetch failed: " + e);
@@ -3198,6 +3304,7 @@ async function checkUpdates() {
         setLastSyncSummary();
 
         await loadTickets();
+        await loadNotifications();
     } catch (e) {
         alert("Check Updates failed: " + e);
     } finally {
@@ -3234,7 +3341,7 @@ function aiBadges(_t) {
 }
 
 
-// Assignment and manual category selection removed.
+// Manual category selection removed; staff assignment is handled per ticket.
 
 function statusOptions(selected) {
     const opts = [
@@ -3244,6 +3351,69 @@ function statusOptions(selected) {
         ["NO_REPLY_NEEDED", "Reply Not Needed"]
     ];
     return opts.map(([v, label]) => `<option value="${v}" ${v === selected ? "selected" : ""}>${label}</option>`).join("");
+}
+
+function assigneeOptions(selectedId, selectedLabel = "") {
+    const selected = selectedId == null ? "" : String(selectedId);
+    const base = [`<option value="" ${selected ? "" : "selected"}>Unassigned</option>`];
+    const hasSelected = assignableUsers.some((u) => String(u.id) === selected);
+    if (selected && !hasSelected) {
+        base.push(`<option value="${escapeHtml(selected)}" selected>${escapeHtml(selectedLabel || "Assigned staff")}</option>`);
+    }
+    assignableUsers.forEach((u) => {
+        const value = String(u.id);
+        const label = `${u.name || u.email}${u.role ? ` (${u.role})` : ""}`;
+        base.push(`<option value="${escapeHtml(value)}" ${value === selected ? "selected" : ""}>${escapeHtml(label)}</option>`);
+    });
+    return base.join("");
+}
+
+function assigneeBadge(t) {
+    if (!t.assignee_user_id) return `<span class="badge assigned">Unassigned</span>`;
+    return `<span class="badge assigned">Assigned: ${escapeHtml(t.assignee_name || t.assignee_email || "Staff")}</span>`;
+}
+
+async function loadAssignableUsers() {
+    try {
+        const r = await apiFetch("/tickets/assignees");
+        if (!r.ok) return;
+        const data = await r.json();
+        assignableUsers = Array.isArray(data.items) ? data.items : [];
+    } catch {
+        assignableUsers = [];
+    }
+}
+
+async function refreshAssigneeViews() {
+    await loadAssignableUsers();
+    await loadTickets();
+    await loadNotifications();
+}
+
+async function updateAssignee(threadId, value, control = null) {
+    const previous = control ? (control.getAttribute("data-current-assignee") || "") : "";
+    if (control) control.disabled = true;
+    try {
+        const assigneeId = value ? Number(value) : null;
+        const r = await apiFetch(`/tickets/${encodeURIComponent(threadId)}/assignee`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ assignee_user_id: Number.isFinite(assigneeId) ? assigneeId : null }),
+        });
+        if (!r.ok) {
+            if (control) control.value = previous;
+            alert(`Assignment failed: ${await extractErrorMessage(r)}`);
+            return;
+        }
+        if (control) control.setAttribute("data-current-assignee", value || "");
+        await loadTickets();
+        await loadNotifications();
+    } catch (e) {
+        if (control) control.value = previous;
+        alert("Assignment failed: " + e);
+    } finally {
+        if (control) control.disabled = false;
+    }
 }
 
 function ticketInitial(t) {
@@ -3275,8 +3445,7 @@ function renderTicket(t) {
 
     // Legacy manual category removed from UI; prefer AI category.
     const cat = "";
-    // Assignment feature removed.
-    const assignee = "";
+    const assignee = t.assignee_name || t.assignee_email || "";
 
     let slaText = "SLA: -";
     let slaOverdue = false;
@@ -3323,7 +3492,7 @@ function renderTicket(t) {
                 ${priBadge}
                 ${aiBadges(t)}
                 ${cat ? `<span class="badge">${escapeHtml(cat)}</span>` : ``}
-                ${assignee ? `<span class="badge">${escapeHtml(assignee)}</span>` : ``}
+                ${assigneeBadge(t)}
                 ${nrBadge}
                 ${unreadBadge}
                 ${slaBadge}
@@ -3351,6 +3520,12 @@ function renderTicket(t) {
                   ${statusOptions(t.status)}
                 </select>
               </div>
+              <div class="ticket-assignment">
+                <div class="label">Assigned To</div>
+                <select data-current-assignee="${escapeHtml(String(t.assignee_user_id || ""))}" onchange="updateAssignee('${t.thread_id}', this.value, this)">
+                  ${assigneeOptions(t.assignee_user_id, assignee)}
+                </select>
+              </div>
 
               ${t.from_email ? `<button class="btn danger" onclick="blacklistSender('${t.from_email}')">Blacklist Sender</button>` : ``}
             </div>
@@ -3368,7 +3543,7 @@ function renderTicket(t) {
     card.setAttribute("data-thread-id", t.thread_id || "");
 
     const catBadge = ""; // legacy manual category removed; use AI category badge instead
-    const assigneeBadge = `<span class="px-2 py-0.5 rounded-full text-xs bg-slate-50 text-slate-700 border">${assignee}</span>`;
+    const assigneeBadgeLegacy = `<span class="px-2 py-0.5 rounded-full text-xs bg-slate-50 text-slate-700 border">${assignee ? `Assigned: ${escapeHtml(assignee)}` : "Unassigned"}</span>`;
 
     let slaClass = "text-slate-500";
     if (t.sla_due_at) {
@@ -3382,6 +3557,7 @@ function renderTicket(t) {
         ${priorityBadge(t.priority)}
         ${aiBadges(t)}
         ${catBadge}
+        ${assigneeBadgeLegacy}
         
         ${t.is_not_replied ? `<span class="px-2 py-0.5 rounded-full text-xs bg-orange-100 text-orange-700 border">Not Replied</span>` : ``}
         ${t.is_unread ? `<span class="px-2 py-0.5 rounded-full text-xs bg-slate-100 text-slate-700 border">Unread</span>` : ``}
@@ -3411,6 +3587,12 @@ function renderTicket(t) {
         data-current-status="${escapeHtml(t.status || "")}"
         onchange="updateStatus('${t.thread_id}', this.value, this)">
         ${statusOptions(t.status)}
+      </select>
+      <label class="w-full text-xs text-slate-500">Assigned To</label>
+      <select class="w-full px-3 py-2 rounded-lg border bg-white"
+        data-current-assignee="${escapeHtml(String(t.assignee_user_id || ""))}"
+        onchange="updateAssignee('${t.thread_id}', this.value, this)">
+        ${assigneeOptions(t.assignee_user_id, assignee)}
       </select>
       <!-- Manual category removed; AI category is computed automatically -->
     </div>
@@ -3530,6 +3712,7 @@ async function updateStatus(threadId, status, control = null) {
             if (control && previous) control.value = previous;
             alert(`Status update failed (${r.status}):\n\n${text}`);
             await loadTickets();
+            await loadNotifications();
             return;
         }
         let result = {};
@@ -3544,10 +3727,12 @@ async function updateStatus(threadId, status, control = null) {
             card.remove();
         }
         await loadTickets();
+        await loadNotifications();
     } catch (e) {
         if (control && previous) control.value = previous;
         alert("Status update failed: " + e);
         await loadTickets();
+        await loadNotifications();
     } finally {
         if (control) control.disabled = false;
     }
@@ -4258,6 +4443,7 @@ async function sendAckFromModal() {
         }
         closeAckModal();
         await loadTickets();
+        await loadNotifications();
         alert("Acknowledgment sent.");
     } finally {
         btn.disabled = false;
@@ -4277,6 +4463,7 @@ async function blacklistSender(email) {
         return;
     }
     await loadTickets();
+    await loadNotifications();
 }
 
 function openBlacklistModal() {
@@ -4653,6 +4840,8 @@ async function doLogin() {
         await ensureAuthenticated();
         await initMailboxes();
         await refreshGoogleStatus();
+        await loadAssignableUsers();
+        await loadNotifications();
         // Autopilot feature removed.
         await loadTickets();
     } finally {
@@ -4691,6 +4880,9 @@ function logout() {
         authDot.classList.remove("red");
         authDot.classList.remove("yellow");
     }
+    notificationItems = [];
+    renderNotifications({ total: 0, items: [], categories: {} });
+    closeNotifications();
 
     resetLoginRecaptcha();
     showLoginModal();
@@ -4721,13 +4913,24 @@ window.addEventListener("load", async () => {
     document.addEventListener("click", (ev) => {
         const trigger = document.getElementById("accountMenuTrigger");
         const dd = document.getElementById("accountMenuDropdown");
-        if (!dd || !trigger) return;
-        if (dd.contains(ev.target) || trigger.contains(ev.target)) return;
-        dd.classList.remove("show");
+        if (dd && trigger) {
+            if (!dd.contains(ev.target) && !trigger.contains(ev.target)) {
+                dd.classList.remove("show");
+            }
+        }
+        const bell = document.getElementById("notificationBell");
+        const panel = document.getElementById("notificationPanel");
+        if (panel && bell) {
+            if (!panel.contains(ev.target) && !bell.contains(ev.target)) {
+                panel.classList.remove("show");
+            }
+        }
     });
 
     await initMailboxes();
     await refreshGoogleStatus();
+    await loadAssignableUsers();
+    await loadNotifications();
 
     // Small UX: show a one-time confirmation after OAuth callback.
     try {

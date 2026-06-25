@@ -297,6 +297,12 @@
       top:0;
       z-index:6;
     }
+    .account-left{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      min-width:0;
+    }
     .account-trigger{
       display:flex;
       align-items:center;
@@ -320,6 +326,154 @@
       font-weight:700;
       color:#f8fafc;
       white-space:nowrap;
+    }
+    .notification-wrap{
+      position:relative;
+    }
+    .notification-bell{
+      position:relative;
+      width:42px;
+      height:42px;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      border:1px solid rgba(255,255,255,.15);
+      border-radius:14px;
+      background:rgba(255,255,255,.06);
+      color:#f8fafc;
+      cursor:pointer;
+      transition:background .22s ease, border-color .22s ease, transform .22s ease;
+    }
+    .notification-bell:hover{
+      background:#111827;
+      border-color:rgba(249,231,167,.45);
+      transform:translateY(-1px);
+    }
+    .notification-bell svg{
+      width:20px;
+      height:20px;
+      fill:none;
+      stroke:currentColor;
+      stroke-width:2;
+      stroke-linecap:round;
+      stroke-linejoin:round;
+    }
+    .notification-count{
+      position:absolute;
+      top:-6px;
+      right:-6px;
+      min-width:20px;
+      height:20px;
+      padding:0 6px;
+      display:none;
+      align-items:center;
+      justify-content:center;
+      border-radius:999px;
+      background:#dc2626;
+      color:#fff;
+      font-size:11px;
+      font-weight:900;
+      border:2px solid #050505;
+    }
+    .notification-bell.has-alerts .notification-count{
+      display:flex;
+    }
+    .notification-panel{
+      position:absolute;
+      top:48px;
+      left:0;
+      width:min(380px, calc(100vw - 28px));
+      max-height:min(560px, calc(100vh - 96px));
+      overflow:auto;
+      display:none;
+      background:#fff;
+      color:#101828;
+      border:1px solid #dbe4ef;
+      border-radius:18px;
+      padding:14px;
+      box-shadow:0 24px 56px rgba(0,0,0,.26);
+      z-index:10;
+    }
+    .notification-panel.show{display:block}
+    .notification-head{
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:12px;
+      padding-bottom:10px;
+      border-bottom:1px solid #eef2f7;
+    }
+    .notification-head strong{
+      display:block;
+      font-size:14px;
+    }
+    .notification-head span{
+      display:block;
+      color:#667085;
+      font-size:12px;
+      margin-top:3px;
+    }
+    .notification-refresh{
+      border:none;
+      background:#f4f7fb;
+      color:#344054;
+      border-radius:999px;
+      padding:7px 10px;
+      font-size:12px;
+      font-weight:800;
+      cursor:pointer;
+    }
+    .notification-list{
+      display:flex;
+      flex-direction:column;
+      gap:8px;
+      margin-top:12px;
+    }
+    .notification-item{
+      width:100%;
+      text-align:left;
+      border:1px solid #e4eaf2;
+      background:#fff;
+      border-radius:14px;
+      padding:10px;
+      cursor:pointer;
+      transition:background .18s ease, border-color .18s ease, transform .18s ease;
+    }
+    .notification-item:hover{
+      background:#f8fafc;
+      border-color:#c9a246;
+      transform:translateY(-1px);
+    }
+    .notification-item strong{
+      display:block;
+      font-size:13px;
+      color:#101828;
+      line-height:1.35;
+    }
+    .notification-item span{
+      display:block;
+      margin-top:4px;
+      color:#667085;
+      font-size:12px;
+      line-height:1.35;
+    }
+    .notification-kind{
+      display:inline-flex;
+      margin-bottom:7px;
+      padding:4px 8px;
+      border-radius:999px;
+      background:rgba(220,38,38,.08);
+      color:#991b1b;
+      font-size:11px;
+      font-weight:900;
+      text-transform:uppercase;
+      letter-spacing:.05em;
+    }
+    .notification-empty{
+      padding:18px 8px 8px;
+      text-align:center;
+      color:#667085;
+      font-size:13px;
     }
     .account-menu{
       position:absolute;
@@ -1113,6 +1267,7 @@
     .badge.priority{border-color:rgba(245,158,11,.45); background:rgba(245,158,11,.10); color:#92400e}
     .badge.unread{border-color:rgba(79,70,229,.45); background:rgba(79,70,229,.10); color:var(--primary)}
     .badge.overdue{border-color:rgba(220,38,38,.45); background:rgba(220,38,38,.10); color:var(--danger)}
+    .badge.assigned{border-color:rgba(17,24,39,.18); background:#f4f7fb; color:#101828}
     .ticket-status-pill{
       display:inline-flex;
       align-items:center;
@@ -1144,6 +1299,16 @@
     .ticket-actions{display:grid; grid-template-columns:1fr; gap:8px}
     .ticket-actions .btn{width:100%; text-align:center}
     .ticket-controls{display:grid; grid-template-columns:1fr; gap:10px}
+    .ticket-assignment{
+      display:flex;
+      flex-direction:column;
+      gap:6px;
+    }
+    .ticket-assignment select{
+      min-height:38px;
+      font-weight:750;
+      background:#fff;
+    }
     .ticket-meta{
       display:flex;
       gap:8px;
@@ -2489,18 +2654,45 @@
       </aside>
       <div class="main-wrap">
         <div class="account-bar">
-          <div style="position:relative">
-            <div class="account-trigger" id="accountMenuTrigger"
-              onclick="toggleAccountMenu()">
-              <img class="account-avatar" id="accountBarAvatar"
-                src="/static/logo.png" alt="profile"
-                onerror="this.onerror=null;this.src='/static/logo.png'" />
-              <span class="account-name" id="accountBarUserName">Not signed
-                in</span>
+          <div class="account-left">
+            <div style="position:relative">
+              <div class="account-trigger" id="accountMenuTrigger"
+                onclick="toggleAccountMenu()">
+                <img class="account-avatar" id="accountBarAvatar"
+                  src="/static/logo.png" alt="profile"
+                  onerror="this.onerror=null;this.src='/static/logo.png'" />
+                <span class="account-name" id="accountBarUserName">Not signed
+                  in</span>
+              </div>
+              <div class="account-menu" id="accountMenuDropdown">
+                <button onclick="openPasswordModal()">Change Password</button>
+                <button onclick="logout()">Logout</button>
+              </div>
             </div>
-            <div class="account-menu" id="accountMenuDropdown">
-              <button onclick="openPasswordModal()">Change Password</button>
-              <button onclick="logout()">Logout</button>
+            <div class="notification-wrap">
+              <button class="notification-bell" id="notificationBell"
+                type="button" onclick="toggleNotifications()"
+                aria-label="Open overdue notifications">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path>
+                  <path d="M10 21h4"></path>
+                </svg>
+                <span class="notification-count"
+                  id="notificationCount">0</span>
+              </button>
+              <div class="notification-panel" id="notificationPanel">
+                <div class="notification-head">
+                  <div>
+                    <strong>Overdue Centre</strong>
+                    <span id="notificationSummary">Checking portal
+                      items...</span>
+                  </div>
+                  <button class="notification-refresh" type="button"
+                    onclick="refreshNotifications(event)">Refresh</button>
+                </div>
+                <div class="notification-list"
+                  id="notificationList"></div>
+              </div>
             </div>
           </div>
           <div class="small muted">System Access</div>
@@ -3732,7 +3924,7 @@
       </div>
     </div>
 
-    <script src="/static/app.js?v=16"></script>
+    <script src="/static/app.js?v=17"></script>
 
     <script>
   // Wire segmented status buttons to existing tab logic

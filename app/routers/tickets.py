@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import io
 from fastapi import APIRouter, Depends, HTTPException, Body, File, Form, UploadFile
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, or_
 from sqlalchemy.sql import exists
 from datetime import datetime, timedelta
@@ -67,6 +67,10 @@ class StatusUpdate(BaseModel):
     status: TicketStatus
 
 
+class AssignmentUpdate(BaseModel):
+    assignee_user_id: int | None = None
+
+
 def _get_ticket(db: Session, thread_id: str, mailbox: str) -> ThreadTicket:
     # Primary path: namespaced internal ticket id.
     t = db.get(ThreadTicket, thread_id)
@@ -110,6 +114,31 @@ def _tab_filter(q, tab: str):
     return q  # fallback for unknown tab values
 
 
+def _user_payload(u: User) -> dict:
+    return {
+        "id": u.id,
+        "name": u.name,
+        "email": u.email,
+        "role": u.role.value if hasattr(u.role, "value") else str(u.role),
+        "avatar_url": u.avatar_url,
+        "is_active": bool(u.is_active),
+    }
+
+
+@router.get("/assignees")
+def list_assignees(
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    users = (
+        db.query(User)
+        .filter(User.is_active == True)
+        .order_by(User.name.asc(), User.email.asc())
+        .all()
+    )
+    return {"items": [_user_payload(u) for u in users]}
+
+
 
 @router.get("", response_model=TicketListOut)
 def list_tickets(
@@ -131,7 +160,7 @@ def list_tickets(
     - start/end are expected as YYYY-MM-DD (from <input type="date">)
     - filtering is applied against ThreadTicket.last_message_at
     """
-    q = db.query(ThreadTicket).filter(ThreadTicket.mailbox == mailbox)
+    q = db.query(ThreadTicket).options(joinedload(ThreadTicket.assignee)).filter(ThreadTicket.mailbox == mailbox)
     q = _tab_filter(q, tab)
 
     # Always hide blacklisted senders.
@@ -160,7 +189,7 @@ def list_tickets(
             )
         )
 
-    # Assignment is removed; no assignee filters.
+    # Assignment is displayed on tickets; the list remains filtered by queue/status/search.
 
     if overdue:
         now = datetime.utcnow()
@@ -255,6 +284,52 @@ def update_status(
         "status": t.status.value,
         "is_not_replied": bool(t.is_not_replied),
     }
+
+
+@router.patch("/{thread_id}/assignee")
+def update_assignee(
+    thread_id: str,
+    payload: AssignmentUpdate,
+    mailbox: str = Depends(get_current_mailbox),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    t = _get_ticket(db, thread_id, mailbox)
+    old_assignee_id = t.assignee_user_id
+    assignee = None
+
+    if payload.assignee_user_id is not None:
+        assignee = db.get(User, payload.assignee_user_id)
+        if not assignee or not assignee.is_active:
+            raise HTTPException(status_code=400, detail="Assignee must be an active staff account.")
+        t.assignee_user_id = assignee.id
+    else:
+        t.assignee_user_id = None
+
+    t.updated_at = datetime.utcnow()
+    add_audit(
+        db,
+        mailbox=t.mailbox,
+        thread_id=t.thread_id,
+        action=AuditAction.ASSIGNED,
+        actor_user_id=user.id,
+        detail={
+            "from_user_id": old_assignee_id,
+            "to_user_id": t.assignee_user_id,
+            "to_name": assignee.name if assignee else None,
+        },
+    )
+    db.commit()
+    db.refresh(t)
+    return {
+        "ok": True,
+        "thread_id": t.thread_id,
+        "assignee_user_id": t.assignee_user_id,
+        "assignee_name": t.assignee_name,
+        "assignee_email": t.assignee_email,
+        "assignee_avatar_url": t.assignee_avatar_url,
+    }
+
 
 @router.post("/{thread_id}/draft-ack", response_model=DraftAckOut)
 def draft_ack(
