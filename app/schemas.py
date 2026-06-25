@@ -28,6 +28,7 @@ class TeamMemberOut(BaseModel):
     is_active: bool
     avatar_url: str | None = None
     phone: str | None = None
+    admin_access: bool = False
     last_login_at: datetime | None = None
 
 

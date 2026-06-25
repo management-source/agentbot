@@ -563,6 +563,9 @@
     .dashboard-shell.properties-mode{
       grid-template-columns: 1fr;
     }
+    .dashboard-shell.team-mode{
+      grid-template-columns: 1fr;
+    }
     .dashboard-shell.system-mode{
       grid-template-columns: 1fr;
     }
@@ -574,6 +577,7 @@
     .dashboard-shell.compliance-mode .left-rail,
     .dashboard-shell.coverage-mode .left-rail,
     .dashboard-shell.properties-mode .left-rail,
+    .dashboard-shell.team-mode .left-rail,
     .dashboard-shell.system-mode .left-rail{
       display:none;
     }
@@ -1744,10 +1748,42 @@
       gap:12px;
       margin-top:14px;
     }
+    .system-create-card .system-form-grid{
+      gap:14px;
+    }
     .system-form-row{
       display:grid;
       grid-template-columns:1fr 1fr;
-      gap:10px;
+      gap:12px;
+      align-items:start;
+    }
+    .system-create-card .field{
+      min-width:0;
+    }
+    .system-create-card .field input,
+    .system-create-card .field select{
+      width:100%;
+      min-height:46px;
+      box-sizing:border-box;
+      padding:0 14px;
+      border:1px solid #dbe4ef;
+      border-radius:16px;
+      background:#fff;
+      color:#101828;
+      box-shadow:0 1px 2px rgba(15,23,42,.035);
+      font-size:14px;
+    }
+    .system-create-card .field input::placeholder{
+      color:#667085;
+    }
+    .system-create-card .system-toggle{
+      min-height:58px;
+      border-radius:16px;
+      background:#fbfcfe;
+    }
+    .system-create-card #btnCreateUser{
+      width:100%;
+      min-height:48px;
     }
     .role-matrix{
       display:grid;
@@ -4499,7 +4535,7 @@
                   <div class="system-stats" id="systemStats"></div>
 
                   <div class="system-grid">
-                    <div class="system-card">
+                    <div class="system-card system-create-card">
                       <h3>Create User Account</h3>
                       <p>Add staff with a professional login, role-based access,
                         and a forced password change on first login.</p>
@@ -4525,11 +4561,11 @@
                           <div class="field">
                             <div class="label">Staff Title</div>
                             <select id="newUserRole">
-                              <option value="ADMIN">Administrator</option>
-                              <option value="SALES">Director (has admin)</option>
-                              <option value="PM">Property Manager (has admin)</option>
+                              <option value="SALES">Director</option>
+                              <option value="PM">Property Manager</option>
                               <option value="LEASING">Marketing Advisor</option>
                               <option value="ACCOUNTS">Administrative Assistant</option>
+                              <option value="ADMIN">Administrator</option>
                             </select>
                           </div>
                           <div class="field">
@@ -4756,7 +4792,7 @@
       </div>
     </div>
 
-    <script src="/static/app.js?v=23"></script>
+    <script src="/static/app.js?v=24"></script>
 
     <script>
   // Wire segmented status buttons to existing tab logic

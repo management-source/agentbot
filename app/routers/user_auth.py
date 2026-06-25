@@ -17,7 +17,7 @@ from pydantic import BaseModel, EmailStr
 from sqlalchemy import and_, func
 from sqlalchemy.orm import Session
 
-from app.authz import ADMIN_ACCESS_ROLES, get_current_user, has_admin_access, require_role
+from app.authz import get_current_user, require_role
 from app.config import settings
 from app.db import get_db
 from app.models import AppState, PasswordResetToken, ThreadTicket, ThreadTicketAudit, ThreadTicketNote, User, UserRole
@@ -178,7 +178,7 @@ def _to_user_out(u: User) -> UserOut:
     )
 
 
-def _to_team_member_out(u: User) -> TeamMemberOut:
+def _to_team_member_out(u: User, db: Session) -> TeamMemberOut:
     return TeamMemberOut(
         id=u.id,
         email=u.email,
@@ -187,6 +187,7 @@ def _to_team_member_out(u: User) -> TeamMemberOut:
         is_active=u.is_active,
         avatar_url=u.avatar_url,
         phone=u.phone,
+        admin_access=_role_has_system_access(db, u.role),
         last_login_at=u.last_login_at,
     )
 
@@ -250,9 +251,13 @@ def _cleanup_password_reset_tokens(db: Session, user_id: int | None = None) -> N
 
 
 def _active_admin_count(db: Session) -> int:
+    permissions = _get_role_page_access(db)
+    system_roles = [role for role, pages in permissions.items() if "system" in set(pages or [])]
+    if not system_roles:
+        return 0
     return (
         db.query(func.count(User.id))
-        .filter(and_(User.role.in_([role.value for role in ADMIN_ACCESS_ROLES]), User.is_active == True))
+        .filter(and_(User.role.in_(system_roles), User.is_active == True))
         .scalar()
         or 0
     )
@@ -285,18 +290,16 @@ def _normalize_role_page_access(raw: dict | None) -> dict[str, list[str]]:
             requested = DEFAULT_ROLE_PAGE_ACCESS.get(key, ["portal"])
         selected = {str(page_id).strip() for page_id in requested if str(page_id or "").strip() in page_ids}
         default_selected = set(DEFAULT_ROLE_PAGE_ACCESS.get(key, ["portal"]))
-        if "maintenance" in default_selected and "maintenance" not in selected:
-            legacy_default = default_selected - {"maintenance"}
-            if selected == legacy_default:
-                selected.add("maintenance")
+        missing_default_pages = {
+            page_id for page_id in ("maintenance", "team")
+            if page_id in default_selected and page_id not in selected
+        }
+        if missing_default_pages and selected == (default_selected - missing_default_pages):
+            selected.update(missing_default_pages)
 
-        # Portal prevents blank workspaces. System stays admin-only so access
-        # control cannot lock itself out or appear for non-admin users.
+        # Portal prevents blank workspaces. System controls admin access and is
+        # intentionally configurable from the Access Control matrix.
         selected.add("portal")
-        if has_admin_access(role):
-            selected.update(page_ids)
-        else:
-            selected.discard("system")
 
         normalized[key] = _ordered_page_list(selected)
 
@@ -315,8 +318,27 @@ def _get_role_page_access(db: Session) -> dict[str, list[str]]:
     return _normalize_role_page_access(raw)
 
 
+def _role_has_system_access(db: Session, role: UserRole | str | None) -> bool:
+    role_key = _role_key(role or "")
+    return "system" in set(_get_role_page_access(db).get(role_key, []))
+
+
+def _active_system_access_count_for_permissions(db: Session, permissions: dict[str, list[str]]) -> int:
+    system_roles = [role for role, pages in permissions.items() if "system" in set(pages or [])]
+    if not system_roles:
+        return 0
+    return (
+        db.query(func.count(User.id))
+        .filter(and_(User.role.in_(system_roles), User.is_active == True))
+        .scalar()
+        or 0
+    )
+
+
 def _save_role_page_access(db: Session, permissions: dict) -> dict[str, list[str]]:
     normalized = _normalize_role_page_access(permissions)
+    if _active_system_access_count_for_permissions(db, normalized) <= 0:
+        raise HTTPException(status_code=400, detail="At least one active staff title must keep System access.")
     row = db.get(AppState, ROLE_PAGE_ACCESS_KEY)
     value = json.dumps(normalized, sort_keys=True)
     if row:
@@ -563,7 +585,7 @@ def list_team(
         .order_by(User.name.asc())
         .all()
     )
-    return [_to_team_member_out(u) for u in users]
+    return [_to_team_member_out(u, db) for u in users]
 
 
 @router.post("/users", response_model=UserOut)
@@ -613,11 +635,11 @@ def update_user(
     if payload.phone is not None:
         u.phone = _clean_phone(payload.phone)
     if payload.role is not None:
-        if has_admin_access(u.role) and not has_admin_access(payload.role) and u.is_active and _active_admin_count(db) <= 1:
+        if _role_has_system_access(db, u.role) and not _role_has_system_access(db, payload.role) and u.is_active and _active_admin_count(db) <= 1:
             raise HTTPException(status_code=400, detail="Cannot demote the last active admin.")
         u.role = payload.role
     if payload.is_active is not None:
-        if has_admin_access(u.role) and payload.is_active is False and _active_admin_count(db) <= 1:
+        if _role_has_system_access(db, u.role) and payload.is_active is False and _active_admin_count(db) <= 1:
             raise HTTPException(status_code=400, detail="Cannot disable the last active admin.")
         u.is_active = payload.is_active
     if payload.password:
@@ -717,7 +739,7 @@ def delete_user(
         raise HTTPException(status_code=404, detail="User not found")
     if u.id == admin_user.id:
         raise HTTPException(status_code=400, detail="You cannot delete your own account.")
-    if has_admin_access(u.role) and u.is_active and _active_admin_count(db) <= 1:
+    if _role_has_system_access(db, u.role) and u.is_active and _active_admin_count(db) <= 1:
         raise HTTPException(status_code=400, detail="Cannot delete the last active admin.")
 
     # Remove user-owned references so deletion succeeds safely.

@@ -1271,15 +1271,15 @@ const USER_ROLE_ACCESS = {
     ADMIN: {
         label: "Administrator",
         optionLabel: "Administrator",
-        adminAccess: true,
+        defaultAdminAccess: true,
         summary: "Full control over the portal, system users, settings, and all operational workspaces.",
         access: ["Portal Hub", "My Space", "Email Manager", "Maintenance", "Rent Tracker", "Compliance", "Compliance Report", "Properties", "Our Team", "System"],
     },
     PM: {
         label: "Property Manager",
-        optionLabel: "Property Manager (has admin)",
-        adminAccess: true,
-        summary: "Property management access with admin controls for staff, system access, compliance, maintenance, rent, and property work.",
+        optionLabel: "Property Manager",
+        defaultAdminAccess: true,
+        summary: "Property management access for inbox triage, maintenance, compliance, rent, and property work.",
         access: ["Portal Hub", "My Space", "Email Manager", "Maintenance", "Rent Tracker", "Compliance", "Compliance Report", "Properties", "Our Team", "System"],
     },
     LEASING: {
@@ -1290,9 +1290,9 @@ const USER_ROLE_ACCESS = {
     },
     SALES: {
         label: "Director",
-        optionLabel: "Director (has admin)",
-        adminAccess: true,
-        summary: "Director access with admin controls across the full portal.",
+        optionLabel: "Director",
+        defaultAdminAccess: true,
+        summary: "Director-level access across the core portal workspaces.",
         access: ["Portal Hub", "My Space", "Email Manager", "Maintenance", "Rent Tracker", "Compliance", "Compliance Report", "Properties", "Our Team", "System"],
     },
     ACCOUNTS: {
@@ -1309,7 +1309,8 @@ const USER_ROLE_ACCESS = {
     },
 };
 
-const STAFF_ROLE_KEYS = ["ADMIN", "SALES", "PM", "LEASING", "ACCOUNTS"];
+const STAFF_ROLE_KEYS = ["SALES", "PM", "LEASING", "ACCOUNTS", "ADMIN"];
+const TEAM_ROLE_PRIORITY = { SALES: 0, PM: 1, LEASING: 2, ACCOUNTS: 3, ADMIN: 4, READONLY: 5 };
 
 const FALLBACK_PAGE_REGISTRY = [
     { id: "portal", label: "Portal Hub", description: "Landing dashboard and shortcuts.", section: "Core", locked: true },
@@ -1339,8 +1340,11 @@ function roleTitle(role, options = {}) {
     return options.option ? (meta.optionLabel || meta.label || String(role || "")) : (meta.label || String(role || ""));
 }
 
-function hasAdminAccessRole(role) {
-    return !!roleMeta(role).adminAccess;
+function roleHasSystemAccess(role) {
+    const roleKey = String(role || "READONLY").toUpperCase();
+    const pages = rolePagePermissions[roleKey];
+    if (Array.isArray(pages)) return pages.includes("system");
+    return !!roleMeta(roleKey).defaultAdminAccess;
 }
 
 function staffOptionLabel(user) {
@@ -1430,7 +1434,7 @@ async function loadCurrentPageAccess() {
             return match ? match.id : "";
         }).filter(Boolean);
         allowedPages = new Set(["portal", ...fallback]);
-        if (hasAdminAccessRole(role)) allowedPages.add("system");
+        if (roleHasSystemAccess(role)) allowedPages.add("system");
     }
     applyPageVisibility();
 }
@@ -1508,7 +1512,7 @@ function renderRoleMatrix() {
             <div class="role-card">
                 <div class="role-card-head">
                     <span>${escapeHtml(meta.label)}</span>
-                    <small>${meta.adminAccess ? "Admin access" : "Staff access"}</small>
+                    <small>${roleHasSystemAccess(role) ? "System access" : "Staff access"}</small>
                 </div>
                 <p>${escapeHtml(meta.summary)}</p>
                 <div class="page-permission-grid">
@@ -1516,10 +1520,9 @@ function renderRoleMatrix() {
                         const pageId = page.id;
                         const isPortal = pageId === "portal";
                         const isSystem = pageId === "system";
-                        const adminRole = hasAdminAccessRole(role);
-                        const disabled = isPortal || (isSystem && !adminRole) || (isSystem && adminRole);
-                        const checked = isPortal || allowed.has(pageId) || (isSystem && adminRole);
-                        const lockedText = isPortal ? "Always shown" : (isSystem ? (adminRole ? "Admin access" : "Admin only") : "");
+                        const disabled = isPortal;
+                        const checked = isPortal || allowed.has(pageId);
+                        const lockedText = isPortal ? "Always shown" : (isSystem ? "Controls System/admin access" : "");
                         return `
                             <label class="page-permission ${disabled ? "locked" : ""}">
                                 <input type="checkbox" data-role-page="${role}" value="${escapeHtml(pageId)}" ${checked ? "checked" : ""} ${disabled ? "disabled" : ""} />
@@ -1543,7 +1546,6 @@ async function saveRolePageAccess() {
         const values = Array.from(document.querySelectorAll(`[data-role-page="${role}"]:checked`))
             .map((input) => input.value);
         if (!values.includes("portal")) values.unshift("portal");
-        if (hasAdminAccessRole(role) && !values.includes("system")) values.push("system");
         next[role] = normalizePageList(values);
     }
 
@@ -1561,6 +1563,7 @@ async function saveRolePageAccess() {
     rolePagePermissions = data.permissions || next;
     setUsersError("Page access updated. Staff will see the new menu after refresh or next login.", "success");
     renderRoleMatrix();
+    if (teamLoadedOnce) await loadTeamDirectory(true);
     await loadCurrentPageAccess();
 }
 
@@ -1569,7 +1572,7 @@ function renderSystemStats() {
     if (!target) return;
     const total = usersCache.length;
     const active = usersCache.filter((u) => u.is_active).length;
-    const admins = usersCache.filter((u) => hasAdminAccessRole(u.role) && u.is_active).length;
+    const admins = usersCache.filter((u) => roleHasSystemAccess(u.role) && u.is_active).length;
     const pending = usersCache.filter((u) => u.must_change_password).length;
     target.innerHTML = `
         <div class="system-stat"><span>Total users</span><strong>${total}</strong></div>
@@ -1609,7 +1612,7 @@ async function renderUsersList() {
                             <div class="user-chip-row">
                                 <span class="user-chip ${u.is_active ? "ok" : "danger"}">${status}</span>
                                 <span class="user-chip">${escapeHtml(meta.label)}</span>
-                                ${meta.adminAccess ? `<span class="user-chip warn">Admin access</span>` : ""}
+                                ${roleHasSystemAccess(role) ? `<span class="user-chip warn">System access</span>` : ""}
                                 ${passwordFlag}
                             </div>
                         </div>
@@ -1807,7 +1810,15 @@ function renderTeamDirectory(users) {
     const target = document.getElementById("teamDirectoryGrid");
     const count = document.getElementById("teamDirectoryCount");
     if (!target) return;
-    const activeUsers = Array.isArray(users) ? users.filter((u) => u && u.is_active !== false) : [];
+    const activeUsers = (Array.isArray(users) ? users.filter((u) => u && u.is_active !== false) : [])
+        .sort((a, b) => {
+            const aRole = String(a?.role || "").toUpperCase();
+            const bRole = String(b?.role || "").toUpperCase();
+            const aRank = TEAM_ROLE_PRIORITY[aRole] ?? 99;
+            const bRank = TEAM_ROLE_PRIORITY[bRole] ?? 99;
+            if (aRank !== bRank) return aRank - bRank;
+            return String(a?.name || a?.email || "").localeCompare(String(b?.name || b?.email || ""));
+        });
     if (count) count.textContent = `${activeUsers.length} active team member${activeUsers.length === 1 ? "" : "s"}`;
     if (!activeUsers.length) {
         target.innerHTML = `<div class="ticket-empty"><strong>No active team members found</strong><div class="small muted" style="margin-top:6px">Create staff accounts in System and they will appear here.</div></div>`;
@@ -1823,7 +1834,7 @@ function renderTeamDirectory(users) {
                         <h3>${escapeHtml(u.name || "Unnamed team member")}</h3>
                         <div class="team-role-line">
                             <span class="team-role">${escapeHtml(meta.label)}</span>
-                            ${meta.adminAccess ? `<span class="team-admin-pill">Admin access</span>` : ""}
+                            ${u.admin_access ? `<span class="team-admin-pill">System access</span>` : ""}
                         </div>
                     </div>
                 </div>
