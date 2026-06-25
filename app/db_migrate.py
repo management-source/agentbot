@@ -249,6 +249,8 @@ def migrate(engine: Engine) -> None:
         stmts: list[str] = []
         if not _column_exists(engine, users, "avatar_url"):
             stmts.append(f"ALTER TABLE {users} ADD COLUMN avatar_url VARCHAR")
+        if not _column_exists(engine, users, "phone"):
+            stmts.append(f"ALTER TABLE {users} ADD COLUMN phone VARCHAR")
         if not _column_exists(engine, users, "password_changed_at"):
             stmts.append(f"ALTER TABLE {users} ADD COLUMN password_changed_at TIMESTAMP")
         if not _column_exists(engine, users, "last_login_at"):

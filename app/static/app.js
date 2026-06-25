@@ -187,6 +187,7 @@ let complianceLoadedOnce = false;
 let currentCoveragePage = 1;
 let coverageLoadedOnce = false;
 let usersLoadedOnce = false;
+let teamLoadedOnce = false;
 let mySpaceLoadedOnce = false;
 let mySpaceSaveTimer = null;
 let mySpaceQuickLinksCache = [];
@@ -219,6 +220,11 @@ function updateSyncContextUI() {
     if (currentDashboardTab === "myspace") {
         if (viewBadge) viewBadge.textContent = "My Space";
         if (info) info.textContent = "Inbox sync controls are hidden while you are in your private workspace.";
+        return;
+    }
+    if (currentDashboardTab === "team") {
+        if (viewBadge) viewBadge.textContent = "Our Team";
+        if (info) info.textContent = "Inbox sync controls are hidden while you are viewing the staff directory.";
         return;
     }
     if (currentDashboardTab === "rent") {
@@ -594,7 +600,7 @@ async function renderUsersList() {
                 ${avatar}
                 <div class="min-w-0">
                   <div class="font-medium text-slate-900 truncate">${escapeHtml(u.name)}</div>
-                  <div class="text-xs text-slate-500 truncate">${escapeHtml(u.email)} • ${escapeHtml(u.role)}${u.is_active ? "" : " • Inactive"}</div>
+                  <div class="text-xs text-slate-500 truncate">${escapeHtml(u.email)} • ${escapeHtml(roleTitle(u.role))}${u.is_active ? "" : " • Inactive"}</div>
                 </div>
               </div>
               <div class="row" style="align-items:center">
@@ -606,7 +612,7 @@ async function renderUsersList() {
             </div>
             <div class="row" style="margin-top:8px;align-items:flex-end">
               <select class="px-2 py-1 rounded-md border bg-white text-sm" data-user-role="${u.id}">
-                ${["ADMIN", "PM", "LEASING", "SALES", "ACCOUNTS", "READONLY"].map(r => `<option value="${r}" ${r === u.role ? "selected" : ""}>${r}</option>`).join("")}
+                ${roleOptions(u.role)}
               </select>
               <label class="text-sm text-slate-600 flex items-center gap-1 checkbox" style="padding:6px 10px">
                 <input type="checkbox" ${u.is_active ? "checked" : ""} data-user-active="${u.id}" />
@@ -1264,35 +1270,46 @@ async function deleteMySpaceGuide(guideId) {
 const USER_ROLE_ACCESS = {
     ADMIN: {
         label: "Administrator",
+        optionLabel: "Administrator",
+        adminAccess: true,
         summary: "Full control over the portal, system users, settings, and all operational workspaces.",
-        access: ["System users", "My Space", "Email Manager", "Maintenance", "Rent Tracker", "Compliance", "Compliance Report", "Properties"],
+        access: ["Portal Hub", "My Space", "Email Manager", "Maintenance", "Rent Tracker", "Compliance", "Compliance Report", "Properties", "Our Team", "System"],
     },
     PM: {
         label: "Property Manager",
-        summary: "Daily property management tools for inbox triage, rent, compliance, reports, and properties.",
-        access: ["My Space", "Email Manager", "Maintenance", "Rent Tracker", "Compliance", "Compliance Report", "Properties"],
+        optionLabel: "Property Manager (has admin)",
+        adminAccess: true,
+        summary: "Property management access with admin controls for staff, system access, compliance, maintenance, rent, and property work.",
+        access: ["Portal Hub", "My Space", "Email Manager", "Maintenance", "Rent Tracker", "Compliance", "Compliance Report", "Properties", "Our Team", "System"],
     },
     LEASING: {
-        label: "Leasing",
-        summary: "Leasing-focused access for email work and property information.",
-        access: ["My Space", "Email Manager", "Properties"],
+        label: "Marketing Advisor",
+        optionLabel: "Marketing Advisor",
+        summary: "Marketing and leasing-focused access for email work, property information, and team contacts.",
+        access: ["Portal Hub", "My Space", "Email Manager", "Properties", "Our Team"],
     },
     SALES: {
-        label: "Sales",
-        summary: "Sales-focused access for email work and property information.",
-        access: ["My Space", "Email Manager", "Properties"],
+        label: "Director",
+        optionLabel: "Director (has admin)",
+        adminAccess: true,
+        summary: "Director access with admin controls across the full portal.",
+        access: ["Portal Hub", "My Space", "Email Manager", "Maintenance", "Rent Tracker", "Compliance", "Compliance Report", "Properties", "Our Team", "System"],
     },
     ACCOUNTS: {
-        label: "Accounts",
-        summary: "Accounts access for rent operations and inbox follow-up.",
-        access: ["My Space", "Email Manager", "Rent Tracker"],
+        label: "Administrative Assistant",
+        optionLabel: "Administrative Assistant",
+        summary: "Administrative support access for inbox follow-up, rent operations, team contacts, and daily workspace tools.",
+        access: ["Portal Hub", "My Space", "Email Manager", "Rent Tracker", "Our Team"],
     },
     READONLY: {
         label: "Read Only",
+        optionLabel: "Read Only",
         summary: "View-only team member role. Use for staff who should not manage system access.",
-        access: ["My Space", "View portal data"],
+        access: ["Portal Hub", "My Space", "Our Team"],
     },
 };
+
+const STAFF_ROLE_KEYS = ["ADMIN", "SALES", "PM", "LEASING", "ACCOUNTS"];
 
 const FALLBACK_PAGE_REGISTRY = [
     { id: "portal", label: "Portal Hub", description: "Landing dashboard and shortcuts.", section: "Core", locked: true },
@@ -1303,11 +1320,33 @@ const FALLBACK_PAGE_REGISTRY = [
     { id: "compliance", label: "Compliance", description: "Compliance records and due dates.", section: "Compliance" },
     { id: "coverage", label: "Compliance Report", description: "Missing and incomplete compliance checks.", section: "Compliance" },
     { id: "properties", label: "Properties", description: "Managed property register.", section: "Setup" },
+    { id: "team", label: "Our Team", description: "Registered staff profiles and contact details.", section: "Setup" },
     { id: "system", label: "System", description: "Admin user and access controls.", section: "Setup", admin_only: true },
 ];
 
-function userRoleKeys() {
-    return Object.keys(USER_ROLE_ACCESS);
+function userRoleKeys(includeLegacy = false) {
+    if (!includeLegacy) return STAFF_ROLE_KEYS.slice();
+    return [...STAFF_ROLE_KEYS, ...Object.keys(USER_ROLE_ACCESS).filter((role) => !STAFF_ROLE_KEYS.includes(role))];
+}
+
+function roleMeta(role) {
+    const key = String(role || "READONLY").toUpperCase();
+    return USER_ROLE_ACCESS[key] || USER_ROLE_ACCESS.READONLY;
+}
+
+function roleTitle(role, options = {}) {
+    const meta = roleMeta(role);
+    return options.option ? (meta.optionLabel || meta.label || String(role || "")) : (meta.label || String(role || ""));
+}
+
+function hasAdminAccessRole(role) {
+    return !!roleMeta(role).adminAccess;
+}
+
+function staffOptionLabel(user) {
+    const name = user?.name || user?.email || "Staff";
+    const title = roleTitle(user?.role);
+    return title ? `${name} (${title})` : name;
 }
 
 function allPageDefinitions() {
@@ -1352,6 +1391,7 @@ function applyPageVisibility() {
         compliance: "navCompliance",
         coverage: "navComplianceCoverage",
         properties: "navProperties",
+        team: "navTeam",
         system: "btnSystemUsers",
     };
     for (const [pageId, elementId] of Object.entries(navMap)) {
@@ -1390,7 +1430,7 @@ async function loadCurrentPageAccess() {
             return match ? match.id : "";
         }).filter(Boolean);
         allowedPages = new Set(["portal", ...fallback]);
-        if (role === "ADMIN") allowedPages.add("system");
+        if (hasAdminAccessRole(role)) allowedPages.add("system");
     }
     applyPageVisibility();
 }
@@ -1443,9 +1483,10 @@ function formatUserDate(value) {
 }
 
 function roleOptions(selected) {
-    return userRoleKeys().map((role) => {
-        const meta = USER_ROLE_ACCESS[role] || { label: role };
-        return `<option value="${role}" ${role === selected ? "selected" : ""}>${role} - ${escapeHtml(meta.label)}</option>`;
+    const selectedRole = String(selected || "").toUpperCase();
+    const roles = userRoleKeys(STAFF_ROLE_KEYS.includes(selectedRole) ? false : true);
+    return roles.map((role) => {
+        return `<option value="${role}" ${role === selectedRole ? "selected" : ""}>${escapeHtml(roleTitle(role, { option: true }))}</option>`;
     }).join("");
 }
 
@@ -1461,13 +1502,13 @@ function renderRoleMatrix() {
     const target = document.getElementById("roleMatrix");
     if (!target) return;
     target.innerHTML = userRoleKeys().map((role) => {
-        const meta = USER_ROLE_ACCESS[role];
+        const meta = roleMeta(role);
         const allowed = new Set(rolePagePermissions[role] || []);
         return `
             <div class="role-card">
                 <div class="role-card-head">
-                    <span>${escapeHtml(role)}</span>
-                    <small>${escapeHtml(meta.label)}</small>
+                    <span>${escapeHtml(meta.label)}</span>
+                    <small>${meta.adminAccess ? "Admin access" : "Staff access"}</small>
                 </div>
                 <p>${escapeHtml(meta.summary)}</p>
                 <div class="page-permission-grid">
@@ -1475,9 +1516,10 @@ function renderRoleMatrix() {
                         const pageId = page.id;
                         const isPortal = pageId === "portal";
                         const isSystem = pageId === "system";
-                        const disabled = isPortal || (isSystem && role !== "ADMIN") || (isSystem && role === "ADMIN");
-                        const checked = isPortal || allowed.has(pageId) || (isSystem && role === "ADMIN");
-                        const lockedText = isPortal ? "Always shown" : (isSystem ? "Admin only" : "");
+                        const adminRole = hasAdminAccessRole(role);
+                        const disabled = isPortal || (isSystem && !adminRole) || (isSystem && adminRole);
+                        const checked = isPortal || allowed.has(pageId) || (isSystem && adminRole);
+                        const lockedText = isPortal ? "Always shown" : (isSystem ? (adminRole ? "Admin access" : "Admin only") : "");
                         return `
                             <label class="page-permission ${disabled ? "locked" : ""}">
                                 <input type="checkbox" data-role-page="${role}" value="${escapeHtml(pageId)}" ${checked ? "checked" : ""} ${disabled ? "disabled" : ""} />
@@ -1501,7 +1543,7 @@ async function saveRolePageAccess() {
         const values = Array.from(document.querySelectorAll(`[data-role-page="${role}"]:checked`))
             .map((input) => input.value);
         if (!values.includes("portal")) values.unshift("portal");
-        if (role === "ADMIN" && !values.includes("system")) values.push("system");
+        if (hasAdminAccessRole(role) && !values.includes("system")) values.push("system");
         next[role] = normalizePageList(values);
     }
 
@@ -1527,12 +1569,12 @@ function renderSystemStats() {
     if (!target) return;
     const total = usersCache.length;
     const active = usersCache.filter((u) => u.is_active).length;
-    const admins = usersCache.filter((u) => u.role === "ADMIN" && u.is_active).length;
+    const admins = usersCache.filter((u) => hasAdminAccessRole(u.role) && u.is_active).length;
     const pending = usersCache.filter((u) => u.must_change_password).length;
     target.innerHTML = `
         <div class="system-stat"><span>Total users</span><strong>${total}</strong></div>
         <div class="system-stat"><span>Active</span><strong>${active}</strong></div>
-        <div class="system-stat"><span>Active admins</span><strong>${admins}</strong></div>
+        <div class="system-stat"><span>Admin access</span><strong>${admins}</strong></div>
         <div class="system-stat"><span>Password change due</span><strong>${pending}</strong></div>
     `;
 }
@@ -1552,9 +1594,10 @@ async function renderUsersList() {
     }
     list.innerHTML = usersCache.map((u) => {
         const role = String(u.role || "READONLY");
-        const meta = USER_ROLE_ACCESS[role] || USER_ROLE_ACCESS.READONLY;
+        const meta = roleMeta(role);
         const status = u.is_active ? "Active" : "Disabled";
         const passwordFlag = u.must_change_password ? `<span class="user-chip warn">Must change password</span>` : `<span class="user-chip">Password OK</span>`;
+        const phoneText = String(u.phone || "").trim();
         return `
             <article class="system-user-card">
                 <div class="system-user-head">
@@ -1565,7 +1608,8 @@ async function renderUsersList() {
                             <p>${escapeHtml(u.email || "")}</p>
                             <div class="user-chip-row">
                                 <span class="user-chip ${u.is_active ? "ok" : "danger"}">${status}</span>
-                                <span class="user-chip">${escapeHtml(role)}</span>
+                                <span class="user-chip">${escapeHtml(meta.label)}</span>
+                                ${meta.adminAccess ? `<span class="user-chip warn">Admin access</span>` : ""}
                                 ${passwordFlag}
                             </div>
                         </div>
@@ -1582,7 +1626,11 @@ async function renderUsersList() {
                         <input type="text" data-user-name="${u.id}" value="${escapeHtml(u.name || "")}" />
                     </label>
                     <label class="field">
-                        <div class="label">Role and access</div>
+                        <div class="label">Phone</div>
+                        <input type="tel" data-user-phone="${u.id}" value="${escapeHtml(phoneText)}" placeholder="Staff phone number" />
+                    </label>
+                    <label class="field">
+                        <div class="label">Staff title and access</div>
                         <select data-user-role="${u.id}">
                             ${roleOptions(role)}
                         </select>
@@ -1626,10 +1674,12 @@ async function renderUsersList() {
 
 async function saveUserEdits(userId) {
     const nameEl = document.querySelector(`[data-user-name="${userId}"]`);
+    const phoneEl = document.querySelector(`[data-user-phone="${userId}"]`);
     const roleSel = document.querySelector(`[data-user-role="${userId}"]`);
     const activeChk = document.querySelector(`[data-user-active="${userId}"]`);
     const payload = {
         name: nameEl ? String(nameEl.value || "").trim() : undefined,
+        phone: phoneEl ? String(phoneEl.value || "").trim() : undefined,
         role: roleSel ? roleSel.value : undefined,
         is_active: activeChk ? !!activeChk.checked : undefined,
     };
@@ -1644,6 +1694,7 @@ async function saveUserEdits(userId) {
     }
     setUsersError("User account updated.", "success");
     await renderUsersList();
+    if (teamLoadedOnce) await loadTeamDirectory(true);
     await refreshAssigneeViews();
     await ensureAuthenticated();
 }
@@ -1652,6 +1703,7 @@ async function createUserFromForm() {
     setUsersError("");
     const email = document.getElementById("newUserEmail").value.trim();
     const name = document.getElementById("newUserName").value.trim();
+    const phone = document.getElementById("newUserPhone")?.value.trim() || "";
     const role = document.getElementById("newUserRole").value;
     const password = document.getElementById("newUserPassword").value;
     const force = !!document.getElementById("newUserForcePassword")?.checked;
@@ -1662,7 +1714,7 @@ async function createUserFromForm() {
     const r = await apiFetch("/user-auth/users", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, name, role, password, is_active: true, must_change_password: force }),
+        body: JSON.stringify({ email, name, phone, role, password, is_active: true, must_change_password: force }),
     });
     if (!r.ok) {
         setUsersError(`Failed to create user: ${await extractErrorMessage(r)}`);
@@ -1670,10 +1722,13 @@ async function createUserFromForm() {
     }
     document.getElementById("newUserEmail").value = "";
     document.getElementById("newUserName").value = "";
+    const phoneInput = document.getElementById("newUserPhone");
+    if (phoneInput) phoneInput.value = "";
     document.getElementById("newUserPassword").value = "";
     if (document.getElementById("newUserForcePassword")) document.getElementById("newUserForcePassword").checked = true;
     setUsersError("User account created.", "success");
     await renderUsersList();
+    if (teamLoadedOnce) await loadTeamDirectory(true);
     await refreshAssigneeViews();
 }
 
@@ -1696,6 +1751,7 @@ async function uploadUserAvatar(userId, input) {
     }
     setUsersError("Avatar updated.", "success");
     await renderUsersList();
+    if (teamLoadedOnce) await loadTeamDirectory(true);
 }
 
 async function adminResetPassword(userId) {
@@ -1731,7 +1787,78 @@ async function deleteUser(userId) {
     }
     setUsersError("User deleted.", "success");
     await renderUsersList();
+    if (teamLoadedOnce) await loadTeamDirectory(true);
     await refreshAssigneeViews();
+}
+
+function teamContactLink(user, kind) {
+    if (kind === "phone") {
+        const phone = String(user?.phone || "").trim();
+        if (!phone) return `<span class="team-muted">No phone added</span>`;
+        const href = phone.replace(/[^\d+]/g, "");
+        return `<a href="tel:${escapeHtml(href)}">${escapeHtml(phone)}</a>`;
+    }
+    const email = String(user?.email || "").trim();
+    if (!email) return `<span class="team-muted">No email added</span>`;
+    return `<a href="mailto:${escapeHtml(email)}">${escapeHtml(email)}</a>`;
+}
+
+function renderTeamDirectory(users) {
+    const target = document.getElementById("teamDirectoryGrid");
+    const count = document.getElementById("teamDirectoryCount");
+    if (!target) return;
+    const activeUsers = Array.isArray(users) ? users.filter((u) => u && u.is_active !== false) : [];
+    if (count) count.textContent = `${activeUsers.length} active team member${activeUsers.length === 1 ? "" : "s"}`;
+    if (!activeUsers.length) {
+        target.innerHTML = `<div class="ticket-empty"><strong>No active team members found</strong><div class="small muted" style="margin-top:6px">Create staff accounts in System and they will appear here.</div></div>`;
+        return;
+    }
+    target.innerHTML = activeUsers.map((u) => {
+        const meta = roleMeta(u.role);
+        return `
+            <article class="team-card">
+                <div class="team-card-top">
+                    ${avatarBlock(u, "team-avatar")}
+                    <div class="team-card-identity">
+                        <h3>${escapeHtml(u.name || "Unnamed team member")}</h3>
+                        <div class="team-role-line">
+                            <span class="team-role">${escapeHtml(meta.label)}</span>
+                            ${meta.adminAccess ? `<span class="team-admin-pill">Admin access</span>` : ""}
+                        </div>
+                    </div>
+                </div>
+                <div class="team-contact-list">
+                    <div>
+                        <span>Email</span>
+                        ${teamContactLink(u, "email")}
+                    </div>
+                    <div>
+                        <span>Phone</span>
+                        ${teamContactLink(u, "phone")}
+                    </div>
+                </div>
+                <div class="team-card-foot">
+                    <span>${u.last_login_at ? `Last login ${escapeHtml(formatUserDate(u.last_login_at))}` : "Login not recorded yet"}</span>
+                </div>
+            </article>
+        `;
+    }).join("");
+}
+
+async function loadTeamDirectory(force = false) {
+    const target = document.getElementById("teamDirectoryGrid");
+    if (!target) return;
+    if (!force && teamLoadedOnce && target.innerHTML.trim()) return;
+    target.innerHTML = `<div class="ticket-empty"><strong>Loading team directory...</strong><div class="small muted" style="margin-top:6px">Gathering registered staff profiles.</div></div>`;
+    try {
+        const r = await apiFetch("/user-auth/team");
+        if (!r.ok) throw new Error(await extractErrorMessage(r));
+        const data = await r.json();
+        teamLoadedOnce = true;
+        renderTeamDirectory(data);
+    } catch (e) {
+        target.innerHTML = `<div class="ticket-empty"><strong>Could not load team directory</strong><div class="small muted" style="margin-top:6px">${escapeHtml(String(e?.message || e || "Please try again."))}</div></div>`;
+    }
 }
 
 function toggleAccountMenu() {
@@ -1929,7 +2056,7 @@ function formatDateShort(dt) {
 }
 
 function switchDashboardTab(tab) {
-    const requestedTab = ["portal", "myspace", "maintenance", "rent", "compliance", "coverage", "properties", "system", "inbox"].includes(tab) ? tab : "portal";
+    const requestedTab = ["portal", "myspace", "maintenance", "rent", "compliance", "coverage", "properties", "team", "system", "inbox"].includes(tab) ? tab : "portal";
     if (!canAccessPage(requestedTab)) {
         alert("This page is not assigned to your role.");
         currentDashboardTab = firstAccessiblePage();
@@ -1945,6 +2072,7 @@ function switchDashboardTab(tab) {
         compliance: ["Compliance", "Create and update compliance records with calculated due dates."],
         coverage: ["Compliance Report", "Review missing and incomplete MRS, Smoke, Gas, and Electrical checks."],
         properties: ["Properties", "Maintain the active Victorian managed property register."],
+        team: ["Our Team", "Browse registered staff profiles, roles, contact details, and profile photos."],
         system: ["System Access", "Manage staff accounts, profile photos, roles, status, and password controls."],
     };
     const title = document.getElementById("topbarTitle");
@@ -1958,6 +2086,7 @@ function switchDashboardTab(tab) {
     const maintenancePanel = document.getElementById("maintenancePanel");
     const rentPanel = document.getElementById("rentPanel");
     const propertiesPanel = document.getElementById("propertiesPanel");
+    const teamPanel = document.getElementById("teamPanel");
     const compliancePanel = document.getElementById("compliancePanel");
     const coveragePanel = document.getElementById("coveragePanel");
     const systemPanel = document.getElementById("systemPanel");
@@ -1967,6 +2096,7 @@ function switchDashboardTab(tab) {
     const navPortal = document.getElementById("navPortal");
     const navRent = document.getElementById("navRentTracker");
     const navProperties = document.getElementById("navProperties");
+    const navTeam = document.getElementById("navTeam");
     const navSystem = document.getElementById("btnSystemUsers");
     const navCompliance = document.getElementById("navCompliance");
     const navCoverage = document.getElementById("navComplianceCoverage");
@@ -1978,6 +2108,7 @@ function switchDashboardTab(tab) {
     if (maintenancePanel) maintenancePanel.classList.toggle("hidden", currentDashboardTab !== "maintenance");
     if (rentPanel) rentPanel.classList.toggle("hidden", currentDashboardTab !== "rent");
     if (propertiesPanel) propertiesPanel.classList.toggle("hidden", currentDashboardTab !== "properties");
+    if (teamPanel) teamPanel.classList.toggle("hidden", currentDashboardTab !== "team");
     if (compliancePanel) compliancePanel.classList.toggle("hidden", currentDashboardTab !== "compliance");
     if (coveragePanel) coveragePanel.classList.toggle("hidden", currentDashboardTab !== "coverage");
     if (systemPanel) systemPanel.classList.toggle("hidden", currentDashboardTab !== "system");
@@ -1987,6 +2118,7 @@ function switchDashboardTab(tab) {
     if (navMaintenance) navMaintenance.classList.toggle("active", currentDashboardTab === "maintenance");
     if (navRent) navRent.classList.toggle("active", currentDashboardTab === "rent");
     if (navProperties) navProperties.classList.toggle("active", currentDashboardTab === "properties");
+    if (navTeam) navTeam.classList.toggle("active", currentDashboardTab === "team");
     if (navSystem) navSystem.classList.toggle("active", currentDashboardTab === "system");
     if (navCompliance) navCompliance.classList.toggle("active", currentDashboardTab === "compliance");
     if (navCoverage) navCoverage.classList.toggle("active", currentDashboardTab === "coverage");
@@ -1999,6 +2131,7 @@ function switchDashboardTab(tab) {
         shell.classList.toggle("compliance-mode", currentDashboardTab === "compliance");
         shell.classList.toggle("coverage-mode", currentDashboardTab === "coverage");
         shell.classList.toggle("properties-mode", currentDashboardTab === "properties");
+        shell.classList.toggle("team-mode", currentDashboardTab === "team");
         shell.classList.toggle("system-mode", currentDashboardTab === "system");
     }
 
@@ -2016,6 +2149,9 @@ function switchDashboardTab(tab) {
     if (currentDashboardTab === "properties" && !propertiesLoadedOnce) {
         loadProperties();
         refreshPropertyOptions();
+    }
+    if (currentDashboardTab === "team" && !teamLoadedOnce) {
+        loadTeamDirectory();
     }
     if (currentDashboardTab === "compliance" && !complianceLoadedOnce) {
         refreshPropertyOptions();
@@ -2118,7 +2254,7 @@ function renderMaintenanceAssigneeOptions(selectedId = "") {
         `<option value="">Unassigned</option>`,
         ...assignableUsers.map((u) => {
             const value = String(u.id);
-            const label = `${u.name || u.email}${u.role ? ` (${u.role})` : ""}`;
+            const label = staffOptionLabel(u);
             return `<option value="${escapeHtml(value)}" ${value === selected ? "selected" : ""}>${escapeHtml(label)}</option>`;
         }),
     ].join("");
@@ -4184,7 +4320,7 @@ function assigneeOptions(selectedId, selectedLabel = "") {
     }
     assignableUsers.forEach((u) => {
         const value = String(u.id);
-        const label = `${u.name || u.email}${u.role ? ` (${u.role})` : ""}`;
+        const label = staffOptionLabel(u);
         base.push(`<option value="${escapeHtml(value)}" ${value === selected ? "selected" : ""}>${escapeHtml(label)}</option>`);
     });
     return base.join("");
@@ -5591,13 +5727,13 @@ async function ensureAuthenticated() {
 
     // Legacy badge
     const badge = document.getElementById("userBadge");
-    if (badge) badge.textContent = `Signed in as: ${currentUser.name} (${currentUser.role})`;
+    if (badge) badge.textContent = `Signed in as: ${currentUser.name} (${roleTitle(currentUser.role)})`;
 
     // Good UI pill
     const authText = document.getElementById("authText");
-    if (authText) authText.textContent = `Signed in as ${currentUser.name} (${currentUser.role})`;
+    if (authText) authText.textContent = `Signed in as ${currentUser.name} (${roleTitle(currentUser.role)})`;
     const accountName = document.getElementById("accountBarUserName");
-    if (accountName) accountName.textContent = `${currentUser.name} (${currentUser.role})`;
+    if (accountName) accountName.textContent = `${currentUser.name} (${roleTitle(currentUser.role)})`;
     const accountAvatar = document.getElementById("accountBarAvatar");
     if (accountAvatar) {
         accountAvatar.src = currentUser.avatar_url || "/static/logo.png";
@@ -5682,6 +5818,7 @@ function logout() {
     localStorage.removeItem("agent_auth_token");
     allowedPages = new Set(["portal"]);
     rolePagePermissions = {};
+    teamLoadedOnce = false;
     applyPageVisibility();
 
     const badge = document.getElementById("userBadge");

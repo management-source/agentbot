@@ -17,11 +17,11 @@ from pydantic import BaseModel, EmailStr
 from sqlalchemy import and_, func
 from sqlalchemy.orm import Session
 
-from app.authz import get_current_user, require_role
+from app.authz import ADMIN_ACCESS_ROLES, get_current_user, has_admin_access, require_role
 from app.config import settings
 from app.db import get_db
 from app.models import AppState, PasswordResetToken, ThreadTicket, ThreadTicketAudit, ThreadTicketNote, User, UserRole
-from app.schemas import UserOut
+from app.schemas import TeamMemberOut, UserOut
 from app.security import create_access_token, hash_password, verify_password
 
 router = APIRouter(prefix="/user-auth", tags=["user-auth"])
@@ -85,6 +85,12 @@ PAGE_REGISTRY = [
         "section": "Setup",
     },
     {
+        "id": "team",
+        "label": "Our Team",
+        "description": "View the registered Dons Premier team, roles, avatars, and contact details.",
+        "section": "Setup",
+    },
+    {
         "id": "system",
         "label": "System",
         "description": "Admin-only user accounts, avatars, roles, and page access controls.",
@@ -95,12 +101,12 @@ PAGE_REGISTRY = [
 
 
 DEFAULT_ROLE_PAGE_ACCESS = {
-    UserRole.ADMIN.value: ["portal", "myspace", "inbox", "maintenance", "rent", "compliance", "coverage", "properties", "system"],
-    UserRole.PM.value: ["portal", "myspace", "inbox", "maintenance", "rent", "compliance", "coverage", "properties"],
-    UserRole.LEASING.value: ["portal", "myspace", "inbox", "properties"],
-    UserRole.SALES.value: ["portal", "myspace", "inbox", "properties"],
-    UserRole.ACCOUNTS.value: ["portal", "myspace", "inbox", "rent"],
-    UserRole.READONLY.value: ["portal", "myspace"],
+    UserRole.ADMIN.value: ["portal", "myspace", "inbox", "maintenance", "rent", "compliance", "coverage", "properties", "team", "system"],
+    UserRole.PM.value: ["portal", "myspace", "inbox", "maintenance", "rent", "compliance", "coverage", "properties", "team", "system"],
+    UserRole.LEASING.value: ["portal", "myspace", "inbox", "properties", "team"],
+    UserRole.SALES.value: ["portal", "myspace", "inbox", "maintenance", "rent", "compliance", "coverage", "properties", "team", "system"],
+    UserRole.ACCOUNTS.value: ["portal", "myspace", "inbox", "rent", "team"],
+    UserRole.READONLY.value: ["portal", "myspace", "team"],
 }
 
 
@@ -119,6 +125,7 @@ class LoginOut(BaseModel):
 class CreateUserIn(BaseModel):
     email: EmailStr
     name: str
+    phone: str | None = None
     role: UserRole = UserRole.PM
     password: str
     is_active: bool = True
@@ -127,6 +134,7 @@ class CreateUserIn(BaseModel):
 
 class UpdateUserIn(BaseModel):
     name: str | None = None
+    phone: str | None = None
     role: UserRole | None = None
     password: str | None = None
     is_active: bool | None = None
@@ -163,9 +171,23 @@ def _to_user_out(u: User) -> UserOut:
         role=u.role,
         is_active=u.is_active,
         avatar_url=u.avatar_url,
+        phone=u.phone,
         password_changed_at=u.password_changed_at,
         last_login_at=u.last_login_at,
         must_change_password=u.must_change_password,
+    )
+
+
+def _to_team_member_out(u: User) -> TeamMemberOut:
+    return TeamMemberOut(
+        id=u.id,
+        email=u.email,
+        name=u.name,
+        role=u.role,
+        is_active=u.is_active,
+        avatar_url=u.avatar_url,
+        phone=u.phone,
+        last_login_at=u.last_login_at,
     )
 
 
@@ -181,6 +203,11 @@ def _validate_password_strength(password: str) -> None:
         raise HTTPException(status_code=400, detail="Password must include a number.")
     if not re.search(r"[^A-Za-z0-9]", p):
         raise HTTPException(status_code=400, detail="Password must include a symbol.")
+
+
+def _clean_phone(value: str | None) -> str | None:
+    cleaned = str(value or "").strip()
+    return cleaned[:80] or None
 
 
 def _password_reset_hash(token: str) -> str:
@@ -225,7 +252,7 @@ def _cleanup_password_reset_tokens(db: Session, user_id: int | None = None) -> N
 def _active_admin_count(db: Session) -> int:
     return (
         db.query(func.count(User.id))
-        .filter(and_(User.role == UserRole.ADMIN, User.is_active == True))
+        .filter(and_(User.role.in_([role.value for role in ADMIN_ACCESS_ROLES]), User.is_active == True))
         .scalar()
         or 0
     )
@@ -266,7 +293,7 @@ def _normalize_role_page_access(raw: dict | None) -> dict[str, list[str]]:
         # Portal prevents blank workspaces. System stays admin-only so access
         # control cannot lock itself out or appear for non-admin users.
         selected.add("portal")
-        if role == UserRole.ADMIN:
+        if has_admin_access(role):
             selected.update(page_ids)
         else:
             selected.discard("system")
@@ -525,6 +552,20 @@ def list_users(
     return [_to_user_out(u) for u in users]
 
 
+@router.get("/team", response_model=list[TeamMemberOut])
+def list_team(
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    users = (
+        db.query(User)
+        .filter(User.is_active == True)
+        .order_by(User.name.asc())
+        .all()
+    )
+    return [_to_team_member_out(u) for u in users]
+
+
 @router.post("/users", response_model=UserOut)
 def create_user(
     payload: CreateUserIn,
@@ -540,6 +581,7 @@ def create_user(
     u = User(
         email=payload.email.lower(),
         name=payload.name.strip(),
+        phone=_clean_phone(payload.phone),
         role=payload.role,
         is_active=payload.is_active,
         password_hash=hash_password(payload.password),
@@ -568,12 +610,14 @@ def update_user(
     now = datetime.utcnow()
     if payload.name is not None:
         u.name = payload.name.strip()
+    if payload.phone is not None:
+        u.phone = _clean_phone(payload.phone)
     if payload.role is not None:
-        if u.role == UserRole.ADMIN and payload.role != UserRole.ADMIN and u.is_active and _active_admin_count(db) <= 1:
+        if has_admin_access(u.role) and not has_admin_access(payload.role) and u.is_active and _active_admin_count(db) <= 1:
             raise HTTPException(status_code=400, detail="Cannot demote the last active admin.")
         u.role = payload.role
     if payload.is_active is not None:
-        if u.role == UserRole.ADMIN and payload.is_active is False and _active_admin_count(db) <= 1:
+        if has_admin_access(u.role) and payload.is_active is False and _active_admin_count(db) <= 1:
             raise HTTPException(status_code=400, detail="Cannot disable the last active admin.")
         u.is_active = payload.is_active
     if payload.password:
@@ -673,7 +717,7 @@ def delete_user(
         raise HTTPException(status_code=404, detail="User not found")
     if u.id == admin_user.id:
         raise HTTPException(status_code=400, detail="You cannot delete your own account.")
-    if u.role == UserRole.ADMIN and u.is_active and _active_admin_count(db) <= 1:
+    if has_admin_access(u.role) and u.is_active and _active_admin_count(db) <= 1:
         raise HTTPException(status_code=400, detail="Cannot delete the last active admin.")
 
     # Remove user-owned references so deletion succeeds safely.

@@ -981,9 +981,17 @@
       grid-template-columns: repeat(5, minmax(0,1fr));
       gap:var(--gap);
       margin-top:var(--gap);
+      margin-bottom:var(--gap);
+      align-items:stretch;
     }
     @media (max-width: 980px){
       .kpi-row{grid-template-columns: repeat(2, minmax(0,1fr))}
+    }
+    .kpi{
+      min-height:92px;
+      display:flex;
+      flex-direction:column;
+      justify-content:center;
     }
     .kpi h3{margin:0; font-size:12px; color:var(--muted); font-weight:700}
     .kpi .num{margin-top:8px; font-size:26px; font-weight:900; letter-spacing:-.02em}
@@ -1441,14 +1449,76 @@
       gap:16px;
       align-items:start;
     }
+    .maintenance-form-card{
+      padding:18px;
+      border-radius:22px;
+      background:
+        linear-gradient(180deg, rgba(255,255,255,.98), rgba(248,250,252,.98)),
+        radial-gradient(circle at top right, rgba(201,162,70,.12), transparent 38%);
+    }
     .maintenance-form-grid{
       display:grid;
       grid-template-columns:repeat(2, minmax(0, 1fr));
-      gap:10px;
+      gap:14px 12px;
     }
     .maintenance-form-grid .wide,
     .maintenance-action-strip .wide{
       grid-column:1 / -1;
+    }
+    .maintenance-form-section{
+      grid-column:1 / -1;
+      display:flex;
+      align-items:center;
+      gap:10px;
+      margin-top:4px;
+      padding-top:12px;
+      border-top:1px solid #e5edf6;
+      color:#101828;
+      font-size:12px;
+      font-weight:900;
+      text-transform:uppercase;
+      letter-spacing:.08em;
+    }
+    .maintenance-form-section:first-child{
+      margin-top:0;
+      padding-top:0;
+      border-top:none;
+    }
+    .maintenance-form-grid .field{
+      min-width:0;
+      gap:7px;
+    }
+    .maintenance-form-grid .label{
+      color:#475467;
+      font-weight:800;
+      letter-spacing:.01em;
+    }
+    .maintenance-form-grid input,
+    .maintenance-form-grid select,
+    .maintenance-form-grid textarea{
+      min-height:40px;
+      border-color:#d7e1ee;
+      border-radius:14px;
+      background:#fff;
+      box-shadow:0 1px 2px rgba(15,23,42,.035);
+      transition:border-color .18s ease, box-shadow .18s ease, background-color .18s ease;
+    }
+    .maintenance-form-grid textarea{
+      min-height:74px;
+      resize:vertical;
+      line-height:1.45;
+    }
+    .maintenance-form-grid input:focus,
+    .maintenance-form-grid select:focus,
+    .maintenance-form-grid textarea:focus{
+      border-color:#c9a246;
+      box-shadow:0 0 0 4px rgba(201,162,70,.14);
+    }
+    .maintenance-form-actions{
+      margin-top:16px;
+      padding-top:14px;
+      border-top:1px solid #e5edf6;
+      justify-content:flex-start;
     }
     .maintenance-action-strip{
       display:grid;
@@ -1508,12 +1578,12 @@
     .maintenance-status.action{color:#1d4ed8; background:#eff6ff; border-color:#bfdbfe}
     .maintenance-detail{
       display:grid;
-      gap:12px;
+      gap:14px;
     }
     .maintenance-detail-panel{
       border:1px solid #dbe4ef;
       border-radius:18px;
-      padding:14px;
+      padding:16px;
       background:#fff;
     }
     .maintenance-detail-panel h4{
@@ -1791,7 +1861,7 @@
     .avatar-upload-btn input{position:absolute;inset:0;opacity:0;cursor:pointer}
     .system-user-form{
       display:grid;
-      grid-template-columns:1fr 1fr minmax(180px, .7fr);
+      grid-template-columns:repeat(4, minmax(0, 1fr));
       gap:10px;
       align-items:end;
       margin-top:14px;
@@ -1857,6 +1927,147 @@
       .system-stats,.role-matrix,.system-form-row{grid-template-columns:1fr}
       .system-user-head,.access-preview{flex-direction:column}
       .system-user-actions{grid-template-columns:1fr}
+    }
+
+    /* Team directory */
+    .team-workspace{
+      display:flex;
+      flex-direction:column;
+      gap:16px;
+    }
+    .team-toolbar{
+      display:flex;
+      justify-content:space-between;
+      gap:12px;
+      align-items:center;
+      padding:14px 16px;
+      border:1px solid #dbe4ef;
+      border-radius:20px;
+      background:#fff;
+      box-shadow:0 10px 28px rgba(15,23,42,.055);
+    }
+    .team-toolbar strong{display:block;color:#101828;font-size:16px}
+    .team-toolbar span{display:block;margin-top:3px;color:#667085;font-size:13px}
+    .team-grid{
+      display:grid;
+      grid-template-columns:repeat(3, minmax(0, 1fr));
+      gap:14px;
+    }
+    .team-card{
+      position:relative;
+      overflow:hidden;
+      padding:18px;
+      border:1px solid #dbe4ef;
+      border-radius:24px;
+      background:
+        radial-gradient(circle at top right, rgba(201,162,70,.12), transparent 34%),
+        #fff;
+      box-shadow:0 12px 30px rgba(15,23,42,.07);
+    }
+    .team-card::after{
+      content:"";
+      position:absolute;
+      right:-60px;
+      top:-80px;
+      width:180px;
+      height:180px;
+      border-radius:999px;
+      border:1px solid rgba(201,162,70,.16);
+      pointer-events:none;
+    }
+    .team-card-top{
+      display:flex;
+      align-items:center;
+      gap:14px;
+      min-width:0;
+    }
+    .team-avatar{
+      width:72px;
+      height:72px;
+      border-radius:24px;
+      object-fit:cover;
+      border:1px solid #dbe4ef;
+      background:#0f172a;
+      color:#f9e7a7;
+      flex:0 0 auto;
+      box-shadow:0 10px 22px rgba(15,23,42,.12);
+    }
+    .team-card-identity{min-width:0}
+    .team-card-identity h3{
+      margin:0;
+      color:#101828;
+      font-size:19px;
+      line-height:1.15;
+      letter-spacing:-.03em;
+    }
+    .team-role-line{
+      display:flex;
+      flex-wrap:wrap;
+      gap:6px;
+      margin-top:8px;
+    }
+    .team-role,
+    .team-admin-pill{
+      display:inline-flex;
+      align-items:center;
+      min-height:28px;
+      padding:6px 9px;
+      border-radius:999px;
+      border:1px solid #dbe4ef;
+      background:#f8fafc;
+      color:#344054;
+      font-size:12px;
+      font-weight:850;
+    }
+    .team-admin-pill{
+      border-color:rgba(201,162,70,.34);
+      background:rgba(201,162,70,.12);
+      color:#7a5a12;
+    }
+    .team-contact-list{
+      display:grid;
+      gap:10px;
+      margin-top:18px;
+    }
+    .team-contact-list div{
+      padding:12px;
+      border:1px solid #edf1f6;
+      border-radius:16px;
+      background:rgba(248,250,252,.82);
+    }
+    .team-contact-list span{
+      display:block;
+      color:#667085;
+      font-size:11px;
+      font-weight:900;
+      text-transform:uppercase;
+      letter-spacing:.08em;
+    }
+    .team-contact-list a,
+    .team-muted{
+      display:block;
+      margin-top:4px;
+      color:#101828;
+      font-size:13px;
+      font-weight:800;
+      text-decoration:none;
+      word-break:break-word;
+    }
+    .team-contact-list a:hover{color:#8f6f1d}
+    .team-muted{color:#98a2b3}
+    .team-card-foot{
+      margin-top:14px;
+      padding-top:12px;
+      border-top:1px solid #edf1f6;
+      color:#667085;
+      font-size:12px;
+    }
+    @media (max-width: 1100px){
+      .team-grid{grid-template-columns:repeat(2, minmax(0, 1fr))}
+    }
+    @media (max-width: 700px){
+      .team-toolbar{align-items:flex-start;flex-direction:column}
+      .team-grid{grid-template-columns:1fr}
     }
 
     /* My Space */
@@ -2570,6 +2781,7 @@
     .page-banner,
     .hub-hero.page-banner,
     .myspace-hero.page-banner,
+    .team-hero.page-banner,
     .system-hero.page-banner{
       position:relative;
       isolation:isolate;
@@ -2682,7 +2894,7 @@
       color:#fff;
       box-shadow:0 10px 18px rgba(15,23,42,.08), inset 0 0 0 999px rgba(5,5,5,.98);
     }
-    input[type="text"], input[type="email"], input[type="password"], input[type="date"], input[type="number"], input[type="url"], select, textarea{
+    input[type="text"], input[type="email"], input[type="password"], input[type="date"], input[type="number"], input[type="url"], input[type="tel"], select, textarea{
       border-color:#dbe4ef;
       border-radius:14px;
     }
@@ -2715,6 +2927,7 @@
       .page-banner,
       .hub-hero.page-banner,
       .myspace-hero.page-banner,
+      .team-hero.page-banner,
       .system-hero.page-banner{padding:22px;border-radius:22px}
     }
   </style>
@@ -2917,6 +3130,14 @@
                     d="M13 10h2"></path><path d="M9 14h2"></path><path
                     d="M13 14h2"></path></svg></span><span
                 class="nav-label">Properties</span></a>
+            <a id="navTeam" href="javascript:void(0)"
+              onclick="switchDashboardTab('team')" title="Our Team"><span
+                class="nav-icon"><svg viewBox="0 0 24 24"
+                  aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"></path><circle
+                    cx="9.5" cy="7" r="4"></circle><path
+                    d="M22 21v-2a4 4 0 0 0-3-3.87"></path><path
+                    d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg></span><span
+                class="nav-label">Our Team</span></a>
             <a id="btnSystemUsers" class="hidden" href="javascript:void(0)"
               onclick="switchDashboardTab('system')" title="System"><span
                 class="nav-icon"><svg viewBox="0 0 24 24"
@@ -3139,6 +3360,14 @@
                     <h3>Properties</h3>
                     <p>Import, add, search, and maintain property register.</p>
                     <div class="tile-action">Open register</div>
+                  </div>
+                  <div class="hub-tile" data-page-tile="team"
+                    onclick="switchDashboardTab('team')">
+                    <div class="tile-mark">OT</div>
+                    <h3>Our Team</h3>
+                    <p>View staff profiles, titles, avatars, phone numbers,
+                      and email contacts in one elegant directory.</p>
+                    <div class="tile-action">View team</div>
                   </div>
                   <div class="hub-tile hidden" id="portalSystemTile"
                     data-page-tile="system"
@@ -3519,7 +3748,7 @@
                 </div>
 
                 <div class="maintenance-grid">
-                  <div class="card">
+                  <div class="card maintenance-form-card">
                     <div class="row space">
                       <div>
                         <p class="panel-title" id="maintenanceFormTitle">New
@@ -3533,7 +3762,8 @@
                     </div>
                     <input type="hidden" id="maintenanceOrderId" />
                     <input type="hidden" id="maintenancePropertyId" />
-                    <div class="maintenance-form-grid" style="margin-top:12px">
+                    <div class="maintenance-form-grid" style="margin-top:16px">
+                      <div class="maintenance-form-section">Issue Details</div>
                       <div class="field wide">
                         <div class="label">Managed Property</div>
                         <input type="text" id="maintenancePropertySearch"
@@ -3585,6 +3815,7 @@
                         <textarea id="maintenanceAccessNotes"
                           placeholder="Access times, pets, alarms, tenant availability, keys, etc."></textarea>
                       </div>
+                      <div class="maintenance-form-section">Owner & Tenant</div>
                       <div class="field">
                         <div class="label">Owner Name</div>
                         <input type="text" id="maintenanceOwnerName" />
@@ -3609,6 +3840,7 @@
                         <div class="label">Tenant Phone</div>
                         <input type="text" id="maintenanceTenantPhone" />
                       </div>
+                      <div class="maintenance-form-section">Tradie & Quote</div>
                       <div class="field">
                         <div class="label">Tradie / Contact</div>
                         <input type="text" id="maintenanceTradieName" />
@@ -3641,7 +3873,7 @@
                           placeholder="Quote summary, owner instructions, or completion notes."></textarea>
                       </div>
                     </div>
-                    <div class="row" style="margin-top:14px">
+                    <div class="row maintenance-form-actions">
                       <button class="btn primary"
                         onclick="saveMaintenanceOrder()">Save Order</button>
                       <button class="btn" onclick="resetMaintenanceForm()">Clear</button>
@@ -4217,6 +4449,38 @@
                 </div>
               </div>
 
+              <div id="teamPanel" class="hidden">
+                <section class="team-workspace">
+                  <div class="team-hero page-banner">
+                    <div class="page-banner-kicker">Team Directory</div>
+                    <h2>Our Team</h2>
+                    <p>Registered Dons Premier staff profiles with clear titles,
+                      profile photos, phone numbers, and email contacts.</p>
+                    <div class="page-banner-actions">
+                      <span class="chip">Staff Profiles</span>
+                      <span class="chip">Contact Details</span>
+                      <span class="chip">Role Visibility</span>
+                    </div>
+                  </div>
+
+                  <div class="team-toolbar">
+                    <div>
+                      <strong>Registered Team</strong>
+                      <span id="teamDirectoryCount">Loading team members...</span>
+                    </div>
+                    <button class="btn" onclick="loadTeamDirectory(true)">Refresh</button>
+                  </div>
+
+                  <div id="teamDirectoryGrid" class="team-grid">
+                    <div class="ticket-empty">
+                      <strong>Team directory not loaded yet</strong>
+                      <div class="small muted" style="margin-top:6px">Open this
+                        page to load registered staff profiles.</div>
+                    </div>
+                  </div>
+                </section>
+              </div>
+
               <div id="systemPanel" class="hidden">
                 <section class="system-workspace">
                   <div class="system-hero page-banner">
@@ -4251,19 +4515,21 @@
                           <input type="text" id="newUserName"
                             placeholder="Staff name" autocomplete="off" />
                         </div>
+                        <div class="field">
+                          <div class="label">Phone</div>
+                          <input type="tel" id="newUserPhone"
+                            placeholder="Staff phone number"
+                            autocomplete="tel" />
+                        </div>
                         <div class="system-form-row">
                           <div class="field">
-                            <div class="label">Role</div>
+                            <div class="label">Staff Title</div>
                             <select id="newUserRole">
-                              <option value="PM">PM - Property Manager</option>
-                              <option value="ADMIN">ADMIN -
-                                Administrator</option>
-                              <option value="LEASING">LEASING - Leasing</option>
-                              <option value="SALES">SALES - Sales</option>
-                              <option value="ACCOUNTS">ACCOUNTS -
-                                Accounts</option>
-                              <option value="READONLY">READONLY - Read
-                                Only</option>
+                              <option value="ADMIN">Administrator</option>
+                              <option value="SALES">Director (has admin)</option>
+                              <option value="PM">Property Manager (has admin)</option>
+                              <option value="LEASING">Marketing Advisor</option>
+                              <option value="ACCOUNTS">Administrative Assistant</option>
                             </select>
                           </div>
                           <div class="field">
@@ -4290,7 +4556,7 @@
                       <div class="row space">
                         <div>
                           <h3>Access Control</h3>
-                          <p>Role assignments define what each staff member
+                          <p>Staff title assignments define what each team member
                             should access inside the portal.</p>
                         </div>
                         <div class="row">
@@ -4490,7 +4756,7 @@
       </div>
     </div>
 
-    <script src="/static/app.js?v=21"></script>
+    <script src="/static/app.js?v=23"></script>
 
     <script>
   // Wire segmented status buttons to existing tab logic

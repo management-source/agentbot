@@ -155,6 +155,7 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     password_hash: Mapped[str] = mapped_column(String)
     avatar_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    phone: Mapped[str | None] = mapped_column(String, nullable=True)
     password_changed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
     failed_login_attempts: Mapped[int] = mapped_column(Integer, default=0)
