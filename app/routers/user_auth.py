@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import imghdr
 import json
+import logging
 import re
+import secrets
 from datetime import datetime, timedelta
+from email.message import EmailMessage
 from pathlib import Path
 
 import httpx
@@ -16,14 +20,17 @@ from sqlalchemy.orm import Session
 from app.authz import get_current_user, require_role
 from app.config import settings
 from app.db import get_db
-from app.models import AppState, ThreadTicket, ThreadTicketAudit, ThreadTicketNote, User, UserRole
+from app.models import AppState, PasswordResetToken, ThreadTicket, ThreadTicketAudit, ThreadTicketNote, User, UserRole
 from app.schemas import UserOut
 from app.security import create_access_token, hash_password, verify_password
 
 router = APIRouter(prefix="/user-auth", tags=["user-auth"])
+logger = logging.getLogger(__name__)
 MAX_AVATAR_BYTES = 2 * 1024 * 1024
 MAX_LOGIN_ATTEMPTS = 5
 LOCKOUT_MINUTES = 15
+PASSWORD_RESET_EXPIRE_MINUTES = 30
+PASSWORD_RESET_COOLDOWN_MINUTES = 2
 ROLE_PAGE_ACCESS_KEY = "system:role_page_access"
 
 
@@ -44,7 +51,7 @@ PAGE_REGISTRY = [
     {
         "id": "myspace",
         "label": "My Space",
-        "description": "Private staff workspace with personal to-dos and notes.",
+        "description": "Private planner, follow-ups, quick links, snippets, notes, and staff guides.",
         "section": "Core",
     },
     {
@@ -124,6 +131,15 @@ class ChangeMyPasswordIn(BaseModel):
     new_password: str
 
 
+class ForgotPasswordIn(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordIn(BaseModel):
+    token: str
+    new_password: str
+
+
 class AdminResetPasswordIn(BaseModel):
     new_password: str
     force_change_on_next_login: bool = True
@@ -159,6 +175,45 @@ def _validate_password_strength(password: str) -> None:
         raise HTTPException(status_code=400, detail="Password must include a number.")
     if not re.search(r"[^A-Za-z0-9]", p):
         raise HTTPException(status_code=400, detail="Password must include a symbol.")
+
+
+def _password_reset_hash(token: str) -> str:
+    return hashlib.sha256((token or "").encode("utf-8")).hexdigest()
+
+
+def _password_reset_url(request: Request, token: str) -> str:
+    base = str(request.base_url).rstrip("/")
+    return f"{base}/?reset_token={token}"
+
+
+def _send_password_reset_email(db: Session, to_email: str, reset_url: str) -> bool:
+    try:
+        from app.services.gmail_client import get_gmail_service, gmail_user_id
+
+        service = get_gmail_service(db)
+        msg = EmailMessage()
+        msg["To"] = to_email
+        msg["Subject"] = "Reset your Dons Premier portal password"
+        msg.set_content(
+            "A password reset was requested for your Dons Premier Estate Agents Portal account.\n\n"
+            f"Open this secure link within {PASSWORD_RESET_EXPIRE_MINUTES} minutes to set a new password:\n"
+            f"{reset_url}\n\n"
+            "If you did not request this, you can ignore this email. Your password will not change."
+        )
+        raw = base64.urlsafe_b64encode(msg.as_bytes()).decode("utf-8")
+        service.users().messages().send(userId=gmail_user_id(), body={"raw": raw}).execute()
+        return True
+    except Exception:
+        logger.exception("Password reset email could not be sent")
+        return False
+
+
+def _cleanup_password_reset_tokens(db: Session, user_id: int | None = None) -> None:
+    now = datetime.utcnow()
+    q = db.query(PasswordResetToken).filter(PasswordResetToken.expires_at < now)
+    if user_id is not None:
+        q = q.filter(PasswordResetToken.user_id == user_id)
+    q.delete(synchronize_session=False)
 
 
 def _active_admin_count(db: Session) -> int:
@@ -322,6 +377,90 @@ def login(payload: LoginIn, request: Request, db: Session = Depends(get_db)):
 
     token = create_access_token(subject=user.email, secret=settings.JWT_SECRET)
     return LoginOut(access_token=token, user=_to_user_out(user))
+
+
+@router.post("/forgot-password")
+def forgot_password(payload: ForgotPasswordIn, request: Request, db: Session = Depends(get_db)):
+    """Create and email a one-time password reset link.
+
+    The response is intentionally generic so callers cannot enumerate valid
+    staff accounts.
+    """
+    now = datetime.utcnow()
+    email = payload.email.lower().strip()
+    user = db.query(User).filter(User.email == email).first()
+    response = {
+        "ok": True,
+        "message": "If that email is registered, a secure password reset link has been sent.",
+    }
+    if not user or not user.is_active:
+        return response
+
+    _cleanup_password_reset_tokens(db, user.id)
+    recent = (
+        db.query(PasswordResetToken)
+        .filter(PasswordResetToken.user_id == user.id)
+        .filter(PasswordResetToken.created_at > now - timedelta(minutes=PASSWORD_RESET_COOLDOWN_MINUTES))
+        .order_by(PasswordResetToken.created_at.desc())
+        .first()
+    )
+    if recent:
+        db.commit()
+        return response
+
+    db.query(PasswordResetToken).filter(PasswordResetToken.user_id == user.id).filter(
+        PasswordResetToken.used_at.is_(None)
+    ).update({PasswordResetToken.used_at: now}, synchronize_session=False)
+
+    token = secrets.token_urlsafe(32)
+    reset = PasswordResetToken(
+        user_id=user.id,
+        token_hash=_password_reset_hash(token),
+        expires_at=now + timedelta(minutes=PASSWORD_RESET_EXPIRE_MINUTES),
+        requested_ip=request.client.host if request.client else None,
+        created_at=now,
+    )
+    db.add(reset)
+    db.commit()
+
+    sent = _send_password_reset_email(db, user.email, _password_reset_url(request, token))
+    if not sent:
+        reset.used_at = datetime.utcnow()
+        db.commit()
+    return response
+
+
+@router.post("/reset-password")
+def reset_password(payload: ResetPasswordIn, db: Session = Depends(get_db)):
+    token = (payload.token or "").strip()
+    if not token:
+        raise HTTPException(status_code=400, detail="Reset token is required.")
+    _validate_password_strength(payload.new_password)
+
+    now = datetime.utcnow()
+    reset = (
+        db.query(PasswordResetToken)
+        .filter(PasswordResetToken.token_hash == _password_reset_hash(token))
+        .filter(PasswordResetToken.used_at.is_(None))
+        .filter(PasswordResetToken.expires_at >= now)
+        .first()
+    )
+    if not reset:
+        raise HTTPException(status_code=400, detail="This reset link is invalid or has expired.")
+
+    user = db.get(User, reset.user_id)
+    if not user or not user.is_active:
+        raise HTTPException(status_code=400, detail="This reset link is invalid or has expired.")
+
+    user.password_hash = hash_password(payload.new_password)
+    user.password_changed_at = now
+    user.must_change_password = False
+    user.failed_login_attempts = 0
+    user.locked_until = None
+    user.updated_at = now
+    reset.used_at = now
+    db.commit()
+    return {"ok": True, "message": "Password updated. You can now log in."}
 
 
 @router.get("/me", response_model=UserOut)
@@ -531,6 +670,7 @@ def delete_user(
     db.query(ThreadTicket).filter(ThreadTicket.assignee_user_id == u.id).update({ThreadTicket.assignee_user_id: None}, synchronize_session=False)
     db.query(ThreadTicketAudit).filter(ThreadTicketAudit.actor_user_id == u.id).update({ThreadTicketAudit.actor_user_id: None}, synchronize_session=False)
     db.query(ThreadTicketNote).filter(ThreadTicketNote.author_user_id == u.id).delete(synchronize_session=False)
+    db.query(PasswordResetToken).filter(PasswordResetToken.user_id == u.id).delete(synchronize_session=False)
 
     _delete_local_avatar(u.avatar_url)
     db.delete(u)

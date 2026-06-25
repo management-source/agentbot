@@ -4339,6 +4339,136 @@ function setLoginError(message) {
     err.style.display = text ? "block" : "none";
 }
 
+function setModalStatus(elementId, message, type = "error") {
+    const el = document.getElementById(elementId);
+    if (!el) return;
+    const text = String(message || "").trim();
+    el.textContent = text;
+    el.style.display = text ? "block" : "none";
+    el.classList.toggle("success", type === "success");
+}
+
+function openForgotPasswordModal() {
+    const modal = document.getElementById("forgotPasswordModal");
+    const email = document.getElementById("forgotPasswordEmail");
+    if (email) email.value = document.getElementById("loginEmail")?.value || "";
+    setModalStatus("forgotPasswordStatus", "");
+    if (modal) modal.classList.remove("hidden");
+    setTimeout(() => email?.focus(), 50);
+}
+
+function closeForgotPasswordModal() {
+    const modal = document.getElementById("forgotPasswordModal");
+    if (modal) modal.classList.add("hidden");
+}
+
+async function submitForgotPassword() {
+    const emailEl = document.getElementById("forgotPasswordEmail");
+    const btn = document.getElementById("forgotPasswordBtn");
+    const email = String(emailEl?.value || "").trim();
+    if (!email) {
+        setModalStatus("forgotPasswordStatus", "Enter your email address.");
+        return;
+    }
+    const oldText = btn?.textContent || "Send Reset Link";
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = "Sending...";
+    }
+    try {
+        const r = await fetch("/user-auth/forgot-password", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email }),
+        });
+        if (!r.ok) {
+            setModalStatus("forgotPasswordStatus", await extractErrorMessage(r));
+            return;
+        }
+        const data = await r.json();
+        setModalStatus("forgotPasswordStatus", data.message || "If that email is registered, a reset link has been sent.", "success");
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = oldText;
+        }
+    }
+}
+
+function openResetPasswordModal(token) {
+    const modal = document.getElementById("resetPasswordModal");
+    const tokenEl = document.getElementById("resetPasswordToken");
+    const pw = document.getElementById("resetPasswordNew");
+    const confirm = document.getElementById("resetPasswordConfirm");
+    if (tokenEl) tokenEl.value = token || "";
+    if (pw) pw.value = "";
+    if (confirm) confirm.value = "";
+    setModalStatus("resetPasswordStatus", "");
+    showLoginModal();
+    if (modal) modal.classList.remove("hidden");
+    setTimeout(() => pw?.focus(), 50);
+}
+
+function closeResetPasswordModal() {
+    const modal = document.getElementById("resetPasswordModal");
+    if (modal) modal.classList.add("hidden");
+}
+
+function clearResetTokenFromUrl() {
+    try {
+        const params = new URLSearchParams(window.location.search);
+        if (!params.has("reset_token")) return;
+        params.delete("reset_token");
+        const next = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ""}${window.location.hash || ""}`;
+        window.history.replaceState({}, "", next);
+    } catch {
+        // Ignore URL cleanup failures.
+    }
+}
+
+async function submitResetPassword() {
+    const token = String(document.getElementById("resetPasswordToken")?.value || "").trim();
+    const password = document.getElementById("resetPasswordNew")?.value || "";
+    const confirm = document.getElementById("resetPasswordConfirm")?.value || "";
+    const btn = document.getElementById("resetPasswordBtn");
+    if (!token) {
+        setModalStatus("resetPasswordStatus", "Reset token is missing. Please request a new link.");
+        return;
+    }
+    if (!password || password !== confirm) {
+        setModalStatus("resetPasswordStatus", "Passwords do not match.");
+        return;
+    }
+    const oldText = btn?.textContent || "Update Password";
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = "Updating...";
+    }
+    try {
+        const r = await fetch("/user-auth/reset-password", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token, new_password: password }),
+        });
+        if (!r.ok) {
+            setModalStatus("resetPasswordStatus", await extractErrorMessage(r));
+            return;
+        }
+        clearResetTokenFromUrl();
+        setModalStatus("resetPasswordStatus", "Password updated. You can now log in.", "success");
+        setTimeout(() => {
+            closeResetPasswordModal();
+            const loginPassword = document.getElementById("loginPassword");
+            if (loginPassword) loginPassword.focus();
+        }, 900);
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = oldText;
+        }
+    }
+}
+
 function resetLoginRecaptcha() {
     if (!recaptchaEnabled || loginRecaptchaWidgetId === null || !window.grecaptcha) return;
     window.grecaptcha.reset(loginRecaptchaWidgetId);
@@ -4558,6 +4688,18 @@ window.addEventListener("load", async () => {
 
     loadSettings();
     setLastSyncSummary();
+    try {
+        const params = new URLSearchParams(window.location.search);
+        const resetToken = String(params.get("reset_token") || "").trim();
+        if (resetToken) {
+            authToken = "";
+            localStorage.removeItem("agent_auth_token");
+            openResetPasswordModal(resetToken);
+            return;
+        }
+    } catch {
+        // Continue normal login flow.
+    }
     const ok = await ensureAuthenticated();
     if (!ok) return;
 

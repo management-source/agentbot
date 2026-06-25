@@ -157,6 +157,20 @@ class User(Base):
     )
 
 
+class PasswordResetToken(Base):
+    __tablename__ = "password_reset_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), index=True)
+    token_hash: Mapped[str] = mapped_column(String, unique=True, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    requested_ip: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+    user = relationship("User")
+
+
 class ThreadTicketNote(Base):
     __tablename__ = "thread_ticket_notes"
 

@@ -36,6 +36,8 @@
     #aiReplyModal:not(.hidden){display:flex}
     #blacklistModal:not(.hidden){display:flex}
     #passwordModal:not(.hidden){display:flex}
+    #forgotPasswordModal:not(.hidden){display:flex}
+    #resetPasswordModal:not(.hidden){display:flex}
     #complianceEditModal:not(.hidden){display:flex}
     html,body{height:100%}
     body{
@@ -1943,6 +1945,141 @@
       .viewer-head .title,
       .viewer-subtitle{max-width:100%}
     }
+
+    /* Premium UI polish */
+    .page-banner,
+    .hub-hero.page-banner,
+    .myspace-hero.page-banner,
+    .system-hero.page-banner{
+      position:relative;
+      isolation:isolate;
+      overflow:hidden;
+      padding:28px;
+      border:1px solid rgba(255,255,255,.16);
+      border-radius:28px;
+      color:#fff;
+      background:
+        radial-gradient(circle at 91% 16%, rgba(249,231,167,.34), transparent 34%),
+        radial-gradient(circle at 5% 105%, rgba(180,128,28,.25), transparent 31%),
+        linear-gradient(135deg, #0a1220 0%, #151d2b 48%, #8f6f1d 100%);
+      box-shadow:0 22px 46px rgba(15,23,42,.16);
+    }
+    .page-banner::after{
+      content:"";
+      position:absolute;
+      right:-72px;
+      bottom:-178px;
+      width:430px;
+      height:430px;
+      border-radius:999px;
+      border:1px solid rgba(249,231,167,.24);
+      background:radial-gradient(circle, rgba(249,231,167,.14), transparent 64%);
+      z-index:-1;
+    }
+    .page-banner-kicker{
+      color:#f9e7a7;
+      margin-bottom:10px;
+      font-size:12px;
+      font-weight:950;
+      letter-spacing:.14em;
+      text-transform:uppercase;
+    }
+    .page-banner h2,
+    .page-banner .mail-board-title{
+      margin:0;
+      font-size:clamp(30px, 4vw, 52px);
+      line-height:1;
+      letter-spacing:-.055em;
+      color:#fff;
+    }
+    .page-banner p,
+    .page-banner .mail-board-sub{
+      margin:12px 0 0;
+      max-width:760px;
+      color:#dce5ef;
+      font-size:15px;
+      line-height:1.58;
+    }
+    .page-banner-actions{
+      display:flex;
+      flex-wrap:wrap;
+      gap:8px;
+      margin-top:18px;
+    }
+    .page-banner-actions .chip,
+    .page-banner-actions a{
+      display:inline-flex;
+      align-items:center;
+      min-height:34px;
+      padding:8px 12px;
+      border:1px solid rgba(249,231,167,.28);
+      border-radius:999px;
+      color:#f9e7a7;
+      background:rgba(255,255,255,.08);
+      text-decoration:none;
+      font-size:12px;
+      font-weight:850;
+    }
+    .card,
+    .system-card,
+    .myspace-card,
+    .system-stat,
+    .hub-tile,
+    .ticket,
+    .mail-search,
+    .rent-table-wrap{
+      border-color:#dbe4ef;
+      box-shadow:0 10px 28px rgba(15,23,42,.055);
+    }
+    .card,
+    .system-card,
+    .myspace-card{border-radius:20px}
+    .btn{
+      border-radius:999px;
+      min-height:40px;
+      font-weight:850;
+      transition:transform .16s ease, box-shadow .16s ease, background .16s ease, border-color .16s ease;
+    }
+    .btn:hover{transform:translateY(-1px); box-shadow:0 10px 18px rgba(15,23,42,.08)}
+    .btn.primary{
+      background:linear-gradient(135deg, #111827, #9a7820);
+      border-color:#9a7820;
+    }
+    input[type="text"], input[type="email"], input[type="password"], input[type="date"], input[type="number"], input[type="url"], select, textarea{
+      border-color:#dbe4ef;
+      border-radius:14px;
+    }
+    input:focus, select:focus, textarea:focus{
+      border-color:#c9a246;
+      box-shadow:0 0 0 4px rgba(201,162,70,.14);
+    }
+    .kpi.card{
+      background:
+        radial-gradient(circle at 100% 0%, rgba(201,162,70,.12), transparent 35%),
+        #fff;
+    }
+    .rent-table th{
+      background:#f4f7fb;
+      color:#344054;
+      text-transform:uppercase;
+      letter-spacing:.045em;
+      font-size:11px;
+    }
+    .rent-table tbody tr:hover td{background:#fbfcfe}
+    .filters-row,
+    .mail-toolbar{
+      padding:12px;
+      border:1px solid #dbe4ef;
+      border-radius:20px;
+      background:rgba(255,255,255,.75);
+      box-shadow:0 8px 22px rgba(15,23,42,.045);
+    }
+    @media (max-width: 720px){
+      .page-banner,
+      .hub-hero.page-banner,
+      .myspace-hero.page-banner,
+      .system-hero.page-banner{padding:22px;border-radius:22px}
+    }
   </style>
   </head>
 
@@ -1999,8 +2136,7 @@
             </form>
             <div class="login-helper">
               <a href="javascript:void(0)"
-                onclick="alert('Please contact your system administrator to reset your password.')">Forgot
-                your password?</a>
+                onclick="openForgotPasswordModal()">Forgot your password?</a>
             </div>
             <div class="login-notice">Use your approved company email address
               and password to access the system.</div>
@@ -2017,6 +2153,54 @@
         <div class="login-hero-card" aria-hidden="true"></div>
       </div>
     </section>
+
+    <div class="modal-backdrop hidden" id="forgotPasswordModal">
+      <div class="modal">
+        <div class="modal-head">
+          <h3>Reset Password</h3>
+          <button class="btn ghost" onclick="closeForgotPasswordModal()">Close</button>
+        </div>
+        <div class="modal-body">
+          <p class="small muted" style="margin-top:0">Enter your portal email and we will send a secure reset link if the account exists.</p>
+          <div class="field">
+            <div class="label">Email</div>
+            <input type="email" id="forgotPasswordEmail" autocomplete="email" placeholder="name@donspremier.com.au" />
+          </div>
+          <div class="error" id="forgotPasswordStatus" style="display:none"></div>
+        </div>
+        <div class="modal-foot">
+          <button class="btn" onclick="closeForgotPasswordModal()">Cancel</button>
+          <button class="btn primary" id="forgotPasswordBtn" onclick="submitForgotPassword()">Send Reset Link</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-backdrop hidden" id="resetPasswordModal">
+      <div class="modal">
+        <div class="modal-head">
+          <h3>Choose New Password</h3>
+          <button class="btn ghost" onclick="closeResetPasswordModal()">Close</button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" id="resetPasswordToken" />
+          <div class="field">
+            <div class="label">New Password</div>
+            <input type="password" id="resetPasswordNew" autocomplete="new-password" />
+          </div>
+          <div class="field" style="margin-top:10px">
+            <div class="label">Confirm New Password</div>
+            <input type="password" id="resetPasswordConfirm" autocomplete="new-password" />
+          </div>
+          <div class="small muted" style="margin-top:10px">Use at least 12 characters with upper/lowercase, number, and symbol.</div>
+          <div class="error" id="resetPasswordStatus" style="display:none"></div>
+        </div>
+        <div class="modal-foot">
+          <button class="btn" onclick="closeResetPasswordModal()">Cancel</button>
+          <button class="btn primary" id="resetPasswordBtn" onclick="submitResetPassword()">Update Password</button>
+        </div>
+      </div>
+    </div>
+
     <div class="app-shell" id="appShell" hidden>
       <aside class="sidebar">
         <div class="side-brand">
@@ -2219,12 +2403,16 @@
 
             <main class="content-rail">
               <div id="portalPanel">
-                <div class="hub-hero">
-                  <div class="login-kicker"
-                    style="color:#f9e7a7;margin-bottom:12px">Dons Premier Estate
+                <div class="hub-hero page-banner">
+                  <div class="page-banner-kicker">Dons Premier Estate
                     Agents Portal</div>
                   <h2>Portal Dashboard</h2>
                   <p>Integrated tools for property management.</p>
+                  <div class="page-banner-actions">
+                    <span class="chip">Operations</span>
+                    <span class="chip">Compliance</span>
+                    <span class="chip">Property Management</span>
+                  </div>
                 </div>
                 <div class="hub-grid">
                   <div class="hub-tile" data-page-tile="myspace"
@@ -2288,10 +2476,8 @@
 
               <div id="mySpacePanel" class="hidden">
                 <section class="myspace-workspace">
-                  <div class="myspace-hero">
-                    <div class="login-kicker"
-                      style="color:#f9e7a7;margin-bottom:10px">Private
-                      Workspace</div>
+                  <div class="myspace-hero page-banner">
+                    <div class="page-banner-kicker">Private Workspace</div>
                     <h2>My Space</h2>
                     <p>Your personal command centre for daily planning,
                       follow-ups, quick links, email snippets, private notes,
@@ -2481,8 +2667,9 @@
 
               <div id="inboxPanel" class="hidden">
                 <section class="mail-workspace">
-                  <div class="mail-board-head">
+                  <div class="mail-board-head page-banner">
                     <div>
+                      <div class="page-banner-kicker">Shared Inbox</div>
                       <h2 class="mail-board-title">Email Manager</h2>
                       <p class="mail-board-sub">Triage active conversations,
                         draft replies, and keep the shared inbox moving.</p>
@@ -2531,6 +2718,16 @@
               </div>
 
               <div id="rentPanel" class="hidden">
+                <div class="page-banner">
+                  <div class="page-banner-kicker">Rent Operations</div>
+                  <h2>Rent Tracker</h2>
+                  <p>Monitor rent schedules, upcoming due dates, arrears, paid status, and yearly reporting in one clean workspace.</p>
+                  <div class="page-banner-actions">
+                    <span class="chip">Due dates</span>
+                    <span class="chip">Arrears</span>
+                    <span class="chip">Year report</span>
+                  </div>
+                </div>
                 <div class="card">
                   <div class="row space">
                     <div>
@@ -2666,6 +2863,16 @@
               </div>
 
               <div id="propertiesPanel" class="hidden">
+                <div class="page-banner">
+                  <div class="page-banner-kicker">Property Register</div>
+                  <h2>Properties</h2>
+                  <p>Keep managed properties tidy, searchable, and ready for compliance tracking and future portal tools.</p>
+                  <div class="page-banner-actions">
+                    <span class="chip">Victoria only</span>
+                    <span class="chip">Autocomplete</span>
+                    <span class="chip">Register</span>
+                  </div>
+                </div>
                 <div class="card">
                   <div class="row space">
                     <div>
@@ -2759,6 +2966,17 @@
               </div>
 
               <div id="compliancePanel" class="hidden">
+                <div class="page-banner">
+                  <div class="page-banner-kicker">Compliance Workspace</div>
+                  <h2>Compliance</h2>
+                  <p>Create property compliance records, track due dates, manage providers, and keep every check audit-ready.</p>
+                  <div class="page-banner-actions">
+                    <span class="chip">MRS</span>
+                    <span class="chip">Smoke</span>
+                    <span class="chip">Gas</span>
+                    <span class="chip">Electrical</span>
+                  </div>
+                </div>
                 <div class="card">
                   <div class="row space">
                     <div>
@@ -2912,6 +3130,16 @@
               </div>
 
               <div id="coveragePanel" class="hidden">
+                <div class="page-banner">
+                  <div class="page-banner-kicker">Compliance Reporting</div>
+                  <h2>Compliance Report</h2>
+                  <p>Spot missing, overdue, and incomplete checks before they become a risk for the agency or owners.</p>
+                  <div class="page-banner-actions">
+                    <span class="chip">Missing checks</span>
+                    <span class="chip">Incomplete</span>
+                    <span class="chip">Due soon</span>
+                  </div>
+                </div>
                 <div class="card">
                   <div class="row space">
                     <div>
@@ -2994,14 +3222,17 @@
 
               <div id="systemPanel" class="hidden">
                 <section class="system-workspace">
-                  <div class="system-hero">
-                    <div class="login-kicker"
-                      style="color:#f9e7a7;margin-bottom:10px">Admin
-                      Workspace</div>
+                  <div class="system-hero page-banner">
+                    <div class="page-banner-kicker">Admin Workspace</div>
                     <h2>System Access</h2>
                     <p>Manage staff accounts, profile photos, roles, account
                       status, and password resets from one full-page
                       workspace.</p>
+                    <div class="page-banner-actions">
+                      <span class="chip">Users</span>
+                      <span class="chip">Access control</span>
+                      <span class="chip">Security</span>
+                    </div>
                   </div>
 
                   <div class="system-stats" id="systemStats"></div>
