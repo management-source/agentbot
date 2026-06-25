@@ -1,10 +1,13 @@
 <!doctype html>
 <html lang="en">
-    <head>
-        <meta charset="utf-8" />
-        <meta name="viewport" content="width=device-width,initial-scale=1" />
-        <title>Dons Premier Estate Agents · Email Reply Manager</title>
-        <style>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Dons Premier Estate Agents · Email Reply Manager</title>
+    <link rel="icon" href="/static/favicon.ico?v=1" sizes="any" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png?v=1" />
+    <link rel="apple-touch-icon" href="/static/apple-touch-icon.png?v=1" />
+    <style>
     :root{
       --bg:#f6f7fb;
       --card:#ffffff;
@@ -1941,1027 +1944,1279 @@
       .viewer-subtitle{max-width:100%}
     }
   </style>
-    </head>
+  </head>
 
-    <body class="auth-locked">
-        <script>
+  <body class="auth-locked">
+    <script>
           window.AGENTBOT_CONFIG = {{ app_config | tojson }};
         </script>
-        {% if app_config.recaptcha_enabled %}
-        <script src="https://www.google.com/recaptcha/api.js?onload=onRecaptchaLoad&render=explicit" async defer></script>
-        {% endif %}
-        <section class="login-screen" id="loginScreen">
-            <div class="login-panel">
-                <div class="login-panel-inner">
-                    <div class="login-panel-head">
-                        <img class="login-mark" src="https://ik.imagekit.io/donspremier/Banner%20-%20Logo.png?updatedAt=1767844482007" alt="Dons Premier Estate Agents" />
-                    </div>
-                    <div class="login-copy">
-                        <div class="login-kicker">Dons Premier Estate Agents Portal</div>
-                        <h1>Welcome to your Portal</h1>
-                        <p>Dons Premier Estate Agents - The Knights of Real Estate.</p>
-                    </div>
-                    <div class="login-form-shell">
-                        <form class="login-form" onsubmit="event.preventDefault(); doLogin();">
-                            <div class="login-field">
-                                <label for="loginEmail">Email</label>
-                                <input type="email" id="loginEmail" autocomplete="username" inputmode="email" required />
-                            </div>
-                            <div class="login-field">
-                                <label for="loginPassword">Password</label>
-                                <input type="password" id="loginPassword" autocomplete="current-password" required />
-                            </div>
-                            <div class="login-recaptcha-wrap{% if not app_config.recaptcha_enabled %} hidden{% endif %}">
-                                <div id="loginRecaptcha"></div>
-                            </div>
-                            {% if not app_config.recaptcha_enabled %}
-                            <div class="login-recaptcha-placeholder">
-                                reCAPTCHA is not configured yet. Add <code>RECAPTCHA_SITE_KEY</code> and <code>RECAPTCHA_SECRET_KEY</code> to enable the “I’m not a robot” checkbox.
-                            </div>
-                            {% endif %}
-                            <div class="error" id="loginError" style="display:none"></div>
-                            <button class="login-submit" id="btnLogin" type="submit">Log in</button>
-                        </form>
-                        <div class="login-helper">
-                            <a href="javascript:void(0)" onclick="alert('Please contact your system administrator to reset your password.')">Forgot your password?</a>
-                        </div>
-                        <div class="login-notice">Use your approved company email address and password to access the system.</div>
-                    </div>
-                </div>
-                <div class="login-footer">
-                    <a href="javascript:void(0)">Privacy</a>
-                    <a href="javascript:void(0)">Legal</a>
-                    <span>By logging in, you agree to Dons Premier Estate Agents system access terms.</span>
-                </div>
+    {% if app_config.recaptcha_enabled %}
+    <script
+      src="https://www.google.com/recaptcha/api.js?onload=onRecaptchaLoad&render=explicit"
+      async defer></script>
+    {% endif %}
+    <section class="login-screen" id="loginScreen">
+      <div class="login-panel">
+        <div class="login-panel-inner">
+          <div class="login-panel-head">
+            <img class="login-mark"
+              src="https://ik.imagekit.io/donspremier/Banner%20-%20Logo.png?updatedAt=1767844482007"
+              alt="Dons Premier Estate Agents" />
+          </div>
+          <div class="login-copy">
+            <div class="login-kicker">Dons Premier Estate Agents Portal</div>
+            <h1>Welcome to your Portal</h1>
+            <p>Dons Premier Estate Agents - The Knights of Real Estate.</p>
+          </div>
+          <div class="login-form-shell">
+            <form class="login-form"
+              onsubmit="event.preventDefault(); doLogin();">
+              <div class="login-field">
+                <label for="loginEmail">Email</label>
+                <input type="email" id="loginEmail" autocomplete="username"
+                  inputmode="email" required />
+              </div>
+              <div class="login-field">
+                <label for="loginPassword">Password</label>
+                <input type="password" id="loginPassword"
+                  autocomplete="current-password" required />
+              </div>
+              <div
+                class="login-recaptcha-wrap{% if not app_config.recaptcha_enabled %} hidden{% endif %}">
+                <div id="loginRecaptcha"></div>
+              </div>
+              {% if not app_config.recaptcha_enabled %}
+              <div class="login-recaptcha-placeholder">
+                reCAPTCHA is not configured yet. Add
+                <code>RECAPTCHA_SITE_KEY</code> and
+                <code>RECAPTCHA_SECRET_KEY</code> to enable the “I’m not a
+                robot” checkbox.
+              </div>
+              {% endif %}
+              <div class="error" id="loginError" style="display:none"></div>
+              <button class="login-submit" id="btnLogin" type="submit">Log
+                in</button>
+            </form>
+            <div class="login-helper">
+              <a href="javascript:void(0)"
+                onclick="alert('Please contact your system administrator to reset your password.')">Forgot
+                your password?</a>
             </div>
-            <div class="login-hero">
-                <div class="login-hero-card" aria-hidden="true"></div>
+            <div class="login-notice">Use your approved company email address
+              and password to access the system.</div>
+          </div>
+        </div>
+        <div class="login-footer">
+          <a href="javascript:void(0)">Privacy</a>
+          <a href="javascript:void(0)">Legal</a>
+          <span>By logging in, you agree to Dons Premier Estate Agents system
+            access terms.</span>
+        </div>
+      </div>
+      <div class="login-hero">
+        <div class="login-hero-card" aria-hidden="true"></div>
+      </div>
+    </section>
+    <div class="app-shell" id="appShell" hidden>
+      <aside class="sidebar">
+        <div class="side-brand">
+          <img class="brand-logo-full"
+            src="https://ik.imagekit.io/donspremier/Banner%20-%20Logo.png?updatedAt=1767844482007"
+            alt="Dons Premier Estate Agents" loading="lazy" />
+          <img class="brand-logo-collapsed"
+            src="/static/dons_premier_transparent_v2.png"
+            alt="Dons Premier Estate Agents" loading="lazy" />
+        </div>
+        <button class="side-collapse" id="sidebarToggle" type="button"
+          onclick="toggleSidebar()" aria-label="Collapse menu">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="3" y="4" width="18" height="16" rx="2"></rect>
+            <path d="M9 4v16"></path>
+            <path d="m16 9-3 3 3 3"></path>
+          </svg>
+        </button>
+        <nav class="side-nav">
+          <a id="navPortal" class="active" href="javascript:void(0)"
+            onclick="switchDashboardTab('portal')" title="Portal Hub"><span
+              class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect
+                  x="4" y="4" width="7" height="7" rx="1"></rect><rect x="13"
+                  y="4" width="7" height="5" rx="1"></rect><rect x="13" y="11"
+                  width="7" height="9" rx="1"></rect><rect x="4" y="13"
+                  width="7" height="7" rx="1"></rect></svg></span><span
+              class="nav-label">Portal Hub</span></a>
+          <a id="navMySpace" href="javascript:void(0)"
+            onclick="switchDashboardTab('myspace')" title="My Space"><span
+              class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path
+                  d="M12 3 4 8v11h16V8z"></path><path
+                  d="M9 21v-7h6v7"></path><path
+                  d="M9 9h6"></path></svg></span><span class="nav-label">My
+              Space</span></a>
+          <a id="navInbox" href="javascript:void(0)"
+            onclick="switchDashboardTab('inbox')" title="Email Manager"><span
+              class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect
+                  x="4" y="6" width="16" height="12" rx="2"></rect><path
+                  d="m4 8 8 6 8-6"></path></svg></span><span
+              class="nav-label">Email Manager</span></a>
+          <a id="navRentTracker" href="javascript:void(0)"
+            onclick="switchDashboardTab('rent')" title="Rent Tracker"><span
+              class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path
+                  d="M4 11 12 4l8 7"></path><path
+                  d="M6 10v10h12V10"></path><path
+                  d="M10 20v-5h4v5"></path></svg></span><span
+              class="nav-label">Rent Tracker</span></a>
+          <a id="navCompliance" href="javascript:void(0)"
+            onclick="switchDashboardTab('compliance')" title="Compliance"><span
+              class="nav-icon"><svg viewBox="0 0 24 24"
+                aria-hidden="true"><circle cx="12" cy="12" r="8"></circle><path
+                  d="m8.5 12.5 2.2 2.2 4.8-5.2"></path></svg></span><span
+              class="nav-label">Compliance</span></a>
+          <a id="navComplianceCoverage" href="javascript:void(0)"
+            onclick="switchDashboardTab('coverage')"
+            title="Compliance Report"><span class="nav-icon"><svg
+                viewBox="0 0 24 24" aria-hidden="true"><path
+                  d="M5 20V4h14v16"></path><path d="M8 16v-4"></path><path
+                  d="M12 16V8"></path><path
+                  d="M16 16v-6"></path></svg></span><span
+              class="nav-label">Compliance Report</span></a>
+        </nav>
+        <div class="side-bottom">
+          <div class="side-section-label">Setup</div>
+          <nav class="side-nav">
+            <a id="navProperties" href="javascript:void(0)"
+              onclick="switchDashboardTab('properties')"
+              title="Properties"><span class="nav-icon"><svg viewBox="0 0 24 24"
+                  aria-hidden="true"><path d="M4 20h16"></path><path
+                    d="M6 20V7l6-3 6 3v13"></path><path d="M9 10h2"></path><path
+                    d="M13 10h2"></path><path d="M9 14h2"></path><path
+                    d="M13 14h2"></path></svg></span><span
+                class="nav-label">Properties</span></a>
+            <a id="btnSystemUsers" class="hidden" href="javascript:void(0)"
+              onclick="switchDashboardTab('system')" title="System"><span
+                class="nav-icon"><svg viewBox="0 0 24 24"
+                  aria-hidden="true"><circle cx="12" cy="12"
+                    r="3"></circle><path d="M12 3v3"></path><path
+                    d="M12 18v3"></path><path d="m4.8 4.8 2.1 2.1"></path><path
+                    d="m17.1 17.1 2.1 2.1"></path><path d="M3 12h3"></path><path
+                    d="M18 12h3"></path><path d="m4.8 19.2 2.1-2.1"></path><path
+                    d="m17.1 6.9 2.1-2.1"></path></svg></span><span
+                class="nav-label">System</span></a>
+          </nav>
+        </div>
+      </aside>
+      <div class="main-wrap">
+        <div class="account-bar">
+          <div style="position:relative">
+            <div class="account-trigger" id="accountMenuTrigger"
+              onclick="toggleAccountMenu()">
+              <img class="account-avatar" id="accountBarAvatar"
+                src="/static/logo.png" alt="profile"
+                onerror="this.onerror=null;this.src='/static/logo.png'" />
+              <span class="account-name" id="accountBarUserName">Not signed
+                in</span>
             </div>
-        </section>
-        <div class="app-shell" id="appShell" hidden>
-            <aside class="sidebar">
-                <div class="side-brand">
-                    <img class="brand-logo-full" src="https://ik.imagekit.io/donspremier/Banner%20-%20Logo.png?updatedAt=1767844482007" alt="Dons Premier Estate Agents" loading="lazy" />
-                    <img class="brand-logo-collapsed" src="/static/dons_premier_transparent_v2.png" alt="Dons Premier Estate Agents" loading="lazy" />
-                </div>
-                <button class="side-collapse" id="sidebarToggle" type="button" onclick="toggleSidebar()" aria-label="Collapse menu">
-                    <svg viewBox="0 0 24 24" aria-hidden="true">
-                        <rect x="3" y="4" width="18" height="16" rx="2"></rect>
-                        <path d="M9 4v16"></path>
-                        <path d="m16 9-3 3 3 3"></path>
-                    </svg>
-                </button>
-                <nav class="side-nav">
-                    <a id="navPortal" class="active" href="javascript:void(0)" onclick="switchDashboardTab('portal')" title="Portal Hub"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1"></rect><rect x="13" y="4" width="7" height="5" rx="1"></rect><rect x="13" y="11" width="7" height="9" rx="1"></rect><rect x="4" y="13" width="7" height="7" rx="1"></rect></svg></span><span class="nav-label">Portal Hub</span></a>
-                    <a id="navMySpace" href="javascript:void(0)" onclick="switchDashboardTab('myspace')" title="My Space"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4 8v11h16V8z"></path><path d="M9 21v-7h6v7"></path><path d="M9 9h6"></path></svg></span><span class="nav-label">My Space</span></a>
-                    <a id="navInbox" href="javascript:void(0)" onclick="switchDashboardTab('inbox')" title="Email Manager"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="6" width="16" height="12" rx="2"></rect><path d="m4 8 8 6 8-6"></path></svg></span><span class="nav-label">Email Manager</span></a>
-                    <a id="navRentTracker" href="javascript:void(0)" onclick="switchDashboardTab('rent')" title="Rent Tracker"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11 12 4l8 7"></path><path d="M6 10v10h12V10"></path><path d="M10 20v-5h4v5"></path></svg></span><span class="nav-label">Rent Tracker</span></a>
-                    <a id="navCompliance" href="javascript:void(0)" onclick="switchDashboardTab('compliance')" title="Compliance"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"></circle><path d="m8.5 12.5 2.2 2.2 4.8-5.2"></path></svg></span><span class="nav-label">Compliance</span></a>
-                    <a id="navComplianceCoverage" href="javascript:void(0)" onclick="switchDashboardTab('coverage')" title="Compliance Report"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V4h14v16"></path><path d="M8 16v-4"></path><path d="M12 16V8"></path><path d="M16 16v-6"></path></svg></span><span class="nav-label">Compliance Report</span></a>
-                </nav>
-                <div class="side-bottom">
-                    <div class="side-section-label">Setup</div>
-                    <nav class="side-nav">
-                        <a id="navProperties" href="javascript:void(0)" onclick="switchDashboardTab('properties')" title="Properties"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h16"></path><path d="M6 20V7l6-3 6 3v13"></path><path d="M9 10h2"></path><path d="M13 10h2"></path><path d="M9 14h2"></path><path d="M13 14h2"></path></svg></span><span class="nav-label">Properties</span></a>
-                        <a id="btnSystemUsers" class="hidden" href="javascript:void(0)" onclick="switchDashboardTab('system')" title="System"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M12 3v3"></path><path d="M12 18v3"></path><path d="m4.8 4.8 2.1 2.1"></path><path d="m17.1 17.1 2.1 2.1"></path><path d="M3 12h3"></path><path d="M18 12h3"></path><path d="m4.8 19.2 2.1-2.1"></path><path d="m17.1 6.9 2.1-2.1"></path></svg></span><span class="nav-label">System</span></a>
-                    </nav>
-                </div>
-            </aside>
-            <div class="main-wrap">
-            <div class="account-bar">
-                <div style="position:relative">
-                    <div class="account-trigger" id="accountMenuTrigger" onclick="toggleAccountMenu()">
-                        <img class="account-avatar" id="accountBarAvatar" src="/static/logo.png" alt="profile" onerror="this.onerror=null;this.src='/static/logo.png'" />
-                        <span class="account-name" id="accountBarUserName">Not signed in</span>
-                    </div>
-                    <div class="account-menu" id="accountMenuDropdown">
-                        <button onclick="openPasswordModal()">Change Password</button>
-                        <button onclick="logout()">Logout</button>
-                    </div>
-                </div>
-                <div class="small muted">System Access</div>
+            <div class="account-menu" id="accountMenuDropdown">
+              <button onclick="openPasswordModal()">Change Password</button>
+              <button onclick="logout()">Logout</button>
             </div>
-            <div class="topbar-modern">
-            <div>
-                <h1 id="topbarTitle">Portal Hub</h1>
-                <p id="topbarSubtitle">Your workspace shortcuts for email, rent, compliance, and property setup.</p>
-            </div>
-            <div class="topbar-actions">
-                <span class="chip">Mode: Live</span>
-                <span class="chip">Queue: <span id="queueViewMode">Awaiting Reply</span></span>
-                <span class="chip">Mailbox: <span id="queueMailboxMode">-</span></span>
-            </div>
+          </div>
+          <div class="small muted">System Access</div>
+        </div>
+        <div class="topbar-modern">
+          <div>
+            <h1 id="topbarTitle">Portal Hub</h1>
+            <p id="topbarSubtitle">Your workspace shortcuts for email, rent,
+              compliance, and property setup.</p>
+          </div>
+          <div class="topbar-actions">
+            <span class="chip">Mode: Live</span>
+            <span class="chip">Queue: <span id="queueViewMode">Awaiting
+                Reply</span></span>
+            <span class="chip">Mailbox: <span
+                id="queueMailboxMode">-</span></span>
+          </div>
         </div>
 
         <div class="page">
-            <div class="dashboard-shell portal-mode" id="dashboardShell">
-                <aside class="left-rail">
-                    <div class="top-grid">
+          <div class="dashboard-shell portal-mode" id="dashboardShell">
+            <aside class="left-rail">
+              <div class="top-grid">
                 <div class="card brand">
-                    <div style="margin-top:14px" class="row space">
-                        <div class="pill"><span class="dot"
-                                id="authDot"></span><span id="authText">Not
-                                signed in</span></div>
-                    </div>
+                  <div style="margin-top:14px" class="row space">
+                    <div class="pill"><span class="dot"
+                        id="authDot"></span><span id="authText">Not
+                        signed in</span></div>
+                  </div>
 
-                    <div style="margin-top:10px" class="row">
-                        <button class="btn" id="btnSettings"
-                            onclick="openSettings()">Settings</button>
-                        <button class="btn" id="googleBtn"
-                            onclick="googleConnectOrManage()">Connect to
-                            Google</button>
-                        <!-- Autopilot / Query rules removed -->
-                        <button class="btn" id="btnBlacklist" onclick="openBlacklistModal()">Blacklist</button>
-                    </div>
+                  <div style="margin-top:10px" class="row">
+                    <button class="btn" id="btnSettings"
+                      onclick="openSettings()">Settings</button>
+                    <button class="btn" id="googleBtn"
+                      onclick="googleConnectOrManage()">Connect to
+                      Google</button>
+                    <!-- Autopilot / Query rules removed -->
+                    <button class="btn" id="btnBlacklist"
+                      onclick="openBlacklistModal()">Blacklist</button>
+                  </div>
 
-                    <p class="small muted" style="margin-top:10px">Mailbox:
-                        <select id="mailboxSelect" style="margin-left:8px; padding:4px 8px; border:1px solid var(--border); border-radius:8px; background:#fff;"></select>
-                        <span id="mailboxLabel" class="hidden">—</span></p>
-                    <p class="small muted" style="margin-top:0">Status: <span
-                            id="statusLine">—</span></p>
-                    <p class="small muted" style="margin-top:0">Last sync: <span
-                            id="lastSync">—</span></p>
+                  <p class="small muted" style="margin-top:10px">Mailbox:
+                    <select id="mailboxSelect"
+                      style="margin-left:8px; padding:4px 8px; border:1px solid var(--border); border-radius:8px; background:#fff;"></select>
+                    <span id="mailboxLabel" class="hidden">—</span></p>
+                  <p class="small muted" style="margin-top:0">Status: <span
+                      id="statusLine">—</span></p>
+                  <p class="small muted" style="margin-top:0">Last sync: <span
+                      id="lastSync">—</span></p>
                 </div>
 
                 <div class="card">
-                    <div class="row space">
-                        <div>
-                            <p class="panel-title">Email Sync</p>
-                            <p class="panel-sub" id="syncInfo">Fetch unreplied emails and keep tickets current.</p>
-                        </div>
-                        <div class="pill" id="googlePill"
-                            style="display:none"><span
-                                class="dot green"></span><span>Google
-                                Connected</span></div>
+                  <div class="row space">
+                    <div>
+                      <p class="panel-title">Email Sync</p>
+                      <p class="panel-sub" id="syncInfo">Fetch unreplied emails
+                        and keep tickets current.</p>
                     </div>
+                    <div class="pill" id="googlePill"
+                      style="display:none"><span
+                        class="dot green"></span><span>Google
+                        Connected</span></div>
+                  </div>
 
-                    <div style="margin-top:12px" class="row">
-                        <div class="field">
-                            <div class="label">From</div>
-                            <input type="date" id="fromDate" />
-                        </div>
-                        <div class="field">
-                            <div class="label">To</div>
-                            <input type="date" id="toDate" />
-                        </div>
-                        <div class="field" style="max-width:120px">
-                            <div class="label">Limit</div>
-                            <input type="number" id="limit" min="1" max="2000"
-                                value="500" />
-                        </div>
-                        <label class="checkbox">
-                            <input type="checkbox" id="incremental" checked />
-                            Incremental
-                        </label>
-                        <label class="checkbox">
-                            <input type="checkbox" id="allMail" />
-                            All Mail
-                        </label>
+                  <div style="margin-top:12px" class="row">
+                    <div class="field">
+                      <div class="label">From</div>
+                      <input type="date" id="fromDate" />
                     </div>
+                    <div class="field">
+                      <div class="label">To</div>
+                      <input type="date" id="toDate" />
+                    </div>
+                    <div class="field" style="max-width:120px">
+                      <div class="label">Limit</div>
+                      <input type="number" id="limit" min="1" max="2000"
+                        value="500" />
+                    </div>
+                    <label class="checkbox">
+                      <input type="checkbox" id="incremental" checked />
+                      Incremental
+                    </label>
+                    <label class="checkbox">
+                      <input type="checkbox" id="allMail" />
+                      All Mail
+                    </label>
+                  </div>
 
-                    <div class="controls-actions">
-                        <button class="btn primary" id="btnFetch"
-                            onclick="fetchNow()">Fetch Now</button>
-                        <button class="btn" id="btnCheckUpdates"
-                            onclick="checkUpdates()">Check Updates</button>
-                        <button class="btn" id="btnClearFilter"
-                            onclick="clearDateFilter()">Clear Dates</button>
-                    </div>
+                  <div class="controls-actions">
+                    <button class="btn primary" id="btnFetch"
+                      onclick="fetchNow()">Fetch Now</button>
+                    <button class="btn" id="btnCheckUpdates"
+                      onclick="checkUpdates()">Check Updates</button>
+                    <button class="btn" id="btnClearFilter"
+                      onclick="clearDateFilter()">Clear Dates</button>
+                  </div>
                 </div>
-                    </div>
-                </aside>
+              </div>
+            </aside>
 
-                <main class="content-rail">
-            <div id="portalPanel">
+            <main class="content-rail">
+              <div id="portalPanel">
                 <div class="hub-hero">
-                    <div class="login-kicker" style="color:#f9e7a7;margin-bottom:12px">Dons Premier Estate Agents Portal</div>
-                    <h2>Portal Dashboard</h2>
-                    <p>Integrated tools for property management and compliance.</p>
+                  <div class="login-kicker"
+                    style="color:#f9e7a7;margin-bottom:12px">Dons Premier Estate
+                    Agents Portal</div>
+                  <h2>Portal Dashboard</h2>
+                  <p>Integrated tools for property management.</p>
                 </div>
                 <div class="hub-grid">
-                    <div class="hub-tile" data-page-tile="myspace" onclick="switchDashboardTab('myspace')">
-                        <div class="tile-mark">MS</div>
-                        <h3>My Space</h3>
-                        <p>Your private planner for follow-ups, links, snippets, notes, and shared staff guides.</p>
-                        <div class="tile-action">Open my space</div>
-                    </div>
-                    <div class="hub-tile" data-page-tile="inbox" onclick="switchDashboardTab('inbox')">
-                        <div class="tile-mark">EM</div>
-                        <h3>Email Manager</h3>
-                        <p>Manage inbox queues, quick replies, AI drafts, sync controls, and active conversations.</p>
-                        <div class="tile-action">Open emails</div>
-                    </div>
-                    <div class="hub-tile" data-page-tile="rent" onclick="switchDashboardTab('rent')">
-                        <div class="tile-mark">RT</div>
-                        <h3>Rent Tracker</h3>
-                        <p>Import rent schedules and monitor overdue, due soon, paid, partial, and vacant statuses.</p>
-                        <div class="tile-action">Track rent</div>
-                    </div>
-                    <div class="hub-tile" data-page-tile="compliance" onclick="switchDashboardTab('compliance')">
-                        <div class="tile-mark">CL</div>
-                        <h3>Compliance</h3>
-                        <p>Add checks, update providers, completion dates, findings, and automatically calculate due dates.</p>
-                        <div class="tile-action">Manage checks</div>
-                    </div>
-                    <div class="hub-tile" data-page-tile="coverage" onclick="switchDashboardTab('coverage')">
-                        <div class="tile-mark">CR</div>
-                        <h3>Compliance Report</h3>
-                        <p>See which properties are missing or have incomplete MRS, Smoke, Gas, and Electrical checks.</p>
-                        <div class="tile-action">Review gaps</div>
-                    </div>
-                    <div class="hub-tile" data-page-tile="properties" onclick="switchDashboardTab('properties')">
-                        <div class="tile-mark">PR</div>
-                        <h3>Properties</h3>
-                        <p>Import, add, search, and maintain your active Victorian managed property register.</p>
-                        <div class="tile-action">Open register</div>
-                    </div>
-                    <div class="hub-tile hidden" id="portalSystemTile" data-page-tile="system" onclick="switchDashboardTab('system')">
-                        <div class="tile-mark">AD</div>
-                        <h3>System</h3>
-                        <p>Admin-only user management and access control tools for the portal.</p>
-                        <div class="tile-action">Manage access</div>
-                    </div>
+                  <div class="hub-tile" data-page-tile="myspace"
+                    onclick="switchDashboardTab('myspace')">
+                    <div class="tile-mark">MS</div>
+                    <h3>My Space</h3>
+                    <p>Your private planner for follow-ups, links, snippets,
+                      notes, and shared staff guides.</p>
+                    <div class="tile-action">Open my space</div>
+                  </div>
+                  <div class="hub-tile" data-page-tile="inbox"
+                    onclick="switchDashboardTab('inbox')">
+                    <div class="tile-mark">EM</div>
+                    <h3>Email Manager</h3>
+                    <p>Manage inbox queues, quick replies, AI drafts, sync
+                      controls, and active conversations.</p>
+                    <div class="tile-action">Open emails</div>
+                  </div>
+                  <div class="hub-tile" data-page-tile="rent"
+                    onclick="switchDashboardTab('rent')">
+                    <div class="tile-mark">RT</div>
+                    <h3>Rent Tracker</h3>
+                    <p>Import rent schedules and monitor overdue, due soon,
+                      paid, partial, and vacant statuses.</p>
+                    <div class="tile-action">Track rent</div>
+                  </div>
+                  <div class="hub-tile" data-page-tile="compliance"
+                    onclick="switchDashboardTab('compliance')">
+                    <div class="tile-mark">CL</div>
+                    <h3>Compliance</h3>
+                    <p>Add checks, update providers, completion dates, findings,
+                      and automatically calculate due dates.</p>
+                    <div class="tile-action">Manage checks</div>
+                  </div>
+                  <div class="hub-tile" data-page-tile="coverage"
+                    onclick="switchDashboardTab('coverage')">
+                    <div class="tile-mark">CR</div>
+                    <h3>Compliance Report</h3>
+                    <p>See which properties are missing or have incomplete MRS,
+                      Smoke, Gas, and Electrical checks.</p>
+                    <div class="tile-action">Review Reports</div>
+                  </div>
+                  <div class="hub-tile" data-page-tile="properties"
+                    onclick="switchDashboardTab('properties')">
+                    <div class="tile-mark">PR</div>
+                    <h3>Properties</h3>
+                    <p>Import, add, search, and maintain property register.</p>
+                    <div class="tile-action">Open register</div>
+                  </div>
+                  <div class="hub-tile hidden" id="portalSystemTile"
+                    data-page-tile="system"
+                    onclick="switchDashboardTab('system')">
+                    <div class="tile-mark">AD</div>
+                    <h3>System</h3>
+                    <p>Admin-only user management and access control tools for
+                      the portal.</p>
+                    <div class="tile-action">Manage access</div>
+                  </div>
                 </div>
-            </div>
+              </div>
 
-            <div id="mySpacePanel" class="hidden">
+              <div id="mySpacePanel" class="hidden">
                 <section class="myspace-workspace">
-                    <div class="myspace-hero">
-                        <div class="login-kicker" style="color:#f9e7a7;margin-bottom:10px">Private Workspace</div>
-                        <h2>My Space</h2>
-                        <p>Your personal command centre for daily planning, follow-ups, quick links, email snippets, private notes, and shared staff guides.</p>
-                        <div class="myspace-jumpbar">
-                            <a href="#mySpacePlannerCard">Planner</a>
-                            <a href="#mySpaceQuickLinksCard">Quick Links</a>
-                            <a href="#mySpaceSnippetsCard">Snippets</a>
-                            <a href="#mySpaceGuidesCard">Staff Guides</a>
+                  <div class="myspace-hero">
+                    <div class="login-kicker"
+                      style="color:#f9e7a7;margin-bottom:10px">Private
+                      Workspace</div>
+                    <h2>My Space</h2>
+                    <p>Your personal command centre for daily planning,
+                      follow-ups, quick links, email snippets, private notes,
+                      and shared staff guides.</p>
+                    <div class="myspace-jumpbar">
+                      <a href="#mySpacePlannerCard">Planner</a>
+                      <a href="#mySpaceQuickLinksCard">Quick Links</a>
+                      <a href="#mySpaceSnippetsCard">Snippets</a>
+                      <a href="#mySpaceGuidesCard">Staff Guides</a>
+                    </div>
+                  </div>
+
+                  <div class="system-stats" id="mySpaceStats"></div>
+
+                  <div class="myspace-grid">
+                    <div class="myspace-card wide myspace-planner-card"
+                      id="mySpacePlannerCard">
+                      <h3>Daily Planner + Follow-Up Tracker</h3>
+                      <p>Plan today, park work for later, and keep chase-ups
+                        visible. Only your login can access these items.</p>
+                      <div class="myspace-add">
+                        <div class="field myspace-task-field">
+                          <div class="label">Task</div>
+                          <input type="text" id="mySpaceNewTitle"
+                            placeholder="What needs attention?" />
                         </div>
+                        <div class="field">
+                          <div class="label">Lane</div>
+                          <select id="mySpaceNewBucket">
+                            <option value="today">Today</option>
+                            <option value="week">This Week</option>
+                            <option value="later">Later</option>
+                          </select>
+                        </div>
+                        <div class="field">
+                          <div class="label">Type</div>
+                          <select id="mySpaceNewType"
+                            onchange="toggleMySpaceNewFollowField(this.value)">
+                            <option value="task">Task</option>
+                            <option value="follow_up">Follow-up</option>
+                          </select>
+                        </div>
+                        <div class="field">
+                          <div class="label">Priority</div>
+                          <select id="mySpaceNewPriority">
+                            <option value="normal">Normal</option>
+                            <option value="high">High</option>
+                            <option value="low">Low</option>
+                          </select>
+                        </div>
+                        <div class="field">
+                          <div class="label">Due Date</div>
+                          <input type="date" id="mySpaceNewDue" />
+                        </div>
+                        <div class="field myspace-follow-field hidden"
+                          id="mySpaceNewFollowField">
+                          <div class="label">Follow Up With</div>
+                          <input type="text" id="mySpaceNewFollowUpWith"
+                            placeholder="Tenant, owner, supplier..." />
+                        </div>
+                        <div class="myspace-form-actions">
+                          <span class="small muted">Saved to your private
+                            workspace.</span>
+                          <button class="btn primary"
+                            onclick="addMySpaceTodo()">Add Task</button>
+                        </div>
+                      </div>
+                      <div class="myspace-planner">
+                        <div class="myspace-lane">
+                          <div class="myspace-lane-head">
+                            <h4>Today</h4>
+                            <span class="myspace-count"
+                              id="mySpaceTodotodayCount">0</span>
+                          </div>
+                          <div class="myspace-lane-list"
+                            id="mySpaceTodotoday"></div>
+                        </div>
+                        <div class="myspace-lane">
+                          <div class="myspace-lane-head">
+                            <h4>This Week</h4>
+                            <span class="myspace-count"
+                              id="mySpaceTodoweekCount">0</span>
+                          </div>
+                          <div class="myspace-lane-list"
+                            id="mySpaceTodoweek"></div>
+                        </div>
+                        <div class="myspace-lane">
+                          <div class="myspace-lane-head">
+                            <h4>Later</h4>
+                            <span class="myspace-count"
+                              id="mySpaceTodolaterCount">0</span>
+                          </div>
+                          <div class="myspace-lane-list"
+                            id="mySpaceTodolater"></div>
+                        </div>
+                      </div>
                     </div>
 
-                    <div class="system-stats" id="mySpaceStats"></div>
-
-                    <div class="myspace-grid">
-                        <div class="myspace-card wide myspace-planner-card" id="mySpacePlannerCard">
-                            <h3>Daily Planner + Follow-Up Tracker</h3>
-                            <p>Plan today, park work for later, and keep chase-ups visible. Only your login can access these items.</p>
-                            <div class="myspace-add">
-                                <div class="field myspace-task-field">
-                                    <div class="label">Task</div>
-                                    <input type="text" id="mySpaceNewTitle" placeholder="What needs attention?" />
-                                </div>
-                                <div class="field">
-                                    <div class="label">Lane</div>
-                                    <select id="mySpaceNewBucket">
-                                        <option value="today">Today</option>
-                                        <option value="week">This Week</option>
-                                        <option value="later">Later</option>
-                                    </select>
-                                </div>
-                                <div class="field">
-                                    <div class="label">Type</div>
-                                    <select id="mySpaceNewType" onchange="toggleMySpaceNewFollowField(this.value)">
-                                        <option value="task">Task</option>
-                                        <option value="follow_up">Follow-up</option>
-                                    </select>
-                                </div>
-                                <div class="field">
-                                    <div class="label">Priority</div>
-                                    <select id="mySpaceNewPriority">
-                                        <option value="normal">Normal</option>
-                                        <option value="high">High</option>
-                                        <option value="low">Low</option>
-                                    </select>
-                                </div>
-                                <div class="field">
-                                    <div class="label">Due Date</div>
-                                    <input type="date" id="mySpaceNewDue" />
-                                </div>
-                                <div class="field myspace-follow-field hidden" id="mySpaceNewFollowField">
-                                    <div class="label">Follow Up With</div>
-                                    <input type="text" id="mySpaceNewFollowUpWith" placeholder="Tenant, owner, supplier..." />
-                                </div>
-                                <div class="myspace-form-actions">
-                                    <span class="small muted">Saved to your private workspace.</span>
-                                    <button class="btn primary" onclick="addMySpaceTodo()">Add Task</button>
-                                </div>
-                            </div>
-                            <div class="myspace-planner">
-                                <div class="myspace-lane">
-                                    <div class="myspace-lane-head">
-                                        <h4>Today</h4>
-                                        <span class="myspace-count" id="mySpaceTodotodayCount">0</span>
-                                    </div>
-                                    <div class="myspace-lane-list" id="mySpaceTodotoday"></div>
-                                </div>
-                                <div class="myspace-lane">
-                                    <div class="myspace-lane-head">
-                                        <h4>This Week</h4>
-                                        <span class="myspace-count" id="mySpaceTodoweekCount">0</span>
-                                    </div>
-                                    <div class="myspace-lane-list" id="mySpaceTodoweek"></div>
-                                </div>
-                                <div class="myspace-lane">
-                                    <div class="myspace-lane-head">
-                                        <h4>Later</h4>
-                                        <span class="myspace-count" id="mySpaceTodolaterCount">0</span>
-                                    </div>
-                                    <div class="myspace-lane-list" id="mySpaceTodolater"></div>
-                                </div>
-                            </div>
+                    <div class="myspace-card" id="mySpaceNotesCard">
+                      <div class="row space">
+                        <div>
+                          <h3>Private Notes</h3>
+                          <p>A scratchpad for today's reminders, call notes, or
+                            planning.</p>
                         </div>
+                        <span class="small muted"
+                          id="mySpaceNoteStatus">Autosaves</span>
+                      </div>
+                      <textarea id="mySpaceNote" class="myspace-note"
+                        oninput="scheduleMySpaceNoteSave()"
+                        placeholder="Write private notes here..."></textarea>
+                      <div class="myspace-privacy">
+                        Your planner, snippets, links, and notes are private to
+                        your account. Staff guides are shared because they are
+                        team resources.
+                      </div>
+                    </div>
+                  </div>
 
-                        <div class="myspace-card" id="mySpaceNotesCard">
-                            <div class="row space">
-                                <div>
-                                    <h3>Private Notes</h3>
-                                    <p>A scratchpad for today's reminders, call notes, or planning.</p>
-                                </div>
-                                <span class="small muted" id="mySpaceNoteStatus">Autosaves</span>
-                            </div>
-                            <textarea id="mySpaceNote" class="myspace-note" oninput="scheduleMySpaceNoteSave()" placeholder="Write private notes here..."></textarea>
-                            <div class="myspace-privacy">
-                                Your planner, snippets, links, and notes are private to your account. Staff guides are shared because they are team resources.
-                            </div>
-                        </div>
+                  <div class="myspace-tool-grid">
+                    <div class="myspace-card" id="mySpaceQuickLinksCard">
+                      <h3>Quick Links</h3>
+                      <p>Keep your daily portals, report URLs, calendars, and
+                        supplier pages one click away.</p>
+                      <div class="myspace-tool-form">
+                        <input type="text" id="mySpaceLinkTitle"
+                          placeholder="Link title" />
+                        <input type="url" id="mySpaceLinkUrl"
+                          placeholder="https://..." />
+                        <textarea id="mySpaceLinkNotes"
+                          placeholder="Optional notes for this link..."></textarea>
+                        <button class="btn primary"
+                          onclick="addMySpaceQuickLink()">Add Quick
+                          Link</button>
+                      </div>
+                      <div id="mySpaceQuickLinks"
+                        class="myspace-tool-list"></div>
                     </div>
 
-                    <div class="myspace-tool-grid">
-                        <div class="myspace-card" id="mySpaceQuickLinksCard">
-                            <h3>Quick Links</h3>
-                            <p>Keep your daily portals, report URLs, calendars, and supplier pages one click away.</p>
-                            <div class="myspace-tool-form">
-                                <input type="text" id="mySpaceLinkTitle" placeholder="Link title" />
-                                <input type="url" id="mySpaceLinkUrl" placeholder="https://..." />
-                                <textarea id="mySpaceLinkNotes" placeholder="Optional notes for this link..."></textarea>
-                                <button class="btn primary" onclick="addMySpaceQuickLink()">Add Quick Link</button>
-                            </div>
-                            <div id="mySpaceQuickLinks" class="myspace-tool-list"></div>
+                    <div class="myspace-card" id="mySpaceSnippetsCard">
+                      <h3>Email Snippets</h3>
+                      <p>Save repeat wording for rent follow-ups, compliance
+                        requests, tenant updates, and owner replies.</p>
+                      <div class="myspace-tool-form">
+                        <div class="myspace-inline-fields">
+                          <input type="text" id="mySpaceSnippetTitle"
+                            placeholder="Snippet title" />
+                          <input type="text" id="mySpaceSnippetCategory"
+                            placeholder="Category" />
                         </div>
-
-                        <div class="myspace-card" id="mySpaceSnippetsCard">
-                            <h3>Email Snippets</h3>
-                            <p>Save repeat wording for rent follow-ups, compliance requests, tenant updates, and owner replies.</p>
-                            <div class="myspace-tool-form">
-                                <div class="myspace-inline-fields">
-                                    <input type="text" id="mySpaceSnippetTitle" placeholder="Snippet title" />
-                                    <input type="text" id="mySpaceSnippetCategory" placeholder="Category" />
-                                </div>
-                                <textarea id="mySpaceSnippetBody" class="myspace-snippet-body" placeholder="Write the email wording here..."></textarea>
-                                <button class="btn primary" onclick="addMySpaceSnippet()">Add Snippet</button>
-                            </div>
-                            <div id="mySpaceSnippets" class="myspace-tool-list"></div>
-                        </div>
+                        <textarea id="mySpaceSnippetBody"
+                          class="myspace-snippet-body"
+                          placeholder="Write the email wording here..."></textarea>
+                        <button class="btn primary"
+                          onclick="addMySpaceSnippet()">Add Snippet</button>
+                      </div>
+                      <div id="mySpaceSnippets" class="myspace-tool-list"></div>
                     </div>
+                  </div>
 
-                    <div class="myspace-card" id="mySpaceGuidesCard">
-                        <div class="row space">
-                            <div>
-                                <h3>Staff Guides</h3>
-                                <p>Upload PDF instructions for common office tasks so the team can view them anytime.</p>
-                            </div>
-                            <span class="user-chip">PDF library</span>
-                        </div>
-                        <div id="mySpaceGuideUpload" class="myspace-guide-upload hidden">
-                            <input type="text" id="mySpaceGuideTitle" placeholder="Guide title" />
-                            <textarea id="mySpaceGuideDescription" placeholder="Short description or when to use this guide..."></textarea>
-                            <input type="file" id="mySpaceGuideFile" accept="application/pdf" />
-                            <button class="btn primary" onclick="uploadMySpaceGuide()">Upload Staff Guide</button>
-                        </div>
-                        <div id="mySpaceStaffGuides" class="myspace-guide-list"></div>
+                  <div class="myspace-card" id="mySpaceGuidesCard">
+                    <div class="row space">
+                      <div>
+                        <h3>Staff Guides</h3>
+                        <p>Upload PDF instructions for common office tasks so
+                          the team can view them anytime.</p>
+                      </div>
+                      <span class="user-chip">PDF library</span>
                     </div>
+                    <div id="mySpaceGuideUpload"
+                      class="myspace-guide-upload hidden">
+                      <input type="text" id="mySpaceGuideTitle"
+                        placeholder="Guide title" />
+                      <textarea id="mySpaceGuideDescription"
+                        placeholder="Short description or when to use this guide..."></textarea>
+                      <input type="file" id="mySpaceGuideFile"
+                        accept="application/pdf" />
+                      <button class="btn primary"
+                        onclick="uploadMySpaceGuide()">Upload Staff
+                        Guide</button>
+                    </div>
+                    <div id="mySpaceStaffGuides"
+                      class="myspace-guide-list"></div>
+                  </div>
                 </section>
-            </div>
+              </div>
 
-            <div id="inboxPanel" class="hidden">
-            <section class="mail-workspace">
-                <div class="mail-board-head">
+              <div id="inboxPanel" class="hidden">
+                <section class="mail-workspace">
+                  <div class="mail-board-head">
                     <div>
-                        <h2 class="mail-board-title">Email Manager</h2>
-                        <p class="mail-board-sub">Triage active conversations, draft replies, and keep the shared inbox moving.</p>
+                      <h2 class="mail-board-title">Email Manager</h2>
+                      <p class="mail-board-sub">Triage active conversations,
+                        draft replies, and keep the shared inbox moving.</p>
                     </div>
                     <div class="mail-board-meta">
-                        <span class="chip">Mailbox: <span id="mailboxBadge">-</span></span>
-                        <span class="chip">Last sync: <span id="mailLastSyncMirror">-</span></span>
+                      <span class="chip">Mailbox: <span
+                          id="mailboxBadge">-</span></span>
+                      <span class="chip">Last sync: <span
+                          id="mailLastSyncMirror">-</span></span>
                     </div>
-                </div>
+                  </div>
 
-                <div class="mail-toolbar">
+                  <div class="mail-toolbar">
                     <div class="seg status-tabs" id="statusSeg">
-                        <button data-tab="all">All Emails <span class="pill" id="tabAllCount">0</span></button>
-                        <button data-tab="awaiting_reply" class="active">Awaiting Reply <span class="pill" id="tabAwaitingCount">0</span></button>
-                        <button data-tab="in_progress">In Progress <span class="pill" id="tabInProgressCount">0</span></button>
-                        <button data-tab="responded">Responded <span class="pill" id="tabRespondedCount">0</span></button>
-                        <button data-tab="no_reply_needed">Reply not Needed <span class="pill" id="tabNoReplyNeededCount">0</span></button>
+                      <button data-tab="all">All Emails <span class="pill"
+                          id="tabAllCount">0</span></button>
+                      <button data-tab="awaiting_reply" class="active">Awaiting
+                        Reply <span class="pill"
+                          id="tabAwaitingCount">0</span></button>
+                      <button data-tab="in_progress">In Progress <span
+                          class="pill" id="tabInProgressCount">0</span></button>
+                      <button data-tab="responded">Responded <span class="pill"
+                          id="tabRespondedCount">0</span></button>
+                      <button data-tab="no_reply_needed">Reply not Needed <span
+                          class="pill"
+                          id="tabNoReplyNeededCount">0</span></button>
                     </div>
 
                     <label class="mail-search">
-                        <span>Search</span>
-                        <input type="text" id="searchBox"
-                            placeholder="Subject, sender, address..." />
+                      <span>Search</span>
+                      <input type="text" id="searchBox"
+                        placeholder="Subject, sender, address..." />
                     </label>
-                </div>
+                  </div>
 
-                <div id="ticketList" class="ticket-list"></div>
-                <div id="pagination" class="row space" style="margin-top:2px; display:none">
-                    <button class="btn" id="btnPrev" onclick="prevPage()">Prev</button>
+                  <div id="ticketList" class="ticket-list"></div>
+                  <div id="pagination" class="row space"
+                    style="margin-top:2px; display:none">
+                    <button class="btn" id="btnPrev"
+                      onclick="prevPage()">Prev</button>
                     <div class="small muted" id="pageInfo">Page 1</div>
-                    <button class="btn" id="btnNext" onclick="nextPage()">Next</button>
-                </div>
-            </section>
-            </div>
+                    <button class="btn" id="btnNext"
+                      onclick="nextPage()">Next</button>
+                  </div>
+                </section>
+              </div>
 
-            <div id="rentPanel" class="hidden">
+              <div id="rentPanel" class="hidden">
                 <div class="card">
-                    <div class="row space">
-                        <div>
-                            <p class="panel-title">Rent Due Tracker</p>
-                            <p class="panel-sub">Import rent due schedules from your Excel sheet and track overdue, due soon, and paid statuses in one place.</p>
-                        </div>
-                        <div class="row">
-                            <input type="file" id="rentImportFile" accept=".xlsx" />
-                            <button class="btn primary" onclick="importRentWorkbook()">Import Workbook</button>
-                        </div>
+                  <div class="row space">
+                    <div>
+                      <p class="panel-title">Rent Due Tracker</p>
+                      <p class="panel-sub">Import rent due schedules from your
+                        Excel sheet and track overdue, due soon, and paid
+                        statuses in one place.</p>
                     </div>
-                    <div class="small muted" id="rentImportMeta" style="margin-top:8px">No rent workbook imported yet.</div>
+                    <div class="row">
+                      <input type="file" id="rentImportFile" accept=".xlsx" />
+                      <button class="btn primary"
+                        onclick="importRentWorkbook()">Import Workbook</button>
+                    </div>
+                  </div>
+                  <div class="small muted" id="rentImportMeta"
+                    style="margin-top:8px">No rent workbook imported yet.</div>
                 </div>
 
                 <div class="kpi-row">
-                    <div class="card kpi">
-                        <h3>Total Rows</h3>
-                        <div class="num" id="rentKpiTotal">0</div>
-                    </div>
-                    <div class="card kpi">
-                        <h3>Overdue</h3>
-                        <div class="num danger" id="rentKpiOverdue">0</div>
-                    </div>
-                    <div class="card kpi">
-                        <h3>Due Next 7 Days</h3>
-                        <div class="num warn" id="rentKpiDueSoon">0</div>
-                    </div>
-                    <div class="card kpi">
-                        <h3>Paid</h3>
-                        <div class="num ok" id="rentKpiPaid">0</div>
-                    </div>
-                    <div class="card kpi">
-                        <h3>Pending</h3>
-                        <div class="num accent" id="rentKpiPending">0</div>
-                    </div>
+                  <div class="card kpi">
+                    <h3>Total Rows</h3>
+                    <div class="num" id="rentKpiTotal">0</div>
+                  </div>
+                  <div class="card kpi">
+                    <h3>Overdue</h3>
+                    <div class="num danger" id="rentKpiOverdue">0</div>
+                  </div>
+                  <div class="card kpi">
+                    <h3>Due Next 7 Days</h3>
+                    <div class="num warn" id="rentKpiDueSoon">0</div>
+                  </div>
+                  <div class="card kpi">
+                    <h3>Paid</h3>
+                    <div class="num ok" id="rentKpiPaid">0</div>
+                  </div>
+                  <div class="card kpi">
+                    <h3>Pending</h3>
+                    <div class="num accent" id="rentKpiPending">0</div>
+                  </div>
                 </div>
 
                 <div class="filters-row">
-                    <div class="seg" id="rentViewSeg">
-                        <button id="rentViewTrackerBtn" class="active" onclick="switchRentViewMode('tracker')">Tracker</button>
-                        <button id="rentViewYearBtn" onclick="switchRentViewMode('year')">Year Report</button>
-                    </div>
-                    <div class="field">
-                        <div class="label">Status</div>
-                        <select id="rentStatusFilter">
-                            <option value>All</option>
-                            <option value="DUE">Due</option>
-                            <option value="PAID">Paid</option>
-                            <option value="PARTIAL">Partial</option>
-                            <option value="AWAITING_CLEARANCE">Awaiting clearance</option>
-                            <option value="VACANT">Vacant</option>
-                        </select>
-                    </div>
-                    <div class="field">
-                        <div class="label">Frequency</div>
-                        <select id="rentFrequencyFilter">
-                            <option value>All</option>
-                            <option value="MONTHLY" selected>Monthly</option>
-                            <option value="FORTNIGHTLY">Fortnightly</option>
-                        </select>
-                    </div>
-                    <div class="field" style="min-width:260px">
-                        <div class="label">Search</div>
-                        <input type="text" id="rentSearchBox" placeholder="Property, notes, raw value..." />
-                    </div>
-                    <div class="row" style="align-self:flex-end">
-                        <button class="btn" onclick="loadActiveRentView(1)">Apply</button>
-                    </div>
+                  <div class="seg" id="rentViewSeg">
+                    <button id="rentViewTrackerBtn" class="active"
+                      onclick="switchRentViewMode('tracker')">Tracker</button>
+                    <button id="rentViewYearBtn"
+                      onclick="switchRentViewMode('year')">Year Report</button>
+                  </div>
+                  <div class="field">
+                    <div class="label">Status</div>
+                    <select id="rentStatusFilter">
+                      <option value>All</option>
+                      <option value="DUE">Due</option>
+                      <option value="PAID">Paid</option>
+                      <option value="PARTIAL">Partial</option>
+                      <option value="AWAITING_CLEARANCE">Awaiting
+                        clearance</option>
+                      <option value="VACANT">Vacant</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <div class="label">Frequency</div>
+                    <select id="rentFrequencyFilter">
+                      <option value>All</option>
+                      <option value="MONTHLY" selected>Monthly</option>
+                      <option value="FORTNIGHTLY">Fortnightly</option>
+                    </select>
+                  </div>
+                  <div class="field" style="min-width:260px">
+                    <div class="label">Search</div>
+                    <input type="text" id="rentSearchBox"
+                      placeholder="Property, notes, raw value..." />
+                  </div>
+                  <div class="row" style="align-self:flex-end">
+                    <button class="btn"
+                      onclick="loadActiveRentView(1)">Apply</button>
+                  </div>
                 </div>
 
                 <div class="rent-table-wrap" id="rentTrackerGrid">
-                    <table class="rent-table">
-                        <thead>
-                            <tr>
-                                <th>Property</th>
-                                <th>Frequency</th>
-                                <th>Progress</th>
-                                <th id="rentMonthHead1">Last</th>
-                                <th id="rentMonthHead2">Current</th>
-                                <th id="rentMonthHead3">Next</th>
-                            </tr>
-                        </thead>
-                        <tbody id="rentTableBody">
-                            <tr><td colspan="6" class="muted">No data loaded.</td></tr>
-                        </tbody>
-                    </table>
+                  <table class="rent-table">
+                    <thead>
+                      <tr>
+                        <th>Property</th>
+                        <th>Frequency</th>
+                        <th>Progress</th>
+                        <th id="rentMonthHead1">Last</th>
+                        <th id="rentMonthHead2">Current</th>
+                        <th id="rentMonthHead3">Next</th>
+                      </tr>
+                    </thead>
+                    <tbody id="rentTableBody">
+                      <tr><td colspan="6" class="muted">No data
+                          loaded.</td></tr>
+                    </tbody>
+                  </table>
                 </div>
                 <div class="rent-table-wrap hidden" id="rentYearReportGrid">
-                    <table class="rent-table year-full">
-                        <thead>
-                            <tr>
-                                <th class="sticky-col">Property</th>
-                                <th>Frequency</th>
-                                <th>Progress</th>
-                                <th>Jan</th>
-                                <th>Feb</th>
-                                <th>Mar</th>
-                                <th>Apr</th>
-                                <th>May</th>
-                                <th>Jun</th>
-                                <th>Jul</th>
-                                <th>Aug</th>
-                                <th>Sep</th>
-                                <th>Oct</th>
-                                <th>Nov</th>
-                                <th>Dec</th>
-                            </tr>
-                        </thead>
-                        <tbody id="rentYearTableBody">
-                            <tr><td colspan="15" class="muted">No data loaded.</td></tr>
-                        </tbody>
-                    </table>
+                  <table class="rent-table year-full">
+                    <thead>
+                      <tr>
+                        <th class="sticky-col">Property</th>
+                        <th>Frequency</th>
+                        <th>Progress</th>
+                        <th>Jan</th>
+                        <th>Feb</th>
+                        <th>Mar</th>
+                        <th>Apr</th>
+                        <th>May</th>
+                        <th>Jun</th>
+                        <th>Jul</th>
+                        <th>Aug</th>
+                        <th>Sep</th>
+                        <th>Oct</th>
+                        <th>Nov</th>
+                        <th>Dec</th>
+                      </tr>
+                    </thead>
+                    <tbody id="rentYearTableBody">
+                      <tr><td colspan="15" class="muted">No data
+                          loaded.</td></tr>
+                    </tbody>
+                  </table>
                 </div>
-                <div class="small muted" id="rentPageInfo" style="margin-top:8px"></div>
+                <div class="small muted" id="rentPageInfo"
+                  style="margin-top:8px"></div>
                 <div class="row space" style="margin-top:10px">
-                    <button class="btn" id="rentBtnPrev" onclick="prevRentPage()">Prev</button>
-                    <button class="btn" id="rentBtnNext" onclick="nextRentPage()">Next</button>
+                  <button class="btn" id="rentBtnPrev"
+                    onclick="prevRentPage()">Prev</button>
+                  <button class="btn" id="rentBtnNext"
+                    onclick="nextRentPage()">Next</button>
                 </div>
-            </div>
+              </div>
 
-            <div id="propertiesPanel" class="hidden">
+              <div id="propertiesPanel" class="hidden">
                 <div class="card">
-                    <div class="row space">
-                        <div>
-                            <p class="panel-title">Properties</p>
-                            <p class="panel-sub">Maintain the managed property register used across compliance and future modules.</p>
-                        </div>
-                        <div class="row">
-                            <input type="file" id="propertyImportFile" accept=".xlsx" />
-                            <button class="btn primary" onclick="importPropertiesWorkbook()">Import Properties</button>
-                        </div>
+                  <div class="row space">
+                    <div>
+                      <p class="panel-title">Properties</p>
+                      <p class="panel-sub">Maintain the managed property
+                        register used across compliance and future modules.</p>
                     </div>
-                    <div class="small muted" id="propertyImportMeta" style="margin-top:8px">No property workbook imported yet.</div>
+                    <div class="row">
+                      <input type="file" id="propertyImportFile"
+                        accept=".xlsx" />
+                      <button class="btn primary"
+                        onclick="importPropertiesWorkbook()">Import
+                        Properties</button>
+                    </div>
+                  </div>
+                  <div class="small muted" id="propertyImportMeta"
+                    style="margin-top:8px">No property workbook imported
+                    yet.</div>
                 </div>
 
                 <div class="card">
-                    <div class="row" style="align-items:flex-end">
-                        <div class="field" style="min-width:280px;flex:1">
-                            <div class="label">Property Address</div>
-                            <input type="text" id="newPropertyAddress" list="propertyAddressSuggestions" placeholder="Start typing a Victorian property address..." autocomplete="off" />
-                            <datalist id="propertyAddressSuggestions"></datalist>
-                        </div>
-                        <div class="field" style="min-width:180px">
-                            <div class="label">Suburb</div>
-                            <input type="text" id="newPropertySuburb" />
-                        </div>
-                        <div class="field" style="width:110px">
-                            <div class="label">State</div>
-                            <input type="text" id="newPropertyState" value="VIC" readonly />
-                        </div>
-                        <div class="field" style="width:130px">
-                            <div class="label">Postcode</div>
-                            <input type="text" id="newPropertyPostcode" />
-                        </div>
-                        <button class="btn primary" onclick="createPropertyFromForm()">Add Property</button>
+                  <div class="row" style="align-items:flex-end">
+                    <div class="field" style="min-width:280px;flex:1">
+                      <div class="label">Property Address</div>
+                      <input type="text" id="newPropertyAddress"
+                        list="propertyAddressSuggestions"
+                        placeholder="Start typing a Victorian property address..."
+                        autocomplete="off" />
+                      <datalist id="propertyAddressSuggestions"></datalist>
                     </div>
-                    <div class="small muted" style="margin-top:8px">Victorian properties only. You can paste a full address like "12 Smith Street, Cranbourne, VIC, 3977" and the suburb/postcode will be filled where possible.</div>
+                    <div class="field" style="min-width:180px">
+                      <div class="label">Suburb</div>
+                      <input type="text" id="newPropertySuburb" />
+                    </div>
+                    <div class="field" style="width:110px">
+                      <div class="label">State</div>
+                      <input type="text" id="newPropertyState" value="VIC"
+                        readonly />
+                    </div>
+                    <div class="field" style="width:130px">
+                      <div class="label">Postcode</div>
+                      <input type="text" id="newPropertyPostcode" />
+                    </div>
+                    <button class="btn primary"
+                      onclick="createPropertyFromForm()">Add Property</button>
+                  </div>
+                  <div class="small muted" style="margin-top:8px">Victorian
+                    properties only. You can paste a full address like
+                    "12 Smith Street, Cranbourne, VIC, 3977" and the
+                    suburb/postcode will be filled where possible.</div>
                 </div>
 
                 <div class="filters-row">
-                    <div class="field" style="min-width:300px">
-                        <div class="label">Search</div>
-                        <input type="text" id="propertySearchBox" placeholder="Address, suburb, postcode..." />
-                    </div>
-                    <div class="row" style="align-self:flex-end">
-                        <button class="btn" onclick="loadProperties(1)">Apply</button>
-                    </div>
+                  <div class="field" style="min-width:300px">
+                    <div class="label">Search</div>
+                    <input type="text" id="propertySearchBox"
+                      placeholder="Address, suburb, postcode..." />
+                  </div>
+                  <div class="row" style="align-self:flex-end">
+                    <button class="btn"
+                      onclick="loadProperties(1)">Apply</button>
+                  </div>
                 </div>
 
                 <div class="rent-table-wrap">
-                    <table class="rent-table" style="min-width:900px">
-                        <thead>
-                            <tr>
-                                <th>Property</th>
-                                <th>Suburb</th>
-                                <th>State</th>
-                                <th>Postcode</th>
-                                <th>Source</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody id="propertiesTableBody">
-                            <tr><td colspan="6" class="muted">No properties loaded.</td></tr>
-                        </tbody>
-                    </table>
+                  <table class="rent-table" style="min-width:900px">
+                    <thead>
+                      <tr>
+                        <th>Property</th>
+                        <th>Suburb</th>
+                        <th>State</th>
+                        <th>Postcode</th>
+                        <th>Source</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody id="propertiesTableBody">
+                      <tr><td colspan="6" class="muted">No properties
+                          loaded.</td></tr>
+                    </tbody>
+                  </table>
                 </div>
-                <div class="small muted" id="propertiesPageInfo" style="margin-top:8px"></div>
+                <div class="small muted" id="propertiesPageInfo"
+                  style="margin-top:8px"></div>
                 <div class="row space" style="margin-top:10px">
-                    <button class="btn" id="propertiesBtnPrev" onclick="prevPropertiesPage()">Prev</button>
-                    <button class="btn" id="propertiesBtnNext" onclick="nextPropertiesPage()">Next</button>
+                  <button class="btn" id="propertiesBtnPrev"
+                    onclick="prevPropertiesPage()">Prev</button>
+                  <button class="btn" id="propertiesBtnNext"
+                    onclick="nextPropertiesPage()">Next</button>
                 </div>
-            </div>
+              </div>
 
-            <div id="compliancePanel" class="hidden">
+              <div id="compliancePanel" class="hidden">
                 <div class="card">
-                    <div class="row space">
-                        <div>
-                            <p class="panel-title">Compliance Dashboard</p>
-                            <p class="panel-sub">Create compliance records against saved properties and track what is open, due, overdue, and completed.</p>
-                        </div>
-                        <button class="btn" onclick="refreshPropertyOptions()">Refresh Properties</button>
+                  <div class="row space">
+                    <div>
+                      <p class="panel-title">Compliance Dashboard</p>
+                      <p class="panel-sub">Create compliance records against
+                        saved properties and track what is open, due, overdue,
+                        and completed.</p>
                     </div>
+                    <button class="btn"
+                      onclick="refreshPropertyOptions()">Refresh
+                      Properties</button>
+                  </div>
                 </div>
 
                 <div class="kpi-row">
-                    <div class="card kpi">
-                        <h3>Properties</h3>
-                        <div class="num" id="complianceKpiTotal">0</div>
-                    </div>
-                    <div class="card kpi">
-                        <h3>Action Required</h3>
-                        <div class="num accent" id="complianceKpiAction">0</div>
-                    </div>
-                    <div class="card kpi">
-                        <h3>Overdue</h3>
-                        <div class="num danger" id="complianceKpiOverdue">0</div>
-                    </div>
-                    <div class="card kpi">
-                        <h3>Due Soon</h3>
-                        <div class="num warn" id="complianceKpiSoon">0</div>
-                    </div>
-                    <div class="card kpi">
-                        <h3>Current</h3>
-                        <div class="num ok" id="complianceKpiCurrent">0</div>
-                    </div>
+                  <div class="card kpi">
+                    <h3>Properties</h3>
+                    <div class="num" id="complianceKpiTotal">0</div>
+                  </div>
+                  <div class="card kpi">
+                    <h3>Action Required</h3>
+                    <div class="num accent" id="complianceKpiAction">0</div>
+                  </div>
+                  <div class="card kpi">
+                    <h3>Overdue</h3>
+                    <div class="num danger" id="complianceKpiOverdue">0</div>
+                  </div>
+                  <div class="card kpi">
+                    <h3>Due Soon</h3>
+                    <div class="num warn" id="complianceKpiSoon">0</div>
+                  </div>
+                  <div class="card kpi">
+                    <h3>Current</h3>
+                    <div class="num ok" id="complianceKpiCurrent">0</div>
+                  </div>
                 </div>
 
                 <div class="card">
-                    <div class="row" style="align-items:flex-end">
-                        <div class="field" style="min-width:280px;flex:1">
-                            <div class="label">Property</div>
-                            <input type="text" id="compliancePropertySearch" list="compliancePropertyOptions" placeholder="Search and select a property..." autocomplete="off" />
-                            <input type="hidden" id="compliancePropertyId" />
-                            <datalist id="compliancePropertyOptions"></datalist>
-                        </div>
-                        <div class="field" style="min-width:160px">
-                            <div class="label">Type</div>
-                            <select id="complianceTypeInput">
-                                <option value="GAS">Gas</option>
-                                <option value="SMOKE">Smoke</option>
-                                <option value="ELECTRICAL">Electrical</option>
-                                <option value="MRS">MRS</option>
-                                <option value="POOL">Pool</option>
-                                <option value="POWERBAND">PowerBand</option>
-                                <option value="DISCLOSURE">Disclosure</option>
-                                <option value="OTHER">Other</option>
-                            </select>
-                        </div>
-                        <div class="field" style="min-width:150px">
-                            <div class="label">Date Done</div>
-                            <input type="date" id="complianceCompletedDateInput" />
-                        </div>
-                        <div class="field" style="min-width:180px">
-                            <div class="label">Provider</div>
-                            <input type="text" id="complianceProviderInput" />
-                        </div>
-                        <button class="btn primary" onclick="createComplianceRecord()">Add Record</button>
+                  <div class="row" style="align-items:flex-end">
+                    <div class="field" style="min-width:280px;flex:1">
+                      <div class="label">Property</div>
+                      <input type="text" id="compliancePropertySearch"
+                        list="compliancePropertyOptions"
+                        placeholder="Search and select a property..."
+                        autocomplete="off" />
+                      <input type="hidden" id="compliancePropertyId" />
+                      <datalist id="compliancePropertyOptions"></datalist>
                     </div>
-                    <div class="small muted" style="margin-top:8px">If Date Done is entered, the record is marked completed and the next due date is calculated automatically. Smoke: 12 months. Gas/Electrical: 2 years.</div>
-                    <div class="field" style="margin-top:10px">
-                        <div class="label">Notes</div>
-                        <input type="text" id="complianceNotesInput" placeholder="Owner approval, fault details, report notes..." />
+                    <div class="field" style="min-width:160px">
+                      <div class="label">Type</div>
+                      <select id="complianceTypeInput">
+                        <option value="GAS">Gas</option>
+                        <option value="SMOKE">Smoke</option>
+                        <option value="ELECTRICAL">Electrical</option>
+                        <option value="MRS">MRS</option>
+                        <option value="POOL">Pool</option>
+                        <option value="POWERBAND">PowerBand</option>
+                        <option value="DISCLOSURE">Disclosure</option>
+                        <option value="OTHER">Other</option>
+                      </select>
                     </div>
+                    <div class="field" style="min-width:150px">
+                      <div class="label">Date Done</div>
+                      <input type="date" id="complianceCompletedDateInput" />
+                    </div>
+                    <div class="field" style="min-width:180px">
+                      <div class="label">Provider</div>
+                      <input type="text" id="complianceProviderInput" />
+                    </div>
+                    <button class="btn primary"
+                      onclick="createComplianceRecord()">Add Record</button>
+                  </div>
+                  <div class="small muted" style="margin-top:8px">If Date Done
+                    is entered, the record is marked completed and the next due
+                    date is calculated automatically. Smoke: 12 months.
+                    Gas/Electrical: 2 years.</div>
+                  <div class="field" style="margin-top:10px">
+                    <div class="label">Notes</div>
+                    <input type="text" id="complianceNotesInput"
+                      placeholder="Owner approval, fault details, report notes..." />
+                  </div>
                 </div>
 
                 <div class="filters-row">
-                    <div class="field">
-                        <div class="label">Status</div>
-                        <select id="complianceStateFilter">
-                            <option value="">All</option>
-                            <option value="OPEN">Open</option>
-                            <option value="ACTION_REQUIRED">Action Required</option>
-                            <option value="OVERDUE">Overdue</option>
-                            <option value="DUE_SOON">Due Soon</option>
-                            <option value="CURRENT">Current</option>
-                            <option value="WAIVED">Waived</option>
-                        </select>
-                    </div>
-                    <div class="field">
-                        <div class="label">Type</div>
-                        <select id="complianceTypeFilter">
-                            <option value="">All</option>
-                            <option value="GAS">Gas</option>
-                            <option value="SMOKE">Smoke</option>
-                            <option value="ELECTRICAL">Electrical</option>
-                            <option value="MRS">MRS</option>
-                            <option value="POOL">Pool</option>
-                            <option value="POWERBAND">PowerBand</option>
-                            <option value="DISCLOSURE">Disclosure</option>
-                            <option value="OTHER">Other</option>
-                        </select>
-                    </div>
-                    <div class="field" style="min-width:280px">
-                        <div class="label">Search</div>
-                        <input type="text" id="complianceSearchBox" placeholder="Property, suburb, notes..." />
-                    </div>
-                    <div class="row" style="align-self:flex-end">
-                        <button class="btn" onclick="loadComplianceDashboard(1)">Apply</button>
-                    </div>
+                  <div class="field">
+                    <div class="label">Status</div>
+                    <select id="complianceStateFilter">
+                      <option value>All</option>
+                      <option value="OPEN">Open</option>
+                      <option value="ACTION_REQUIRED">Action Required</option>
+                      <option value="OVERDUE">Overdue</option>
+                      <option value="DUE_SOON">Due Soon</option>
+                      <option value="CURRENT">Current</option>
+                      <option value="WAIVED">Waived</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <div class="label">Type</div>
+                    <select id="complianceTypeFilter">
+                      <option value>All</option>
+                      <option value="GAS">Gas</option>
+                      <option value="SMOKE">Smoke</option>
+                      <option value="ELECTRICAL">Electrical</option>
+                      <option value="MRS">MRS</option>
+                      <option value="POOL">Pool</option>
+                      <option value="POWERBAND">PowerBand</option>
+                      <option value="DISCLOSURE">Disclosure</option>
+                      <option value="OTHER">Other</option>
+                    </select>
+                  </div>
+                  <div class="field" style="min-width:280px">
+                    <div class="label">Search</div>
+                    <input type="text" id="complianceSearchBox"
+                      placeholder="Property, suburb, notes..." />
+                  </div>
+                  <div class="row" style="align-self:flex-end">
+                    <button class="btn"
+                      onclick="loadComplianceDashboard(1)">Apply</button>
+                  </div>
                 </div>
 
                 <div class="rent-table-wrap">
-                    <table class="rent-table" style="min-width:1200px">
-                        <thead>
-                            <tr>
-                                <th>Property</th>
-                                <th>Type</th>
-                                <th>Status</th>
-                                <th>Date Done</th>
-                                <th>Next Due</th>
-                                <th>Provider</th>
-                                <th>Result</th>
-                                <th>Notes</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody id="complianceTableBody">
-                            <tr><td colspan="9" class="muted">No compliance records loaded.</td></tr>
-                        </tbody>
-                    </table>
+                  <table class="rent-table" style="min-width:1200px">
+                    <thead>
+                      <tr>
+                        <th>Property</th>
+                        <th>Type</th>
+                        <th>Status</th>
+                        <th>Date Done</th>
+                        <th>Next Due</th>
+                        <th>Provider</th>
+                        <th>Result</th>
+                        <th>Notes</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody id="complianceTableBody">
+                      <tr><td colspan="9" class="muted">No compliance records
+                          loaded.</td></tr>
+                    </tbody>
+                  </table>
                 </div>
-                <div class="small muted" id="compliancePageInfo" style="margin-top:8px"></div>
+                <div class="small muted" id="compliancePageInfo"
+                  style="margin-top:8px"></div>
                 <div class="row space" style="margin-top:10px">
-                    <button class="btn" id="complianceBtnPrev" onclick="prevCompliancePage()">Prev</button>
-                    <button class="btn" id="complianceBtnNext" onclick="nextCompliancePage()">Next</button>
+                  <button class="btn" id="complianceBtnPrev"
+                    onclick="prevCompliancePage()">Prev</button>
+                  <button class="btn" id="complianceBtnNext"
+                    onclick="nextCompliancePage()">Next</button>
                 </div>
-            </div>
+              </div>
 
-            <div id="coveragePanel" class="hidden">
+              <div id="coveragePanel" class="hidden">
                 <div class="card">
-                    <div class="row space">
-                        <div>
-                            <p class="panel-title">Compliance Report</p>
-                            <p class="panel-sub">Check which managed properties are missing or have incomplete MRS, Smoke, Gas, and Electrical records.</p>
-                        </div>
-                        <button class="btn" onclick="loadComplianceCoverage(1)">Refresh</button>
+                  <div class="row space">
+                    <div>
+                      <p class="panel-title">Compliance Report</p>
+                      <p class="panel-sub">Check which managed properties are
+                        missing or have incomplete MRS, Smoke, Gas, and
+                        Electrical records.</p>
                     </div>
+                    <button class="btn"
+                      onclick="loadComplianceCoverage(1)">Refresh</button>
+                  </div>
                 </div>
 
                 <div class="kpi-row">
-                    <div class="card kpi">
-                        <h3>Properties</h3>
-                        <div class="num" id="coverageKpiTotal">0</div>
-                    </div>
-                    <div class="card kpi">
-                        <h3>Needs Attention</h3>
-                        <div class="num accent" id="coverageKpiAttention">0</div>
-                    </div>
-                    <div class="card kpi">
-                        <h3>Missing Checks</h3>
-                        <div class="num danger" id="coverageKpiMissing">0</div>
-                    </div>
-                    <div class="card kpi">
-                        <h3>Incomplete</h3>
-                        <div class="num warn" id="coverageKpiIncomplete">0</div>
-                    </div>
-                    <div class="card kpi">
-                        <h3>Fully Current</h3>
-                        <div class="num ok" id="coverageKpiCurrent">0</div>
-                    </div>
+                  <div class="card kpi">
+                    <h3>Properties</h3>
+                    <div class="num" id="coverageKpiTotal">0</div>
+                  </div>
+                  <div class="card kpi">
+                    <h3>Needs Attention</h3>
+                    <div class="num accent" id="coverageKpiAttention">0</div>
+                  </div>
+                  <div class="card kpi">
+                    <h3>Missing Checks</h3>
+                    <div class="num danger" id="coverageKpiMissing">0</div>
+                  </div>
+                  <div class="card kpi">
+                    <h3>Incomplete</h3>
+                    <div class="num warn" id="coverageKpiIncomplete">0</div>
+                  </div>
+                  <div class="card kpi">
+                    <h3>Fully Current</h3>
+                    <div class="num ok" id="coverageKpiCurrent">0</div>
+                  </div>
                 </div>
 
                 <div class="filters-row">
-                    <div class="field" style="min-width:300px">
-                        <div class="label">Search</div>
-                        <input type="text" id="coverageSearchBox" placeholder="Address, suburb, postcode..." />
-                    </div>
-                    <label class="checkbox" style="align-self:flex-end">
-                        <input type="checkbox" id="coverageIncludeCurrent" />
-                        Include current properties
-                    </label>
-                    <div class="row" style="align-self:flex-end">
-                        <button class="btn" onclick="loadComplianceCoverage(1)">Apply</button>
-                    </div>
+                  <div class="field" style="min-width:300px">
+                    <div class="label">Search</div>
+                    <input type="text" id="coverageSearchBox"
+                      placeholder="Address, suburb, postcode..." />
+                  </div>
+                  <label class="checkbox" style="align-self:flex-end">
+                    <input type="checkbox" id="coverageIncludeCurrent" />
+                    Include current properties
+                  </label>
+                  <div class="row" style="align-self:flex-end">
+                    <button class="btn"
+                      onclick="loadComplianceCoverage(1)">Apply</button>
+                  </div>
                 </div>
 
                 <div class="rent-table-wrap">
-                    <table class="rent-table" style="min-width:1200px">
-                        <thead>
-                            <tr>
-                                <th>Property</th>
-                                <th>Missing</th>
-                                <th>Incomplete</th>
-                                <th>Overdue</th>
-                                <th>Due Soon</th>
-                                <th>Check Status</th>
-                            </tr>
-                        </thead>
-                        <tbody id="coverageTableBody">
-                            <tr><td colspan="6" class="muted">No compliance gap data loaded.</td></tr>
-                        </tbody>
-                    </table>
+                  <table class="rent-table" style="min-width:1200px">
+                    <thead>
+                      <tr>
+                        <th>Property</th>
+                        <th>Missing</th>
+                        <th>Incomplete</th>
+                        <th>Overdue</th>
+                        <th>Due Soon</th>
+                        <th>Check Status</th>
+                      </tr>
+                    </thead>
+                    <tbody id="coverageTableBody">
+                      <tr><td colspan="6" class="muted">No compliance gap data
+                          loaded.</td></tr>
+                    </tbody>
+                  </table>
                 </div>
-                <div class="small muted" id="coveragePageInfo" style="margin-top:8px"></div>
-            <div class="row space" style="margin-top:10px">
-                <button class="btn" id="coverageBtnPrev" onclick="prevCoveragePage()">Prev</button>
-                <button class="btn" id="coverageBtnNext" onclick="nextCoveragePage()">Next</button>
-            </div>
-            </div>
+                <div class="small muted" id="coveragePageInfo"
+                  style="margin-top:8px"></div>
+                <div class="row space" style="margin-top:10px">
+                  <button class="btn" id="coverageBtnPrev"
+                    onclick="prevCoveragePage()">Prev</button>
+                  <button class="btn" id="coverageBtnNext"
+                    onclick="nextCoveragePage()">Next</button>
+                </div>
+              </div>
 
-            <div id="systemPanel" class="hidden">
+              <div id="systemPanel" class="hidden">
                 <section class="system-workspace">
-                    <div class="system-hero">
-                        <div class="login-kicker" style="color:#f9e7a7;margin-bottom:10px">Admin Workspace</div>
-                        <h2>System Access</h2>
-                        <p>Manage staff accounts, profile photos, roles, account status, and password resets from one full-page workspace.</p>
-                    </div>
+                  <div class="system-hero">
+                    <div class="login-kicker"
+                      style="color:#f9e7a7;margin-bottom:10px">Admin
+                      Workspace</div>
+                    <h2>System Access</h2>
+                    <p>Manage staff accounts, profile photos, roles, account
+                      status, and password resets from one full-page
+                      workspace.</p>
+                  </div>
 
-                    <div class="system-stats" id="systemStats"></div>
+                  <div class="system-stats" id="systemStats"></div>
 
-                    <div class="system-grid">
-                        <div class="system-card">
-                            <h3>Create User Account</h3>
-                            <p>Add staff with a professional login, role-based access, and a forced password change on first login.</p>
-                            <div class="system-form-grid">
-                                <div class="field">
-                                    <div class="label">Email</div>
-                                    <input type="email" id="newUserEmail" placeholder="team@donspremier.com.au" autocomplete="off" />
-                                </div>
-                                <div class="field">
-                                    <div class="label">Display Name</div>
-                                    <input type="text" id="newUserName" placeholder="Staff name" autocomplete="off" />
-                                </div>
-                                <div class="system-form-row">
-                                    <div class="field">
-                                        <div class="label">Role</div>
-                                        <select id="newUserRole">
-                                            <option value="PM">PM - Property Manager</option>
-                                            <option value="ADMIN">ADMIN - Administrator</option>
-                                            <option value="LEASING">LEASING - Leasing</option>
-                                            <option value="SALES">SALES - Sales</option>
-                                            <option value="ACCOUNTS">ACCOUNTS - Accounts</option>
-                                            <option value="READONLY">READONLY - Read Only</option>
-                                        </select>
-                                    </div>
-                                    <div class="field">
-                                        <div class="label">Temporary Password</div>
-                                        <input type="password" id="newUserPassword" placeholder="12+ chars, mixed" autocomplete="new-password" />
-                                    </div>
-                                </div>
-                                <label class="system-toggle">
-                                    <input type="checkbox" id="newUserForcePassword" checked />
-                                    <span>
-                                        <strong>Force password change</strong>
-                                        <small>Recommended for every new account.</small>
-                                    </span>
-                                </label>
-                                <button class="btn primary" id="btnCreateUser" onclick="createUserFromForm()">Create User</button>
-                            </div>
+                  <div class="system-grid">
+                    <div class="system-card">
+                      <h3>Create User Account</h3>
+                      <p>Add staff with a professional login, role-based access,
+                        and a forced password change on first login.</p>
+                      <div class="system-form-grid">
+                        <div class="field">
+                          <div class="label">Email</div>
+                          <input type="email" id="newUserEmail"
+                            placeholder="team@donspremier.com.au"
+                            autocomplete="off" />
                         </div>
-
-                        <div class="system-card">
-                            <div class="row space">
-                                <div>
-                                    <h3>Access Control</h3>
-                                    <p>Role assignments define what each staff member should access inside the portal.</p>
-                                </div>
-                                <div class="row">
-                                    <button class="btn" id="btnUsersRefresh" onclick="renderUsersList()">Refresh</button>
-                                    <button class="btn primary" onclick="saveRolePageAccess()">Save Access</button>
-                                </div>
-                            </div>
-                            <div id="roleMatrix" class="role-matrix"></div>
+                        <div class="field">
+                          <div class="label">Display Name</div>
+                          <input type="text" id="newUserName"
+                            placeholder="Staff name" autocomplete="off" />
                         </div>
+                        <div class="system-form-row">
+                          <div class="field">
+                            <div class="label">Role</div>
+                            <select id="newUserRole">
+                              <option value="PM">PM - Property Manager</option>
+                              <option value="ADMIN">ADMIN -
+                                Administrator</option>
+                              <option value="LEASING">LEASING - Leasing</option>
+                              <option value="SALES">SALES - Sales</option>
+                              <option value="ACCOUNTS">ACCOUNTS -
+                                Accounts</option>
+                              <option value="READONLY">READONLY - Read
+                                Only</option>
+                            </select>
+                          </div>
+                          <div class="field">
+                            <div class="label">Temporary Password</div>
+                            <input type="password" id="newUserPassword"
+                              placeholder="12+ chars, mixed"
+                              autocomplete="new-password" />
+                          </div>
+                        </div>
+                        <label class="system-toggle">
+                          <input type="checkbox" id="newUserForcePassword"
+                            checked />
+                          <span>
+                            <strong>Force password change</strong>
+                            <small>Recommended for every new account.</small>
+                          </span>
+                        </label>
+                        <button class="btn primary" id="btnCreateUser"
+                          onclick="createUserFromForm()">Create User</button>
+                      </div>
                     </div>
-
-                    <div class="error" id="usersError" style="display:none"></div>
 
                     <div class="system-card">
-                        <div class="row space">
-                            <div>
-                                <h3>User Accounts</h3>
-                                <p>Update names, avatars, roles, active status, and password reset controls.</p>
-                            </div>
+                      <div class="row space">
+                        <div>
+                          <h3>Access Control</h3>
+                          <p>Role assignments define what each staff member
+                            should access inside the portal.</p>
                         </div>
-                        <div id="usersList" class="system-user-list"></div>
+                        <div class="row">
+                          <button class="btn" id="btnUsersRefresh"
+                            onclick="renderUsersList()">Refresh</button>
+                          <button class="btn primary"
+                            onclick="saveRolePageAccess()">Save Access</button>
+                        </div>
+                      </div>
+                      <div id="roleMatrix" class="role-matrix"></div>
                     </div>
+                  </div>
+
+                  <div class="error" id="usersError" style="display:none"></div>
+
+                  <div class="system-card">
+                    <div class="row space">
+                      <div>
+                        <h3>User Accounts</h3>
+                        <p>Update names, avatars, roles, active status, and
+                          password reset controls.</p>
+                      </div>
+                    </div>
+                    <div id="usersList" class="system-user-list"></div>
+                  </div>
                 </section>
-            </div>
+              </div>
 
-                </main>
-            </div>
-            <div class="footer">© <span id="year"></span> Dons Premier Estate Agents. Developed by - Kusal Wickremasingha.</div>
+            </main>
+          </div>
+          <div class="footer">© <span id="year"></span> Dons Premier Estate
+            Agents. Developed by - Kusal Wickremasingha.</div>
         </div>
-            </div>
+      </div>
+    </div>
+
+    <!-- Change Password Modal -->
+    <div class="modal-backdrop hidden" id="passwordModal">
+      <div class="modal">
+        <div class="modal-head">
+          <h3>Change Password</h3>
+          <button class="btn ghost"
+            onclick="closePasswordModal()">Close</button>
         </div>
-
-        <!-- Change Password Modal -->
-        <div class="modal-backdrop hidden" id="passwordModal">
-            <div class="modal">
-                <div class="modal-head">
-                    <h3>Change Password</h3>
-                    <button class="btn ghost" onclick="closePasswordModal()">Close</button>
-                </div>
-                <div class="modal-body">
-                    <div class="field">
-                        <div class="label">Current Password</div>
-                        <input type="password" id="pwCurrent" autocomplete="current-password" />
-                    </div>
-                    <div class="field" style="margin-top:10px">
-                        <div class="label">New Password</div>
-                        <input type="password" id="pwNew" autocomplete="new-password" />
-                    </div>
-                    <div class="field" style="margin-top:10px">
-                        <div class="label">Confirm New Password</div>
-                        <input type="password" id="pwConfirm" autocomplete="new-password" />
-                    </div>
-                    <div class="small muted" style="margin-top:10px">Use at least 12 characters with upper/lowercase, number, and symbol.</div>
-                    <div class="error" id="pwError" style="display:none"></div>
-                </div>
-                <div class="modal-foot">
-                    <button class="btn" onclick="closePasswordModal()">Cancel</button>
-                    <button class="btn primary" onclick="submitPasswordChange()">Update Password</button>
-                </div>
-            </div>
+        <div class="modal-body">
+          <div class="field">
+            <div class="label">Current Password</div>
+            <input type="password" id="pwCurrent"
+              autocomplete="current-password" />
+          </div>
+          <div class="field" style="margin-top:10px">
+            <div class="label">New Password</div>
+            <input type="password" id="pwNew" autocomplete="new-password" />
+          </div>
+          <div class="field" style="margin-top:10px">
+            <div class="label">Confirm New Password</div>
+            <input type="password" id="pwConfirm" autocomplete="new-password" />
+          </div>
+          <div class="small muted" style="margin-top:10px">Use at least 12
+            characters with upper/lowercase, number, and symbol.</div>
+          <div class="error" id="pwError" style="display:none"></div>
         </div>
-
-        <!-- Thread Viewer -->
-        <div class="viewer-backdrop" id="viewerBackdrop">
-            <div class="viewer">
-                <div class="viewer-head">
-                    <div class="viewer-title-wrap">
-                        <div class="title" id="viewerTitle">Thread</div>
-                        <div class="viewer-subtitle" id="viewerSubtitle">Loading conversation...</div>
-                    </div>
-                    <div class="viewer-actions">
-                        <button class="btn" id="gmailAccessBtn" type="button" onclick="configureDelegatedGmailFromViewer()" style="display:none">Gmail Access</button>
-                        <a class="btn" id="gmailLink" href="#" target="_blank" rel="noreferrer" onclick="return openGmailThreadFromViewer()">Open in Gmail</a>
-                        <button class="btn" id="btnViewerClose"
-                            onclick="closeThreadModal()">Close</button>
-                    </div>
-                </div>
-                <div class="viewer-body">
-                    <iframe id="viewerFrame"
-                        sandbox="allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"></iframe>
-                </div>
-            </div>
+        <div class="modal-foot">
+          <button class="btn" onclick="closePasswordModal()">Cancel</button>
+          <button class="btn primary" onclick="submitPasswordChange()">Update
+            Password</button>
         </div>
+      </div>
+    </div>
 
-        <div class="modal-backdrop hidden" id="complianceEditModal">
-            <div class="modal">
-                <div class="modal-head">
-                    <h3>Edit Compliance Record</h3>
-                    <button class="btn ghost" onclick="closeComplianceEditModal()">Close</button>
-                </div>
-                <div class="modal-body">
-                    <div class="small muted" id="complianceEditTitle" style="margin-bottom:12px"></div>
-                    <div class="row" style="align-items:flex-end">
-                        <div class="field" style="min-width:180px">
-                            <div class="label">Status</div>
-                            <select id="editComplianceStatus">
-                                <option value="OPEN">Open</option>
-                                <option value="ACTION_REQUIRED">Action Required</option>
-                                <option value="COMPLETED">Completed</option>
-                                <option value="WAIVED">Waived</option>
-                            </select>
-                        </div>
-                        <div class="field" style="min-width:180px">
-                            <div class="label">Date Done</div>
-                            <input type="date" id="editComplianceCompletedAt" />
-                        </div>
-                        <div class="field" style="min-width:180px">
-                            <div class="label">Next Due</div>
-                            <input type="text" id="editComplianceNextDue" disabled />
-                        </div>
-                    </div>
-                    <div class="row" style="align-items:flex-end;margin-top:10px">
-                        <div class="field" style="min-width:220px;flex:1">
-                            <div class="label">Provider</div>
-                            <input type="text" id="editComplianceProvider" />
-                        </div>
-                        <div class="field" style="min-width:220px;flex:1">
-                            <div class="label">Result / Finding</div>
-                            <input type="text" id="editComplianceResult" placeholder="No fault, fault found, pending report..." />
-                        </div>
-                    </div>
-                    <div class="field" style="margin-top:10px">
-                        <div class="label">Notes</div>
-                        <input type="text" id="editComplianceNotes" />
-                    </div>
-                </div>
-                <div class="modal-foot">
-                    <button class="btn danger" onclick="deleteComplianceRecordFromModal()">Delete</button>
-                    <button class="btn primary" onclick="saveComplianceEdit()">Save Changes</button>
-                </div>
-            </div>
+    <!-- Thread Viewer -->
+    <div class="viewer-backdrop" id="viewerBackdrop">
+      <div class="viewer">
+        <div class="viewer-head">
+          <div class="viewer-title-wrap">
+            <div class="title" id="viewerTitle">Thread</div>
+            <div class="viewer-subtitle" id="viewerSubtitle">Loading
+              conversation...</div>
+          </div>
+          <div class="viewer-actions">
+            <button class="btn" id="gmailAccessBtn" type="button"
+              onclick="configureDelegatedGmailFromViewer()"
+              style="display:none">Gmail Access</button>
+            <a class="btn" id="gmailLink" href="#" target="_blank"
+              rel="noreferrer" onclick="return openGmailThreadFromViewer()">Open
+              in Gmail</a>
+            <button class="btn" id="btnViewerClose"
+              onclick="closeThreadModal()">Close</button>
+          </div>
         </div>
+        <div class="viewer-body">
+          <iframe id="viewerFrame"
+            sandbox="allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"></iframe>
+        </div>
+      </div>
+    </div>
 
-        <script src="/static/app.js?v=16"></script>
+    <div class="modal-backdrop hidden" id="complianceEditModal">
+      <div class="modal">
+        <div class="modal-head">
+          <h3>Edit Compliance Record</h3>
+          <button class="btn ghost"
+            onclick="closeComplianceEditModal()">Close</button>
+        </div>
+        <div class="modal-body">
+          <div class="small muted" id="complianceEditTitle"
+            style="margin-bottom:12px"></div>
+          <div class="row" style="align-items:flex-end">
+            <div class="field" style="min-width:180px">
+              <div class="label">Status</div>
+              <select id="editComplianceStatus">
+                <option value="OPEN">Open</option>
+                <option value="ACTION_REQUIRED">Action Required</option>
+                <option value="COMPLETED">Completed</option>
+                <option value="WAIVED">Waived</option>
+              </select>
+            </div>
+            <div class="field" style="min-width:180px">
+              <div class="label">Date Done</div>
+              <input type="date" id="editComplianceCompletedAt" />
+            </div>
+            <div class="field" style="min-width:180px">
+              <div class="label">Next Due</div>
+              <input type="text" id="editComplianceNextDue" disabled />
+            </div>
+          </div>
+          <div class="row" style="align-items:flex-end;margin-top:10px">
+            <div class="field" style="min-width:220px;flex:1">
+              <div class="label">Provider</div>
+              <input type="text" id="editComplianceProvider" />
+            </div>
+            <div class="field" style="min-width:220px;flex:1">
+              <div class="label">Result / Finding</div>
+              <input type="text" id="editComplianceResult"
+                placeholder="No fault, fault found, pending report..." />
+            </div>
+          </div>
+          <div class="field" style="margin-top:10px">
+            <div class="label">Notes</div>
+            <input type="text" id="editComplianceNotes" />
+          </div>
+        </div>
+        <div class="modal-foot">
+          <button class="btn danger"
+            onclick="deleteComplianceRecordFromModal()">Delete</button>
+          <button class="btn primary" onclick="saveComplianceEdit()">Save
+            Changes</button>
+        </div>
+      </div>
+    </div>
 
-        <script>
+    <script src="/static/app.js?v=16"></script>
+
+    <script>
   // Wire segmented status buttons to existing tab logic
   window.addEventListener("load", () => {
     const seg = document.getElementById("statusSeg");
@@ -2980,196 +3235,228 @@
   });
 </script>
 
-        <!-- Quick Reply Modal (required by app.js) -->
-        <div class="modal-backdrop hidden" id="ackModal">
-            <div class="modal">
-                <div class="modal-head">
-                    <h3>Quick Reply</h3>
-                    <button class="btn ghost"
-                        onclick="closeAckModal()">Close</button>
-                </div>
-                <div class="modal-body">
-                    <div class="field">
-                        <div class="label">Subject</div>
-                        <input id="ackSubject" type="text" />
-                    </div>
-                    <div class="row" style="gap:10px;margin-top:10px;flex-wrap:wrap">
-                        <div class="field" style="flex:1;min-width:240px">
-                            <div class="label">CC</div>
-                            <input id="ackCc" type="text" placeholder="Comma-separated (optional)" />
-                        </div>
-                        <div class="field" style="flex:1;min-width:240px">
-                            <div class="label">BCC</div>
-                            <input id="ackBcc" type="text" placeholder="Comma-separated (optional)" />
-                        </div>
-                    </div>
-                    <div class="field" style="margin-top:10px">
-                        <div class="label">Body</div>
-                        <textarea id="ackBody"
-                            style="width:100%;min-height:160px;padding:10px 12px;border:1px solid var(--border);border-radius:12px;font-size:13px"></textarea>
-                    </div>
-                    <div class="field" style="margin-top:10px">
-                        <div class="label">Attachments</div>
-                        <input id="ackAttachments" type="file" multiple />
-                        <div class="small muted" style="margin-top:6px">You can attach files and photos. They will be sent with the reply.</div>
-                        <div id="ackAttachList" class="small" style="margin-top:6px"></div>
-                    </div>
-                </div>
-                <div class="modal-foot">
-                    <button class="btn"
-                        onclick="closeAckModal()">Cancel</button>
-                    <button class="btn primary" id="sendAckBtn"
-                        onclick="sendAckFromModal()">Send</button>
-                </div>
-            </div>
+    <!-- Quick Reply Modal (required by app.js) -->
+    <div class="modal-backdrop hidden" id="ackModal">
+      <div class="modal">
+        <div class="modal-head">
+          <h3>Quick Reply</h3>
+          <button class="btn ghost"
+            onclick="closeAckModal()">Close</button>
         </div>
-
-        <!-- AI Draft Reply Modal -->
-        <div class="modal-backdrop hidden" id="aiReplyModal">
-            <div class="modal">
-                <div class="modal-head">
-                    <h3>AI Draft Reply</h3>
-                    <button class="btn ghost" onclick="closeAiReplyModal()">Close</button>
-                </div>
-                <div class="modal-body">
-                    <div class="field">
-                        <div class="label">Subject</div>
-                        <input id="aiReplySubject" type="text" />
-                    </div>
-                    <div class="field" style="margin-top:10px">
-                        <div class="label">Body</div>
-                        <textarea id="aiReplyBody"
-                            style="width:100%;min-height:180px;padding:10px 12px;border:1px solid var(--border);border-radius:12px;font-size:13px"></textarea>
-                    </div>
-                    <div class="field" style="margin-top:10px">
-                        <div class="label">Additional info (optional) — used for Regenerate</div>
-                        <textarea id="aiReplyExtra"
-                            placeholder="e.g., confirm access window, quote requested, landlord approved, attach invoice number..."
-                            style="width:100%;min-height:90px;padding:10px 12px;border:1px solid var(--border);border-radius:12px;font-size:13px"></textarea>
-                        <div class="row" style="margin-top:8px">
-                            <button class="btn" id="aiVoiceStartBtn" onclick="startAiVoiceCapture()">Start Voice</button>
-                            <button class="btn" id="aiVoiceStopBtn" onclick="stopAiVoiceCaptureAndTranscribe()" disabled>Stop & Insert</button>
-                            <span class="small muted" id="aiVoiceStatus">Voice input idle.</span>
-                        </div>
-                    </div>
-                    <div class="small muted" id="aiReplyMeta" style="margin-top:10px"></div>
-                </div>
-                <div class="modal-foot">
-                    <button class="btn" onclick="closeAiReplyModal()">Cancel</button>
-                    <button class="btn" id="aiReplyRegenerateBtn" onclick="regenerateAiDraft()">Regenerate</button>
-                    <button class="btn" onclick="useAiDraftInQuickReply()">Use in Quick Reply</button>
-                </div>
+        <div class="modal-body">
+          <div class="field">
+            <div class="label">Subject</div>
+            <input id="ackSubject" type="text" />
+          </div>
+          <div class="row" style="gap:10px;margin-top:10px;flex-wrap:wrap">
+            <div class="field" style="flex:1;min-width:240px">
+              <div class="label">CC</div>
+              <input id="ackCc" type="text"
+                placeholder="Comma-separated (optional)" />
             </div>
-        </div>
-
-        <!-- Settings Modal (required by app.js) -->
-        <div class="modal-backdrop hidden" id="settingsModal">
-            <div class="modal">
-                <div class="modal-head">
-                    <h3>Settings</h3>
-                    <button class="btn ghost"
-                        onclick="closeSettings()">Close</button>
-                </div>
-                <div class="modal-body">
-                    <label class="checkbox">
-                        <input id="setDefaultHtml" type="checkbox" />
-                        Default to HTML view when available
-                    </label>
-                    <div style="height:10px"></div>
-                    <label class="checkbox">
-                        <input id="setBlockRemote" type="checkbox" />
-                        Proxy remote images (recommended)
-                    </label>
-                    <div style="height:10px"></div>
-                    <label class="checkbox">
-                        <input id="setCompact" type="checkbox" />
-                        Compact ticket cards
-                    </label>
-
-                    <div style="margin-top:14px;border-top:1px solid var(--border);padding-top:14px">
-                        <div class="small" style="font-weight:800">Email signature</div>
-                        <div class="small muted" style="margin-top:6px">Used automatically in Quick Reply.</div>
-
-                        <div style="margin-top:12px; padding:12px; border:1px solid var(--border); border-radius:12px;">
-                            <div class="small" style="font-weight:800">Gmail signature (recommended)</div>
-                            <div class="small muted" style="margin-top:6px">
-                                Fetches the exact signature from Gmail (Send mail as). This avoids template mismatches.
-                            </div>
-
-                            <div style="margin-top:10px; display:flex; gap:10px; align-items:center; flex-wrap:wrap">
-                                <input id="sigSendAsEmail" type="text" value="admin@donspremier.com.au" style="min-width:260px;padding:10px 12px;border:1px solid var(--border);border-radius:12px;font-size:13px" />
-                                <button class="btn" onclick="fetchGmailSignature()">Fetch from Gmail</button>
-                                <label class="btn" style="cursor:pointer">
-                                    Upload profile photo
-                                    <input id="sigProfileFile" type="file" accept="image/*" style="display:none" onchange="uploadSignatureAsset('profile', this.files[0])" />
-                                </label>
-                                <label class="btn" style="cursor:pointer">
-                                    Upload banner
-                                    <input id="sigBannerFile" type="file" accept="image/*" style="display:none" onchange="uploadSignatureAsset('banner', this.files[0])" />
-                                </label>
-                                <button class="btn" onclick="refreshSignaturePreview()">Refresh preview</button>
-                            </div>
-
-                            <div class="small muted" id="sigSourceMeta" style="margin-top:10px"></div>
-
-                            <div style="margin-top:12px; background:#fff; border:1px solid var(--border); border-radius:12px; overflow:hidden">
-                                <iframe id="signaturePreview" title="Signature preview" style="width:100%; height:260px; border:0;"></iframe>
-                            </div>
-                        </div>
-                        <div style="margin-top:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-                            <button class="btn" onclick="openBlacklistModal()">Manage Blacklist</button>
-                        </div>
-                    </div>
-
-                    <div
-                        style="margin-top:14px;border-top:1px solid var(--border);padding-top:14px">
-                        <div class="small"
-                            style="font-weight:800;color:var(--danger)">Danger
-                            zone</div>
-                        <div class="small muted" style="margin-top:6px">Flush
-                            permanently deletes all tickets and sync
-                            state.</div>
-                        <div
-                            style="margin-top:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-                            <button class="btn danger"
-                                onclick="flushDatabase()">Flush
-                                database</button>
-                            <div class="small muted">You will be asked to type
-                                FLUSH to confirm.</div>
-                        </div>
-                    </div>
-                </div>
-                <div class="modal-foot">
-                    <button class="btn"
-                        onclick="closeSettings()">Cancel</button>
-                    <button class="btn primary"
-                        onclick="applySettingsFromModal()">Save</button>
-                </div>
+            <div class="field" style="flex:1;min-width:240px">
+              <div class="label">BCC</div>
+              <input id="ackBcc" type="text"
+                placeholder="Comma-separated (optional)" />
             </div>
+          </div>
+          <div class="field" style="margin-top:10px">
+            <div class="label">Body</div>
+            <textarea id="ackBody"
+              style="width:100%;min-height:160px;padding:10px 12px;border:1px solid var(--border);border-radius:12px;font-size:13px"></textarea>
+          </div>
+          <div class="field" style="margin-top:10px">
+            <div class="label">Attachments</div>
+            <input id="ackAttachments" type="file" multiple />
+            <div class="small muted" style="margin-top:6px">You can attach files
+              and photos. They will be sent with the reply.</div>
+            <div id="ackAttachList" class="small" style="margin-top:6px"></div>
+          </div>
         </div>
+        <div class="modal-foot">
+          <button class="btn"
+            onclick="closeAckModal()">Cancel</button>
+          <button class="btn primary" id="sendAckBtn"
+            onclick="sendAckFromModal()">Send</button>
+        </div>
+      </div>
+    </div>
 
-        <!-- Blacklist Modal -->
-        <div class="modal-backdrop hidden" id="blacklistModal">
-            <div class="modal">
-                <div class="modal-head">
-                    <h3>Blacklisted Senders</h3>
-                    <button class="btn ghost" onclick="closeBlacklistModal()">Close</button>
-                </div>
-                <div class="modal-body">
-                    <div class="row space">
-                        <div class="small muted">Emails in this list will be marked as blacklisted.</div>
-                        <button class="btn" onclick="refreshBlacklist()">Refresh</button>
-                    </div>
-                    <div id="blacklistList" style="margin-top:12px"></div>
-                </div>
-                <div class="modal-foot">
-                    <button class="btn" onclick="closeBlacklistModal()">Done</button>
-                </div>
+    <!-- AI Draft Reply Modal -->
+    <div class="modal-backdrop hidden" id="aiReplyModal">
+      <div class="modal">
+        <div class="modal-head">
+          <h3>AI Draft Reply</h3>
+          <button class="btn ghost" onclick="closeAiReplyModal()">Close</button>
+        </div>
+        <div class="modal-body">
+          <div class="field">
+            <div class="label">Subject</div>
+            <input id="aiReplySubject" type="text" />
+          </div>
+          <div class="field" style="margin-top:10px">
+            <div class="label">Body</div>
+            <textarea id="aiReplyBody"
+              style="width:100%;min-height:180px;padding:10px 12px;border:1px solid var(--border);border-radius:12px;font-size:13px"></textarea>
+          </div>
+          <div class="field" style="margin-top:10px">
+            <div class="label">Additional info (optional) — used for
+              Regenerate</div>
+            <textarea id="aiReplyExtra"
+              placeholder="e.g., confirm access window, quote requested, landlord approved, attach invoice number..."
+              style="width:100%;min-height:90px;padding:10px 12px;border:1px solid var(--border);border-radius:12px;font-size:13px"></textarea>
+            <div class="row" style="margin-top:8px">
+              <button class="btn" id="aiVoiceStartBtn"
+                onclick="startAiVoiceCapture()">Start Voice</button>
+              <button class="btn" id="aiVoiceStopBtn"
+                onclick="stopAiVoiceCaptureAndTranscribe()" disabled>Stop &
+                Insert</button>
+              <span class="small muted" id="aiVoiceStatus">Voice input
+                idle.</span>
             </div>
+          </div>
+          <div class="small muted" id="aiReplyMeta"
+            style="margin-top:10px"></div>
         </div>
+        <div class="modal-foot">
+          <button class="btn" onclick="closeAiReplyModal()">Cancel</button>
+          <button class="btn" id="aiReplyRegenerateBtn"
+            onclick="regenerateAiDraft()">Regenerate</button>
+          <button class="btn" onclick="useAiDraftInQuickReply()">Use in Quick
+            Reply</button>
+        </div>
+      </div>
+    </div>
 
-        <!-- Legacy Thread Modal (optional; app.js will fall back to viewer) -->
-        <div id="threadModal" class="hidden" style="display:none"></div>
+    <!-- Settings Modal (required by app.js) -->
+    <div class="modal-backdrop hidden" id="settingsModal">
+      <div class="modal">
+        <div class="modal-head">
+          <h3>Settings</h3>
+          <button class="btn ghost"
+            onclick="closeSettings()">Close</button>
+        </div>
+        <div class="modal-body">
+          <label class="checkbox">
+            <input id="setDefaultHtml" type="checkbox" />
+            Default to HTML view when available
+          </label>
+          <div style="height:10px"></div>
+          <label class="checkbox">
+            <input id="setBlockRemote" type="checkbox" />
+            Proxy remote images (recommended)
+          </label>
+          <div style="height:10px"></div>
+          <label class="checkbox">
+            <input id="setCompact" type="checkbox" />
+            Compact ticket cards
+          </label>
 
-    </body>
+          <div
+            style="margin-top:14px;border-top:1px solid var(--border);padding-top:14px">
+            <div class="small" style="font-weight:800">Email signature</div>
+            <div class="small muted" style="margin-top:6px">Used automatically
+              in Quick Reply.</div>
+
+            <div
+              style="margin-top:12px; padding:12px; border:1px solid var(--border); border-radius:12px;">
+              <div class="small" style="font-weight:800">Gmail signature
+                (recommended)</div>
+              <div class="small muted" style="margin-top:6px">
+                Fetches the exact signature from Gmail (Send mail as). This
+                avoids template mismatches.
+              </div>
+
+              <div
+                style="margin-top:10px; display:flex; gap:10px; align-items:center; flex-wrap:wrap">
+                <input id="sigSendAsEmail" type="text"
+                  value="admin@donspremier.com.au"
+                  style="min-width:260px;padding:10px 12px;border:1px solid var(--border);border-radius:12px;font-size:13px" />
+                <button class="btn" onclick="fetchGmailSignature()">Fetch from
+                  Gmail</button>
+                <label class="btn" style="cursor:pointer">
+                  Upload profile photo
+                  <input id="sigProfileFile" type="file" accept="image/*"
+                    style="display:none"
+                    onchange="uploadSignatureAsset('profile', this.files[0])" />
+                </label>
+                <label class="btn" style="cursor:pointer">
+                  Upload banner
+                  <input id="sigBannerFile" type="file" accept="image/*"
+                    style="display:none"
+                    onchange="uploadSignatureAsset('banner', this.files[0])" />
+                </label>
+                <button class="btn" onclick="refreshSignaturePreview()">Refresh
+                  preview</button>
+              </div>
+
+              <div class="small muted" id="sigSourceMeta"
+                style="margin-top:10px"></div>
+
+              <div
+                style="margin-top:12px; background:#fff; border:1px solid var(--border); border-radius:12px; overflow:hidden">
+                <iframe id="signaturePreview" title="Signature preview"
+                  style="width:100%; height:260px; border:0;"></iframe>
+              </div>
+            </div>
+            <div
+              style="margin-top:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+              <button class="btn" onclick="openBlacklistModal()">Manage
+                Blacklist</button>
+            </div>
+          </div>
+
+          <div
+            style="margin-top:14px;border-top:1px solid var(--border);padding-top:14px">
+            <div class="small"
+              style="font-weight:800;color:var(--danger)">Danger
+              zone</div>
+            <div class="small muted" style="margin-top:6px">Flush
+              permanently deletes all tickets and sync
+              state.</div>
+            <div
+              style="margin-top:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+              <button class="btn danger"
+                onclick="flushDatabase()">Flush
+                database</button>
+              <div class="small muted">You will be asked to type
+                FLUSH to confirm.</div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-foot">
+          <button class="btn"
+            onclick="closeSettings()">Cancel</button>
+          <button class="btn primary"
+            onclick="applySettingsFromModal()">Save</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Blacklist Modal -->
+    <div class="modal-backdrop hidden" id="blacklistModal">
+      <div class="modal">
+        <div class="modal-head">
+          <h3>Blacklisted Senders</h3>
+          <button class="btn ghost"
+            onclick="closeBlacklistModal()">Close</button>
+        </div>
+        <div class="modal-body">
+          <div class="row space">
+            <div class="small muted">Emails in this list will be marked as
+              blacklisted.</div>
+            <button class="btn" onclick="refreshBlacklist()">Refresh</button>
+          </div>
+          <div id="blacklistList" style="margin-top:12px"></div>
+        </div>
+        <div class="modal-foot">
+          <button class="btn" onclick="closeBlacklistModal()">Done</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Legacy Thread Modal (optional; app.js will fall back to viewer) -->
+    <div id="threadModal" class="hidden" style="display:none"></div>
+
+  </body>
 </html>
