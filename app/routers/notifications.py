@@ -14,6 +14,8 @@ from app.models import (
     BlacklistedSender,
     ComplianceRecord,
     ComplianceRecordStatus,
+    MaintenanceOrder,
+    MaintenanceOrderStatus,
     ManagedProperty,
     MySpaceTodo,
     RentDueTracker,
@@ -134,6 +136,39 @@ def notification_summary(
                 }
             )
 
+    maintenance_count = 0
+    if "maintenance" in allowed_pages:
+        open_maintenance = [
+            MaintenanceOrderStatus.NEW,
+            MaintenanceOrderStatus.WAITING_OWNER_APPROVAL,
+            MaintenanceOrderStatus.OWNER_APPROVED,
+            MaintenanceOrderStatus.OWNER_DECLINED,
+            MaintenanceOrderStatus.OWNER_ARRANGING,
+            MaintenanceOrderStatus.QUOTE_REQUESTED,
+            MaintenanceOrderStatus.QUOTE_RECEIVED,
+            MaintenanceOrderStatus.TRADIE_ARRANGED,
+            MaintenanceOrderStatus.TENANT_NOTIFIED,
+        ]
+        maintenance_base = (
+            db.query(MaintenanceOrder)
+            .filter(MaintenanceOrder.mailbox == mailbox)
+            .filter(MaintenanceOrder.due_by.isnot(None))
+            .filter(MaintenanceOrder.due_by < now)
+            .filter(MaintenanceOrder.status.in_(open_maintenance))
+        )
+        maintenance_count = maintenance_base.count()
+        for row in maintenance_base.order_by(MaintenanceOrder.due_by.asc()).limit(4).all():
+            items.append(
+                {
+                    "kind": "maintenance",
+                    "severity": "overdue",
+                    "page": "maintenance",
+                    "title": row.title or "Maintenance order",
+                    "detail": f"{row.property_address} - {row.status.value.replace('_', ' ').title()}",
+                    "due_at": _iso(row.due_by),
+                }
+            )
+
     my_space_count = 0
     if "myspace" in allowed_pages:
         my_space_base = (
@@ -157,7 +192,7 @@ def notification_summary(
                 }
             )
 
-    total = email_count + rent_count + compliance_count + my_space_count
+    total = email_count + rent_count + compliance_count + maintenance_count + my_space_count
     items.sort(key=lambda item: item.get("due_at") or "")
     return {
         "total": total,
@@ -165,6 +200,7 @@ def notification_summary(
             "email": email_count,
             "rent": rent_count,
             "compliance": compliance_count,
+            "maintenance": maintenance_count,
             "myspace": my_space_count,
         },
         "items": items[:18],

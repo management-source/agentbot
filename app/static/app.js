@@ -176,6 +176,10 @@ let currentSearch = "";
 let currentRentPage = 1;
 let rentLoadedOnce = false;
 let rentViewMode = "tracker";
+let currentMaintenancePage = 1;
+let maintenanceLoadedOnce = false;
+let selectedMaintenanceOrderId = null;
+let maintenanceOrdersCache = {};
 let currentPropertiesPage = 1;
 let propertiesLoadedOnce = false;
 let currentCompliancePage = 1;
@@ -219,6 +223,11 @@ function updateSyncContextUI() {
     if (currentDashboardTab === "rent") {
         if (viewBadge) viewBadge.textContent = "Rent Tracker";
         if (info) info.textContent = "Inbox sync controls are hidden while you are on the rent tracker tab.";
+        return;
+    }
+    if (currentDashboardTab === "maintenance") {
+        if (viewBadge) viewBadge.textContent = "Maintenance";
+        if (info) info.textContent = "Inbox sync controls are hidden while you are managing maintenance orders.";
         return;
     }
     if (currentDashboardTab === "compliance") {
@@ -286,6 +295,7 @@ function warnIfSyncHitLimit(payload) {
 function notificationKindLabel(kind) {
     const key = String(kind || "").toLowerCase();
     if (key === "email") return "Email";
+    if (key === "maintenance") return "Maintenance";
     if (key === "rent") return "Rent";
     if (key === "compliance") return "Compliance";
     if (key === "myspace") return "My Space";
@@ -305,9 +315,9 @@ function renderNotifications(data = {}) {
     if (summary) {
         const c = data.categories || {};
         if (total > 0) {
-            summary.textContent = `${total} overdue item${total === 1 ? "" : "s"} - Email ${c.email || 0}, Rent ${c.rent || 0}, Compliance ${c.compliance || 0}, My Space ${c.myspace || 0}`;
+            summary.textContent = `${total} overdue item${total === 1 ? "" : "s"} - Email ${c.email || 0}, Maintenance ${c.maintenance || 0}, Rent ${c.rent || 0}, Compliance ${c.compliance || 0}, My Space ${c.myspace || 0}`;
         } else {
-            summary.textContent = "No overdue emails, reminders, rent, or compliance items.";
+            summary.textContent = "No overdue emails, maintenance, reminders, rent, or compliance items.";
         }
     }
     if (!list) return;
@@ -405,6 +415,7 @@ async function initMailboxes() {
             // refresh UI data under new mailbox
             currentPage = 1;
             rentLoadedOnce = false;
+            maintenanceLoadedOnce = false;
             propertiesLoadedOnce = false;
             complianceLoadedOnce = false;
             coverageLoadedOnce = false;
@@ -413,6 +424,10 @@ async function initMailboxes() {
             if (currentDashboardTab === "rent") {
                 currentRentPage = 1;
                 loadActiveRentView();
+            }
+            if (currentDashboardTab === "maintenance") {
+                currentMaintenancePage = 1;
+                loadMaintenanceDashboard();
             }
             if (currentDashboardTab === "properties") {
                 currentPropertiesPage = 1;
@@ -1249,12 +1264,12 @@ const USER_ROLE_ACCESS = {
     ADMIN: {
         label: "Administrator",
         summary: "Full control over the portal, system users, settings, and all operational workspaces.",
-        access: ["System users", "My Space", "Email Manager", "Rent Tracker", "Compliance", "Compliance Report", "Properties"],
+        access: ["System users", "My Space", "Email Manager", "Maintenance", "Rent Tracker", "Compliance", "Compliance Report", "Properties"],
     },
     PM: {
         label: "Property Manager",
         summary: "Daily property management tools for inbox triage, rent, compliance, reports, and properties.",
-        access: ["My Space", "Email Manager", "Rent Tracker", "Compliance", "Compliance Report", "Properties"],
+        access: ["My Space", "Email Manager", "Maintenance", "Rent Tracker", "Compliance", "Compliance Report", "Properties"],
     },
     LEASING: {
         label: "Leasing",
@@ -1282,6 +1297,7 @@ const FALLBACK_PAGE_REGISTRY = [
     { id: "portal", label: "Portal Hub", description: "Landing dashboard and shortcuts.", section: "Core", locked: true },
     { id: "myspace", label: "My Space", description: "Private planner, follow-ups, links, snippets, notes, and guides.", section: "Core" },
     { id: "inbox", label: "Email Manager", description: "Email tickets and inbox operations.", section: "Operations" },
+    { id: "maintenance", label: "Maintenance", description: "Maintenance orders, owner approvals, quotes, tradie arrangements, and completion tracking.", section: "Operations" },
     { id: "rent", label: "Rent Tracker", description: "Rent tracking and reports.", section: "Operations" },
     { id: "compliance", label: "Compliance", description: "Compliance records and due dates.", section: "Compliance" },
     { id: "coverage", label: "Compliance Report", description: "Missing and incomplete compliance checks.", section: "Compliance" },
@@ -1330,6 +1346,7 @@ function applyPageVisibility() {
         portal: "navPortal",
         myspace: "navMySpace",
         inbox: "navInbox",
+        maintenance: "navMaintenance",
         rent: "navRentTracker",
         compliance: "navCompliance",
         coverage: "navComplianceCoverage",
@@ -1911,7 +1928,7 @@ function formatDateShort(dt) {
 }
 
 function switchDashboardTab(tab) {
-    const requestedTab = ["portal", "myspace", "rent", "compliance", "coverage", "properties", "system", "inbox"].includes(tab) ? tab : "portal";
+    const requestedTab = ["portal", "myspace", "maintenance", "rent", "compliance", "coverage", "properties", "system", "inbox"].includes(tab) ? tab : "portal";
     if (!canAccessPage(requestedTab)) {
         alert("This page is not assigned to your role.");
         currentDashboardTab = firstAccessiblePage();
@@ -1922,6 +1939,7 @@ function switchDashboardTab(tab) {
         portal: ["Portal Hub", "Your workspace shortcuts for email, rent, compliance, and property setup."],
         myspace: ["My Space", "Your private workspace for planning, follow-ups, snippets, notes, and staff guides."],
         inbox: ["Email Manager", "Unified inbox operations with clear action queues and fast follow-up tools."],
+        maintenance: ["Maintenance", "Create, approve, quote, schedule, and complete property maintenance orders."],
         rent: ["Rent Tracker", "Track rental due dates, payments, arrears, and yearly rent reporting."],
         compliance: ["Compliance", "Create and update compliance records with calculated due dates."],
         coverage: ["Compliance Report", "Review missing and incomplete MRS, Smoke, Gas, and Electrical checks."],
@@ -1936,12 +1954,14 @@ function switchDashboardTab(tab) {
     const portalPanel = document.getElementById("portalPanel");
     const mySpacePanel = document.getElementById("mySpacePanel");
     const inboxPanel = document.getElementById("inboxPanel");
+    const maintenancePanel = document.getElementById("maintenancePanel");
     const rentPanel = document.getElementById("rentPanel");
     const propertiesPanel = document.getElementById("propertiesPanel");
     const compliancePanel = document.getElementById("compliancePanel");
     const coveragePanel = document.getElementById("coveragePanel");
     const systemPanel = document.getElementById("systemPanel");
     const navInbox = document.getElementById("navInbox");
+    const navMaintenance = document.getElementById("navMaintenance");
     const navMySpace = document.getElementById("navMySpace");
     const navPortal = document.getElementById("navPortal");
     const navRent = document.getElementById("navRentTracker");
@@ -1954,6 +1974,7 @@ function switchDashboardTab(tab) {
     if (portalPanel) portalPanel.classList.toggle("hidden", currentDashboardTab !== "portal");
     if (mySpacePanel) mySpacePanel.classList.toggle("hidden", currentDashboardTab !== "myspace");
     if (inboxPanel) inboxPanel.classList.toggle("hidden", currentDashboardTab !== "inbox");
+    if (maintenancePanel) maintenancePanel.classList.toggle("hidden", currentDashboardTab !== "maintenance");
     if (rentPanel) rentPanel.classList.toggle("hidden", currentDashboardTab !== "rent");
     if (propertiesPanel) propertiesPanel.classList.toggle("hidden", currentDashboardTab !== "properties");
     if (compliancePanel) compliancePanel.classList.toggle("hidden", currentDashboardTab !== "compliance");
@@ -1962,6 +1983,7 @@ function switchDashboardTab(tab) {
     if (navPortal) navPortal.classList.toggle("active", currentDashboardTab === "portal");
     if (navMySpace) navMySpace.classList.toggle("active", currentDashboardTab === "myspace");
     if (navInbox) navInbox.classList.toggle("active", currentDashboardTab === "inbox");
+    if (navMaintenance) navMaintenance.classList.toggle("active", currentDashboardTab === "maintenance");
     if (navRent) navRent.classList.toggle("active", currentDashboardTab === "rent");
     if (navProperties) navProperties.classList.toggle("active", currentDashboardTab === "properties");
     if (navSystem) navSystem.classList.toggle("active", currentDashboardTab === "system");
@@ -1969,6 +1991,7 @@ function switchDashboardTab(tab) {
     if (navCoverage) navCoverage.classList.toggle("active", currentDashboardTab === "coverage");
     if (shell) {
         shell.classList.toggle("inbox-mode", currentDashboardTab === "inbox");
+        shell.classList.toggle("maintenance-mode", currentDashboardTab === "maintenance");
         shell.classList.toggle("portal-mode", currentDashboardTab === "portal");
         shell.classList.toggle("myspace-mode", currentDashboardTab === "myspace");
         shell.classList.toggle("rent-mode", currentDashboardTab === "rent");
@@ -1981,6 +2004,10 @@ function switchDashboardTab(tab) {
     updateSyncContextUI();
     if (currentDashboardTab === "rent" && !rentLoadedOnce) {
         loadActiveRentView();
+    }
+    if (currentDashboardTab === "maintenance" && !maintenanceLoadedOnce) {
+        refreshPropertyOptions();
+        loadMaintenanceDashboard();
     }
     if (currentDashboardTab === "myspace" && !mySpaceLoadedOnce) {
         loadMySpace();
@@ -2018,6 +2045,545 @@ function toggleSidebar() {
     const collapsed = !(shell && shell.classList.contains("sidebar-collapsed"));
     localStorage.setItem("agent_sidebar_collapsed", collapsed ? "1" : "0");
     applySidebarState();
+}
+
+function maintenanceStatusLabel(status) {
+    const labels = {
+        NEW: "New",
+        WAITING_OWNER_APPROVAL: "Waiting Owner Approval",
+        OWNER_APPROVED: "Owner Approved",
+        OWNER_DECLINED: "Owner Declined",
+        OWNER_ARRANGING: "Owner Arranging",
+        QUOTE_REQUESTED: "Quote Requested",
+        QUOTE_RECEIVED: "Quote Received",
+        TRADIE_ARRANGED: "Tradie Arranged",
+        TENANT_NOTIFIED: "Tenant Notified",
+        COMPLETED: "Completed",
+        CANCELLED: "Cancelled",
+    };
+    return labels[String(status || "NEW").toUpperCase()] || String(status || "New").replaceAll("_", " ");
+}
+
+function maintenanceStatusClass(status) {
+    const key = String(status || "").toUpperCase();
+    if (key === "COMPLETED") return "done";
+    if (key === "WAITING_OWNER_APPROVAL" || key === "QUOTE_REQUESTED") return "wait";
+    if (key === "OWNER_DECLINED" || key === "CANCELLED") return "stop";
+    if (key === "OWNER_APPROVED" || key === "QUOTE_RECEIVED" || key === "TRADIE_ARRANGED" || key === "TENANT_NOTIFIED") return "action";
+    return "";
+}
+
+function maintenanceStatusChip(status) {
+    return `<span class="maintenance-status ${maintenanceStatusClass(status)}">${escapeHtml(maintenanceStatusLabel(status))}</span>`;
+}
+
+function maintenanceDateInputValue(value) {
+    if (!value) return "";
+    try {
+        const d = new Date(value);
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    } catch {
+        return "";
+    }
+}
+
+function maintenanceDateTimeInputValue(value) {
+    if (!value) return "";
+    try {
+        const d = new Date(value);
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}T${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+    } catch {
+        return "";
+    }
+}
+
+function maintenanceDatePayload(value, dateOnly = false) {
+    const raw = String(value || "").trim();
+    if (!raw) return null;
+    return dateOnly ? `${raw}T00:00:00` : raw;
+}
+
+function maintenanceMoney(value) {
+    const amount = Number(value || 0);
+    if (!(amount > 0)) return "-";
+    return amount.toLocaleString(undefined, { style: "currency", currency: "AUD" });
+}
+
+function renderMaintenanceAssigneeOptions(selectedId = "") {
+    const sel = document.getElementById("maintenanceAssignee");
+    if (!sel) return;
+    const selected = selectedId ? String(selectedId) : sel.value || "";
+    sel.innerHTML = [
+        `<option value="">Unassigned</option>`,
+        ...assignableUsers.map((u) => {
+            const value = String(u.id);
+            const label = `${u.name || u.email}${u.role ? ` (${u.role})` : ""}`;
+            return `<option value="${escapeHtml(value)}" ${value === selected ? "selected" : ""}>${escapeHtml(label)}</option>`;
+        }),
+    ].join("");
+    sel.value = selected;
+}
+
+function updateMaintenancePropertySelection() {
+    const search = document.getElementById("maintenancePropertySearch");
+    const hidden = document.getElementById("maintenancePropertyId");
+    if (!search || !hidden) return null;
+    const match = resolvePropertySearchValue(search.value);
+    hidden.value = match ? String(match.id) : "";
+    return match;
+}
+
+function maintenanceFormPayload() {
+    const selectedProperty = updateMaintenancePropertySelection();
+    const propertyInput = document.getElementById("maintenancePropertySearch");
+    const quotedRaw = document.getElementById("maintenanceQuotedAmount")?.value || "";
+    return {
+        property_id: selectedProperty ? Number(selectedProperty.id) : null,
+        property_address: selectedProperty ? selectedProperty.property_address : String(propertyInput?.value || "").trim(),
+        suburb: selectedProperty ? selectedProperty.suburb : null,
+        state_code: selectedProperty ? selectedProperty.state_code : "VIC",
+        postcode: selectedProperty ? selectedProperty.postcode : null,
+        title: String(document.getElementById("maintenanceTitle")?.value || "").trim(),
+        category: String(document.getElementById("maintenanceCategory")?.value || "").trim(),
+        priority: String(document.getElementById("maintenancePriority")?.value || "normal").trim(),
+        description: String(document.getElementById("maintenanceDescription")?.value || "").trim(),
+        access_notes: String(document.getElementById("maintenanceAccessNotes")?.value || "").trim(),
+        owner_name: String(document.getElementById("maintenanceOwnerName")?.value || "").trim(),
+        owner_email: String(document.getElementById("maintenanceOwnerEmail")?.value || "").trim(),
+        owner_phone: String(document.getElementById("maintenanceOwnerPhone")?.value || "").trim(),
+        tenant_name: String(document.getElementById("maintenanceTenantName")?.value || "").trim(),
+        tenant_email: String(document.getElementById("maintenanceTenantEmail")?.value || "").trim(),
+        tenant_phone: String(document.getElementById("maintenanceTenantPhone")?.value || "").trim(),
+        due_by: maintenanceDatePayload(document.getElementById("maintenanceDueBy")?.value, true),
+        assignee_user_id: document.getElementById("maintenanceAssignee")?.value ? Number(document.getElementById("maintenanceAssignee").value) : null,
+        tradie_name: String(document.getElementById("maintenanceTradieName")?.value || "").trim(),
+        tradie_company: String(document.getElementById("maintenanceTradieCompany")?.value || "").trim(),
+        tradie_email: String(document.getElementById("maintenanceTradieEmail")?.value || "").trim(),
+        tradie_phone: String(document.getElementById("maintenanceTradiePhone")?.value || "").trim(),
+        tradie_scheduled_for: maintenanceDatePayload(document.getElementById("maintenanceTradieScheduledFor")?.value),
+        quoted_amount: quotedRaw ? Number(quotedRaw) : null,
+        quote_notes: String(document.getElementById("maintenanceQuoteNotes")?.value || "").trim(),
+    };
+}
+
+function resetMaintenanceForm() {
+    selectedMaintenanceOrderId = null;
+    const ids = [
+        "maintenanceOrderId", "maintenancePropertyId", "maintenancePropertySearch", "maintenanceTitle",
+        "maintenanceDescription", "maintenanceAccessNotes", "maintenanceOwnerName", "maintenanceOwnerEmail",
+        "maintenanceOwnerPhone", "maintenanceTenantName", "maintenanceTenantEmail", "maintenanceTenantPhone",
+        "maintenanceDueBy", "maintenanceTradieName", "maintenanceTradieCompany", "maintenanceTradieEmail",
+        "maintenanceTradiePhone", "maintenanceTradieScheduledFor", "maintenanceQuotedAmount", "maintenanceQuoteNotes",
+    ];
+    ids.forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.value = "";
+    });
+    const category = document.getElementById("maintenanceCategory");
+    const priority = document.getElementById("maintenancePriority");
+    if (category) category.value = "General";
+    if (priority) priority.value = "normal";
+    renderMaintenanceAssigneeOptions("");
+    const title = document.getElementById("maintenanceFormTitle");
+    if (title) title.textContent = "New Maintenance Order";
+}
+
+function fillMaintenanceForm(order) {
+    if (!order) return;
+    const setVal = (id, value = "") => {
+        const el = document.getElementById(id);
+        if (el) el.value = value || "";
+    };
+    setVal("maintenanceOrderId", order.id);
+    setVal("maintenancePropertyId", order.property_id);
+    setVal("maintenancePropertySearch", order.property_label || order.property_address);
+    setVal("maintenanceTitle", order.title);
+    setVal("maintenanceCategory", order.category || "General");
+    setVal("maintenancePriority", order.priority || "normal");
+    setVal("maintenanceDescription", order.description);
+    setVal("maintenanceAccessNotes", order.access_notes);
+    setVal("maintenanceOwnerName", order.owner_name);
+    setVal("maintenanceOwnerEmail", order.owner_email);
+    setVal("maintenanceOwnerPhone", order.owner_phone);
+    setVal("maintenanceTenantName", order.tenant_name);
+    setVal("maintenanceTenantEmail", order.tenant_email);
+    setVal("maintenanceTenantPhone", order.tenant_phone);
+    setVal("maintenanceDueBy", maintenanceDateInputValue(order.due_by));
+    setVal("maintenanceTradieName", order.tradie_name);
+    setVal("maintenanceTradieCompany", order.tradie_company);
+    setVal("maintenanceTradieEmail", order.tradie_email);
+    setVal("maintenanceTradiePhone", order.tradie_phone);
+    setVal("maintenanceTradieScheduledFor", maintenanceDateTimeInputValue(order.tradie_scheduled_for));
+    setVal("maintenanceQuotedAmount", order.quoted_amount || "");
+    setVal("maintenanceQuoteNotes", order.quote_notes || order.owner_decision_notes || order.completion_notes || "");
+    renderMaintenanceAssigneeOptions(order.assignee_user_id || "");
+    const title = document.getElementById("maintenanceFormTitle");
+    if (title) title.textContent = `Edit Maintenance Order #${order.id}`;
+}
+
+async function saveMaintenanceOrder() {
+    const payload = maintenanceFormPayload();
+    if (!payload.property_address && !payload.property_id) {
+        alert("Select or enter a property first.");
+        return;
+    }
+    if (!payload.title || !payload.description) {
+        alert("Issue title and description are required.");
+        return;
+    }
+    const id = document.getElementById("maintenanceOrderId")?.value || "";
+    const r = await apiFetch(id ? `/maintenance/orders/${id}` : "/maintenance/orders", {
+        method: id ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+    });
+    if (!r.ok) {
+        alert(`Failed to save maintenance order: ${await extractErrorMessage(r)}`);
+        return;
+    }
+    const order = await r.json();
+    selectedMaintenanceOrderId = order.id;
+    fillMaintenanceForm(order);
+    renderMaintenanceDetail(order);
+    await loadMaintenanceDashboard(currentMaintenancePage || 1);
+    await loadNotifications();
+}
+
+function renderMaintenanceSummary(summary = {}) {
+    const setText = (id, val) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = String(val || 0);
+    };
+    setText("maintenanceKpiOpen", summary.open);
+    setText("maintenanceKpiWaiting", summary.waiting_owner);
+    setText("maintenanceKpiQuotes", summary.quotes);
+    setText("maintenanceKpiScheduled", summary.scheduled);
+    setText("maintenanceKpiCompleted", summary.completed);
+}
+
+function renderMaintenanceList(items) {
+    const list = document.getElementById("maintenanceList");
+    if (!list) return;
+    maintenanceOrdersCache = {};
+    items.forEach((item) => { maintenanceOrdersCache[item.id] = item; });
+    if (!items.length) {
+        list.innerHTML = `<div class="ticket-empty"><strong>No maintenance orders found</strong><div class="small muted" style="margin-top:6px">Create a new order or adjust the filters.</div></div>`;
+        return;
+    }
+    list.innerHTML = items.map((item) => `
+      <button class="maintenance-order-card ${Number(selectedMaintenanceOrderId) === Number(item.id) ? "active" : ""}" type="button" onclick="openMaintenanceOrder(${item.id})">
+        <div class="row space">
+          <h4>#${item.id} ${escapeHtml(item.title || "Maintenance order")}</h4>
+          ${maintenanceStatusChip(item.status)}
+        </div>
+        <p>${escapeHtml(item.property_label || item.property_address || "-")}</p>
+        <p>${escapeHtml(item.category || "General")} - ${escapeHtml(item.priority || "normal")} - Updated ${escapeHtml(formatDateShort(item.updated_at))}</p>
+      </button>
+    `).join("");
+}
+
+async function loadMaintenanceDashboard(page = null) {
+    if (page !== null) currentMaintenancePage = page;
+    const p = currentMaintenancePage || 1;
+    const status = document.getElementById("maintenanceStatusFilter")?.value || "OPEN";
+    const query = document.getElementById("maintenanceSearchBox")?.value || "";
+    const url = new URL("/maintenance/orders", window.location.origin);
+    url.searchParams.set("page", String(p));
+    url.searchParams.set("page_size", "25");
+    if (status) url.searchParams.set("status", status);
+    if (query.trim()) url.searchParams.set("query", query.trim());
+
+    const [summaryResp, itemsResp] = await Promise.all([
+        apiFetch("/maintenance/summary"),
+        apiFetch(url.toString()),
+    ]);
+    if (summaryResp.ok) renderMaintenanceSummary(await summaryResp.json());
+    if (!itemsResp.ok) {
+        const list = document.getElementById("maintenanceList");
+        if (list) list.innerHTML = `<div class="ticket-empty"><strong>Failed to load maintenance orders</strong><div class="small muted">${escapeHtml(await extractErrorMessage(itemsResp))}</div></div>`;
+        return;
+    }
+    const data = await itemsResp.json();
+    const items = Array.isArray(data.items) ? data.items : [];
+    maintenanceLoadedOnce = true;
+    renderMaintenanceList(items);
+    const pi = document.getElementById("maintenancePageInfo");
+    if (pi) {
+        const total = Number(data.total || 0);
+        const pageNow = Number(data.page || 1);
+        const sizeNow = Number(data.page_size || 25);
+        const pages = sizeNow > 0 ? Math.max(1, Math.ceil(total / sizeNow)) : 1;
+        pi.textContent = `Page ${pageNow} of ${pages} - ${total} maintenance orders`;
+    }
+    const btnPrev = document.getElementById("maintenanceBtnPrev");
+    const btnNext = document.getElementById("maintenanceBtnNext");
+    if (btnPrev) btnPrev.disabled = Number(data.page || 1) <= 1;
+    if (btnNext) btnNext.disabled = !Boolean(data.has_more);
+    if (!selectedMaintenanceOrderId && items[0]) {
+        openMaintenanceOrder(items[0].id);
+    } else if (selectedMaintenanceOrderId) {
+        renderMaintenanceList(items);
+    }
+}
+
+function prevMaintenancePage() {
+    if (currentMaintenancePage <= 1) return;
+    currentMaintenancePage -= 1;
+    loadMaintenanceDashboard();
+}
+
+function nextMaintenancePage() {
+    currentMaintenancePage += 1;
+    loadMaintenanceDashboard();
+}
+
+async function openMaintenanceOrder(orderId) {
+    selectedMaintenanceOrderId = orderId;
+    const r = await apiFetch(`/maintenance/orders/${orderId}`);
+    if (!r.ok) {
+        alert(`Failed to open maintenance order: ${await extractErrorMessage(r)}`);
+        return;
+    }
+    const order = await r.json();
+    fillMaintenanceForm(order);
+    renderMaintenanceDetail(order);
+    renderMaintenanceList(Object.values(maintenanceOrdersCache));
+}
+
+function renderMaintenanceDetail(order) {
+    const title = document.getElementById("maintenanceDetailTitle");
+    const sub = document.getElementById("maintenanceDetailSub");
+    const status = document.getElementById("maintenanceDetailStatus");
+    const body = document.getElementById("maintenanceDetailBody");
+    if (title) title.textContent = `#${order.id} ${order.title || "Maintenance order"}`;
+    if (sub) sub.textContent = order.property_label || order.property_address || "";
+    if (status) {
+        status.className = `maintenance-status ${maintenanceStatusClass(order.status)}`;
+        status.textContent = maintenanceStatusLabel(order.status);
+    }
+    if (!body) return;
+    const attachments = Array.isArray(order.attachments) ? order.attachments : [];
+    const events = Array.isArray(order.events) ? order.events : [];
+    body.innerHTML = `
+      <div class="maintenance-detail-panel">
+        <h4>Order Snapshot</h4>
+        <div class="maintenance-meta-grid">
+          <div><span>Owner</span>${escapeHtml(order.owner_name || "-")}<br>${escapeHtml(order.owner_email || "")}</div>
+          <div><span>Tenant</span>${escapeHtml(order.tenant_name || "-")}<br>${escapeHtml(order.tenant_email || "")}</div>
+          <div><span>Tradie</span>${escapeHtml(order.tradie_company || order.tradie_name || "-")}<br>${escapeHtml(order.tradie_phone || order.tradie_email || "")}</div>
+          <div><span>Quote</span>${escapeHtml(maintenanceMoney(order.quoted_amount))}<br>${escapeHtml(order.quote_received_at ? `Received ${formatDateShort(order.quote_received_at)}` : "No quote uploaded")}</div>
+          <div><span>Due / Follow-up</span>${escapeHtml(formatDateShort(order.due_by))}</div>
+          <div><span>Scheduled</span>${escapeHtml(formatDate(order.tradie_scheduled_for))}</div>
+        </div>
+        <p class="small muted" style="margin-top:12px">${escapeHtml(order.description || "")}</p>
+      </div>
+
+      <div class="maintenance-detail-panel">
+        <h4>Workflow Actions</h4>
+        <div class="maintenance-action-strip">
+          <button class="btn" onclick="sendMaintenanceOwnerEmail(${order.id})">Email Owner for Approval</button>
+          <button class="btn" onclick="setMaintenanceStatus(${order.id}, 'OWNER_APPROVED')">Mark Owner Approved</button>
+          <button class="btn" onclick="setMaintenanceStatus(${order.id}, 'OWNER_DECLINED')">Mark Owner Declined</button>
+          <button class="btn" onclick="setMaintenanceStatus(${order.id}, 'OWNER_ARRANGING')">Owner Arranging Themselves</button>
+          <button class="btn" onclick="setMaintenanceStatus(${order.id}, 'QUOTE_REQUESTED')">Looking for Quote</button>
+          <button class="btn" onclick="sendMaintenanceTradieEmail(${order.id})">Email Tradie Work Order</button>
+          <button class="btn" onclick="setMaintenanceStatus(${order.id}, 'TRADIE_ARRANGED')">Tradie Arranged</button>
+          <button class="btn" onclick="sendMaintenanceTenantEmail(${order.id})">Email Tenant Arrangement</button>
+          <button class="btn primary" onclick="setMaintenanceStatus(${order.id}, 'COMPLETED')">Complete Job</button>
+          <button class="btn danger" onclick="setMaintenanceStatus(${order.id}, 'CANCELLED')">Cancel</button>
+        </div>
+      </div>
+
+      <div class="maintenance-detail-panel">
+        <h4>Upload Quote / Attachment</h4>
+        <div class="maintenance-action-strip">
+          <input class="wide" type="file" id="maintenanceQuoteFile" />
+          <input type="number" min="0" step="0.01" id="maintenanceUploadAmount" placeholder="Quoted amount" value="${order.quoted_amount || ""}" />
+          <input type="text" id="maintenanceUploadNotes" placeholder="Quote notes" value="${escapeHtml(order.quote_notes || "")}" />
+          <button class="btn primary" onclick="uploadMaintenanceQuote(${order.id})">Upload Quote</button>
+        </div>
+        <div style="margin-top:10px">
+          ${attachments.length ? attachments.map((a) => `
+            <div class="maintenance-attachment">
+              <div><strong>${escapeHtml(a.filename || "Attachment")}</strong><div class="small muted">${escapeHtml(a.kind || "GENERAL")} - ${escapeHtml(formatDateShort(a.created_at))}</div></div>
+              <div class="row">
+                <button class="btn" onclick="openMaintenanceAttachment(${a.id})">Open</button>
+                <button class="btn danger" onclick="deleteMaintenanceAttachment(${a.id})">Delete</button>
+              </div>
+            </div>
+          `).join("") : `<div class="small muted">No attachments uploaded yet.</div>`}
+        </div>
+      </div>
+
+      <div class="maintenance-detail-panel">
+        <h4>Activity + Notes</h4>
+        <div class="field">
+          <div class="label">Add Internal Note</div>
+          <textarea id="maintenanceNewNote" placeholder="Add an internal update, owner response, quote chase-up, or completion note..."></textarea>
+        </div>
+        <button class="btn" onclick="addMaintenanceNote(${order.id})">Add Note</button>
+        <div class="maintenance-timeline" style="margin-top:12px">
+          ${events.length ? events.map((e) => `
+            <div class="maintenance-event">
+              <strong>${escapeHtml((e.event_type || "activity").replaceAll("_", " "))} - ${escapeHtml(formatDate(e.created_at))}</strong>
+              <span>${escapeHtml(e.detail || "")}</span>
+              <div class="small muted">${escapeHtml(e.actor_name || "System")}</div>
+            </div>
+          `).join("") : `<div class="small muted">No activity yet.</div>`}
+        </div>
+      </div>
+    `;
+}
+
+async function setMaintenanceStatus(orderId, status) {
+    const note = ["OWNER_APPROVED", "OWNER_DECLINED", "OWNER_ARRANGING", "COMPLETED", "CANCELLED"].includes(status)
+        ? prompt("Optional note for this status change:") || ""
+        : "";
+    const r = await apiFetch(`/maintenance/orders/${orderId}/status`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status, note }),
+    });
+    if (!r.ok) {
+        alert(`Failed to update maintenance status: ${await extractErrorMessage(r)}`);
+        return;
+    }
+    const order = await r.json();
+    fillMaintenanceForm(order);
+    renderMaintenanceDetail(order);
+    await loadMaintenanceDashboard(currentMaintenancePage || 1);
+    await loadNotifications();
+}
+
+async function sendMaintenanceOwnerEmail(orderId) {
+    if (!confirm("Send the maintenance details to the owner and move this job to Waiting Owner Approval?")) return;
+    const r = await apiFetch(`/maintenance/orders/${orderId}/send-owner-email`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+    });
+    if (!r.ok) {
+        alert(`Owner email failed: ${await extractErrorMessage(r)}`);
+        return;
+    }
+    const order = await r.json();
+    fillMaintenanceForm(order);
+    renderMaintenanceDetail(order);
+    await loadMaintenanceDashboard(currentMaintenancePage || 1);
+    await loadNotifications();
+}
+
+async function sendMaintenanceTenantEmail(orderId) {
+    if (!confirm("Send the tradie/access arrangement email to the tenant?")) return;
+    const r = await apiFetch(`/maintenance/orders/${orderId}/send-tenant-email`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+    });
+    if (!r.ok) {
+        alert(`Tenant email failed: ${await extractErrorMessage(r)}`);
+        return;
+    }
+    const order = await r.json();
+    fillMaintenanceForm(order);
+    renderMaintenanceDetail(order);
+    await loadMaintenanceDashboard(currentMaintenancePage || 1);
+    await loadNotifications();
+}
+
+async function sendMaintenanceTradieEmail(orderId) {
+    if (!confirm("Send the work order details to the tradie and mark this job as Tradie Arranged?")) return;
+    const r = await apiFetch(`/maintenance/orders/${orderId}/send-tradie-email`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+    });
+    if (!r.ok) {
+        alert(`Tradie email failed: ${await extractErrorMessage(r)}`);
+        return;
+    }
+    const order = await r.json();
+    fillMaintenanceForm(order);
+    renderMaintenanceDetail(order);
+    await loadMaintenanceDashboard(currentMaintenancePage || 1);
+    await loadNotifications();
+}
+
+async function uploadMaintenanceQuote(orderId) {
+    const fileInput = document.getElementById("maintenanceQuoteFile");
+    const file = fileInput && fileInput.files ? fileInput.files[0] : null;
+    if (!file) {
+        alert("Choose a quote or attachment file first.");
+        return;
+    }
+    const form = new FormData();
+    form.append("kind", "QUOTE");
+    form.append("file", file, file.name);
+    const amount = document.getElementById("maintenanceUploadAmount")?.value || "";
+    const notes = document.getElementById("maintenanceUploadNotes")?.value || "";
+    if (amount) form.append("quoted_amount", amount);
+    if (notes) {
+        form.append("quote_notes", notes);
+        form.append("notes", notes);
+    }
+    const r = await apiFetch(`/maintenance/orders/${orderId}/attachments`, { method: "POST", body: form });
+    if (!r.ok) {
+        alert(`Quote upload failed: ${await extractErrorMessage(r)}`);
+        return;
+    }
+    const order = await r.json();
+    fillMaintenanceForm(order);
+    renderMaintenanceDetail(order);
+    await loadMaintenanceDashboard(currentMaintenancePage || 1);
+    await loadNotifications();
+}
+
+async function openMaintenanceAttachment(attachmentId) {
+    const r = await apiFetch(`/maintenance/attachments/${attachmentId}/view`);
+    if (!r.ok) {
+        alert(`Could not open attachment: ${await extractErrorMessage(r)}`);
+        return;
+    }
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    window.open(url, "_blank", "noopener,noreferrer");
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
+async function deleteMaintenanceAttachment(attachmentId) {
+    if (!confirm("Delete this maintenance attachment?")) return;
+    const r = await apiFetch(`/maintenance/attachments/${attachmentId}`, { method: "DELETE" });
+    if (!r.ok) {
+        alert(`Delete failed: ${await extractErrorMessage(r)}`);
+        return;
+    }
+    const order = await r.json();
+    fillMaintenanceForm(order);
+    renderMaintenanceDetail(order);
+    await loadMaintenanceDashboard(currentMaintenancePage || 1);
+}
+
+async function addMaintenanceNote(orderId) {
+    const noteEl = document.getElementById("maintenanceNewNote");
+    const note = String(noteEl?.value || "").trim();
+    if (!note) {
+        alert("Write a note first.");
+        return;
+    }
+    const r = await apiFetch(`/maintenance/orders/${orderId}/notes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ note }),
+    });
+    if (!r.ok) {
+        alert(`Failed to add note: ${await extractErrorMessage(r)}`);
+        return;
+    }
+    if (noteEl) noteEl.value = "";
+    const order = await r.json();
+    renderMaintenanceDetail(order);
+    await loadMaintenanceDashboard(currentMaintenancePage || 1);
+    await loadNotifications();
 }
 
 function rentStatusChip(status) {
@@ -2730,12 +3296,17 @@ async function refreshPropertyOptions() {
     const search = document.getElementById("compliancePropertySearch");
     const hidden = document.getElementById("compliancePropertyId");
     const complianceList = document.getElementById("compliancePropertyOptions");
+    const maintenanceSearch = document.getElementById("maintenancePropertySearch");
+    const maintenanceHidden = document.getElementById("maintenancePropertyId");
+    const maintenanceList = document.getElementById("maintenancePropertyOptions");
     try {
         const r = await apiFetch("/properties/options");
         if (!r.ok) {
             if (complianceList) complianceList.innerHTML = "";
+            if (maintenanceList) maintenanceList.innerHTML = "";
             renderAddressSuggestionOptions();
             if (hidden) hidden.value = "";
+            if (maintenanceHidden) maintenanceHidden.value = "";
             return;
         }
         const data = await r.json();
@@ -2749,15 +3320,22 @@ async function refreshPropertyOptions() {
             .map((p) => `<option value="${escapeHtml(p.label || "")}"></option>`)
             .join("");
         if (complianceList) complianceList.innerHTML = optionsHtml;
+        if (maintenanceList) maintenanceList.innerHTML = optionsHtml;
         renderAddressSuggestionOptions();
         if (search && hidden) {
             const match = resolvePropertySearchValue(search.value);
             hidden.value = match ? String(match.id) : "";
         }
+        if (maintenanceSearch && maintenanceHidden) {
+            const match = resolvePropertySearchValue(maintenanceSearch.value);
+            maintenanceHidden.value = match ? String(match.id) : "";
+        }
     } catch {
         if (complianceList) complianceList.innerHTML = "";
+        if (maintenanceList) maintenanceList.innerHTML = "";
         renderAddressSuggestionOptions();
         if (hidden) hidden.value = "";
+        if (maintenanceHidden) maintenanceHidden.value = "";
     }
 }
 
@@ -3377,8 +3955,10 @@ async function loadAssignableUsers() {
         if (!r.ok) return;
         const data = await r.json();
         assignableUsers = Array.isArray(data.items) ? data.items : [];
+        renderMaintenanceAssigneeOptions();
     } catch {
         assignableUsers = [];
+        renderMaintenanceAssigneeOptions();
     }
 }
 
@@ -5012,6 +5592,33 @@ window.addEventListener("load", async () => {
     if (compliancePropertySearch) {
         compliancePropertySearch.addEventListener("input", updateCompliancePropertySelection);
         compliancePropertySearch.addEventListener("change", updateCompliancePropertySelection);
+    }
+    const maintenancePropertySearch = document.getElementById("maintenancePropertySearch");
+    if (maintenancePropertySearch) {
+        maintenancePropertySearch.addEventListener("input", updateMaintenancePropertySelection);
+        maintenancePropertySearch.addEventListener("change", updateMaintenancePropertySelection);
+    }
+    const maintenanceStatusFilter = document.getElementById("maintenanceStatusFilter");
+    if (maintenanceStatusFilter) {
+        maintenanceStatusFilter.addEventListener("change", () => {
+            if (currentDashboardTab === "maintenance") {
+                currentMaintenancePage = 1;
+                loadMaintenanceDashboard();
+            }
+        });
+    }
+    const maintenanceSearch = document.getElementById("maintenanceSearchBox");
+    if (maintenanceSearch) {
+        let tmr = null;
+        maintenanceSearch.addEventListener("input", () => {
+            if (tmr) clearTimeout(tmr);
+            tmr = setTimeout(() => {
+                if (currentDashboardTab === "maintenance") {
+                    currentMaintenancePage = 1;
+                    loadMaintenanceDashboard();
+                }
+            }, 250);
+        });
     }
     ["complianceStateFilter", "complianceTypeFilter"].forEach((id) => {
         const el = document.getElementById(id);

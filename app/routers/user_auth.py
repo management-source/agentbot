@@ -49,6 +49,12 @@ PAGE_REGISTRY = [
         "section": "Operations",
     },
     {
+        "id": "maintenance",
+        "label": "Maintenance",
+        "description": "Staff-managed maintenance orders, owner approvals, quotes, tradie arrangements, and completion tracking.",
+        "section": "Operations",
+    },
+    {
         "id": "myspace",
         "label": "My Space",
         "description": "Private planner, follow-ups, quick links, snippets, notes, and staff guides.",
@@ -89,8 +95,8 @@ PAGE_REGISTRY = [
 
 
 DEFAULT_ROLE_PAGE_ACCESS = {
-    UserRole.ADMIN.value: ["portal", "myspace", "inbox", "rent", "compliance", "coverage", "properties", "system"],
-    UserRole.PM.value: ["portal", "myspace", "inbox", "rent", "compliance", "coverage", "properties"],
+    UserRole.ADMIN.value: ["portal", "myspace", "inbox", "maintenance", "rent", "compliance", "coverage", "properties", "system"],
+    UserRole.PM.value: ["portal", "myspace", "inbox", "maintenance", "rent", "compliance", "coverage", "properties"],
     UserRole.LEASING.value: ["portal", "myspace", "inbox", "properties"],
     UserRole.SALES.value: ["portal", "myspace", "inbox", "properties"],
     UserRole.ACCOUNTS.value: ["portal", "myspace", "inbox", "rent"],
@@ -251,12 +257,17 @@ def _normalize_role_page_access(raw: dict | None) -> dict[str, list[str]]:
         if not isinstance(requested, list):
             requested = DEFAULT_ROLE_PAGE_ACCESS.get(key, ["portal"])
         selected = {str(page_id).strip() for page_id in requested if str(page_id or "").strip() in page_ids}
+        default_selected = set(DEFAULT_ROLE_PAGE_ACCESS.get(key, ["portal"]))
+        if "maintenance" in default_selected and "maintenance" not in selected:
+            legacy_default = default_selected - {"maintenance"}
+            if selected == legacy_default:
+                selected.add("maintenance")
 
         # Portal prevents blank workspaces. System stays admin-only so access
         # control cannot lock itself out or appear for non-admin users.
         selected.add("portal")
         if role == UserRole.ADMIN:
-            selected.add("system")
+            selected.update(page_ids)
         else:
             selected.discard("system")
 

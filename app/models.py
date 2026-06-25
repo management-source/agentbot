@@ -76,6 +76,20 @@ class ComplianceRecordStatus(str, Enum):
     WAIVED = "WAIVED"
 
 
+class MaintenanceOrderStatus(str, Enum):
+    NEW = "NEW"
+    WAITING_OWNER_APPROVAL = "WAITING_OWNER_APPROVAL"
+    OWNER_APPROVED = "OWNER_APPROVED"
+    OWNER_DECLINED = "OWNER_DECLINED"
+    OWNER_ARRANGING = "OWNER_ARRANGING"
+    QUOTE_REQUESTED = "QUOTE_REQUESTED"
+    QUOTE_RECEIVED = "QUOTE_RECEIVED"
+    TRADIE_ARRANGED = "TRADIE_ARRANGED"
+    TENANT_NOTIFIED = "TENANT_NOTIFIED"
+    COMPLETED = "COMPLETED"
+    CANCELLED = "CANCELLED"
+
+
 class AuditAction(str, Enum):
     CREATED = "CREATED"
     UPDATED = "UPDATED"
@@ -401,6 +415,101 @@ class ManagedProperty(Base):
     source: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class MaintenanceOrder(Base):
+    __tablename__ = "maintenance_orders"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    mailbox: Mapped[str] = mapped_column(String, index=True)
+    property_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("managed_properties.id"), nullable=True, index=True)
+    property_address: Mapped[str] = mapped_column(String, index=True)
+    suburb: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    state_code: Mapped[str | None] = mapped_column(String, nullable=True)
+    postcode: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    title: Mapped[str] = mapped_column(String, index=True)
+    category: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    priority: Mapped[str] = mapped_column(String, default="normal", index=True)
+    description: Mapped[str] = mapped_column(Text)
+    access_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    owner_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    owner_email: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    owner_phone: Mapped[str | None] = mapped_column(String, nullable=True)
+    tenant_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    tenant_email: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    tenant_phone: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    status: Mapped[MaintenanceOrderStatus] = mapped_column(
+        SAEnum(MaintenanceOrderStatus),
+        default=MaintenanceOrderStatus.NEW,
+        index=True,
+    )
+    assignee_user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    created_by_user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+
+    due_by: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    owner_sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    owner_decided_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    owner_decision_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    tradie_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    tradie_company: Mapped[str | None] = mapped_column(String, nullable=True)
+    tradie_email: Mapped[str | None] = mapped_column(String, nullable=True)
+    tradie_phone: Mapped[str | None] = mapped_column(String, nullable=True)
+    tradie_scheduled_for: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    tradie_arranged_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+
+    quoted_amount: Mapped[float | None] = mapped_column(Float, nullable=True)
+    quote_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    quote_received_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+
+    tenant_notified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    completion_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+    property = relationship("ManagedProperty")
+    assignee = relationship("User", foreign_keys=[assignee_user_id])
+    created_by = relationship("User", foreign_keys=[created_by_user_id])
+    attachments = relationship("MaintenanceAttachment", back_populates="order", cascade="all, delete-orphan")
+    events = relationship("MaintenanceEvent", back_populates="order", cascade="all, delete-orphan")
+
+
+class MaintenanceAttachment(Base):
+    __tablename__ = "maintenance_attachments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    mailbox: Mapped[str] = mapped_column(String, index=True)
+    order_id: Mapped[int] = mapped_column(Integer, ForeignKey("maintenance_orders.id"), index=True)
+    kind: Mapped[str] = mapped_column(String, default="GENERAL", index=True)
+    filename: Mapped[str] = mapped_column(String)
+    content_type: Mapped[str] = mapped_column(String, default="application/octet-stream")
+    content_bytes: Mapped[bytes] = mapped_column(LargeBinary)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    uploaded_by_user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+    order = relationship("MaintenanceOrder", back_populates="attachments")
+    uploaded_by = relationship("User")
+
+
+class MaintenanceEvent(Base):
+    __tablename__ = "maintenance_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    mailbox: Mapped[str] = mapped_column(String, index=True)
+    order_id: Mapped[int] = mapped_column(Integer, ForeignKey("maintenance_orders.id"), index=True)
+    actor_user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    event_type: Mapped[str] = mapped_column(String, index=True)
+    detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+    order = relationship("MaintenanceOrder", back_populates="events")
+    actor = relationship("User")
 
 
 class ComplianceRecord(Base):

@@ -154,3 +154,41 @@ def send_reply_in_thread(
         userId=gmail_user_id(),
         body={"raw": raw, "threadId": thread_id},
     ).execute()
+
+
+def send_new_email(
+    *,
+    db: Session,
+    mailbox: str,
+    to_email: str | None,
+    subject: str,
+    body_text: str,
+    cc: str | None = None,
+    bcc: str | None = None,
+    from_email: str | None = None,
+    attachments: Optional[Iterable[OutgoingAttachment]] = None,
+    body_html: str | None = None,
+):
+    """Send a new Gmail message without attaching it to an existing thread."""
+
+    if not to_email:
+        raise ValueError("Missing recipient email")
+
+    service = get_gmail_service(db, impersonate_user=mailbox)
+    msg = build_reply_message(
+        to_email=to_email,
+        subject=subject,
+        body_text=body_text,
+        body_html=body_html,
+        cc=cc,
+        bcc=bcc,
+        from_email=from_email,
+        attachments=attachments,
+        db=db,
+    )
+
+    raw = base64.urlsafe_b64encode(msg.as_bytes()).decode("utf-8")
+    return service.users().messages().send(
+        userId=gmail_user_id(),
+        body={"raw": raw},
+    ).execute()
