@@ -720,6 +720,127 @@
       letter-spacing:.08em;
     }
 
+    .property-crm-toolbar{
+      display:grid;
+      grid-template-columns:minmax(0, 1fr) auto;
+      gap:14px;
+      align-items:end;
+    }
+    .property-profile-results{
+      display:flex;
+      flex-direction:column;
+      gap:16px;
+      margin-top:16px;
+    }
+    .property-profile-row{
+      display:grid;
+      grid-template-columns:minmax(240px, .9fr) minmax(280px, 1fr) minmax(240px, .9fr);
+      gap:14px;
+      align-items:stretch;
+    }
+    .property-crm-card{
+      border:1px solid #dbe4ef;
+      border-radius:18px;
+      background:linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+      box-shadow:0 14px 28px rgba(15,23,42,.07);
+      overflow:hidden;
+      min-height:230px;
+    }
+    .property-crm-head{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      padding:14px 16px;
+      color:#fff;
+      background:linear-gradient(135deg, #0f172a, #b08a21);
+    }
+    .property-crm-head.landlord{background:linear-gradient(135deg, #111827, #2f855a)}
+    .property-crm-head.tenant{background:linear-gradient(135deg, #0f172a, #0477bf)}
+    .property-crm-head h3{
+      margin:0;
+      font-size:15px;
+      letter-spacing:-.01em;
+    }
+    .property-crm-head span{
+      opacity:.86;
+      font-size:11px;
+      font-weight:800;
+      text-transform:uppercase;
+      letter-spacing:.08em;
+    }
+    .property-crm-body{
+      padding:14px 16px 16px;
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+    }
+    .property-contact{
+      border:1px solid #e5eaf1;
+      background:#fff;
+      border-radius:14px;
+      padding:11px 12px;
+    }
+    .property-contact strong{
+      display:block;
+      color:#101828;
+      font-size:13px;
+      margin-bottom:4px;
+    }
+    .property-contact a,
+    .property-contact span{
+      display:block;
+      color:#475467;
+      font-size:12px;
+      line-height:1.55;
+      word-break:break-word;
+    }
+    .property-meta-grid{
+      display:grid;
+      grid-template-columns:repeat(2, minmax(0, 1fr));
+      gap:10px;
+    }
+    .property-meta{
+      border:1px solid #e5eaf1;
+      background:#fff;
+      border-radius:14px;
+      padding:10px 12px;
+    }
+    .property-meta span{
+      display:block;
+      color:#667085;
+      font-size:11px;
+      font-weight:800;
+      text-transform:uppercase;
+      letter-spacing:.06em;
+    }
+    .property-meta strong{
+      display:block;
+      margin-top:4px;
+      color:#101828;
+      font-size:13px;
+      word-break:break-word;
+    }
+    .property-card-actions{
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+      margin-top:auto;
+    }
+    .property-extra-note{
+      padding:9px 10px;
+      border:1px dashed #d6ddea;
+      border-radius:12px;
+      color:#667085;
+      font-size:12px;
+      line-height:1.45;
+      background:#f8fafc;
+    }
+    @media (max-width: 1180px){
+      .property-profile-row{grid-template-columns:1fr}
+      .property-crm-toolbar{grid-template-columns:1fr}
+    }
+
     .top-grid{
       display:grid;
       grid-template-columns: 1fr;
@@ -3745,19 +3866,19 @@
                 <div class="page-banner">
                   <div class="page-banner-kicker">Property Register</div>
                   <h2>Properties</h2>
-                  <p>Keep managed properties tidy, searchable, and ready for compliance tracking and future portal tools.</p>
+                  <p>Search a property once and see the linked property, landlord, and tenant records together for maintenance and operations.</p>
                   <div class="page-banner-actions">
-                    <span class="chip">Victoria only</span>
-                    <span class="chip">Autocomplete</span>
-                    <span class="chip">Register</span>
+                    <span class="chip">CRM Import</span>
+                    <span class="chip">Landlords</span>
+                    <span class="chip">Tenants</span>
+                    <span class="chip">Maintenance Ready</span>
                   </div>
                 </div>
                 <div class="card">
                   <div class="row space">
                     <div>
-                      <p class="panel-title">Properties</p>
-                      <p class="panel-sub">Maintain the managed property
-                        register used across compliance and future modules.</p>
+                      <p class="panel-title">Import CRM Property Export</p>
+                      <p class="panel-sub">Upload the OurProperty CRM Excel export to refresh property, landlord, tenant, key, and status details.</p>
                     </div>
                     <div class="row">
                       <input type="file" id="propertyImportFile"
@@ -3773,6 +3894,12 @@
                 </div>
 
                 <div class="card">
+                  <div class="row space">
+                    <div>
+                      <p class="panel-title">Add Property Manually</p>
+                      <p class="panel-sub">Use this for one-off Victorian properties not yet included in the CRM export.</p>
+                    </div>
+                  </div>
                   <div class="row" style="align-items:flex-end">
                     <div class="field" style="min-width:280px;flex:1">
                       <div class="label">Property Address</div>
@@ -3804,36 +3931,26 @@
                     suburb/postcode will be filled where possible.</div>
                 </div>
 
-                <div class="filters-row">
-                  <div class="field" style="min-width:300px">
-                    <div class="label">Search</div>
-                    <input type="text" id="propertySearchBox"
-                      placeholder="Address, suburb, postcode..." />
+                <div class="card">
+                  <div class="property-crm-toolbar">
+                    <div class="field">
+                      <div class="label">Search Property, Landlord, Tenant, Email, Phone, Key Number</div>
+                      <input type="text" id="propertySearchBox"
+                        placeholder="Try an address, owner name, tenant name, phone, email, or key number..." />
+                    </div>
+                    <div class="row">
+                      <button class="btn" onclick="loadProperties(1)">Search</button>
+                      <button class="btn" onclick="clearPropertySearch()">Clear</button>
+                    </div>
                   </div>
-                  <div class="row" style="align-self:flex-end">
-                    <button class="btn"
-                      onclick="loadProperties(1)">Apply</button>
+                  <div class="property-profile-results" id="propertiesProfileResults">
+                    <div class="ticket-empty">
+                      <strong>No properties loaded yet</strong>
+                      <div class="small muted" style="margin-top:6px">Import the CRM workbook or search after adding properties.</div>
+                    </div>
                   </div>
                 </div>
 
-                <div class="rent-table-wrap">
-                  <table class="rent-table" style="min-width:900px">
-                    <thead>
-                      <tr>
-                        <th>Property</th>
-                        <th>Suburb</th>
-                        <th>State</th>
-                        <th>Postcode</th>
-                        <th>Source</th>
-                        <th>Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody id="propertiesTableBody">
-                      <tr><td colspan="6" class="muted">No properties
-                          loaded.</td></tr>
-                    </tbody>
-                  </table>
-                </div>
                 <div class="small muted" id="propertiesPageInfo"
                   style="margin-top:8px"></div>
                 <div class="row space" style="margin-top:10px">
@@ -4324,7 +4441,7 @@
       </div>
     </div>
 
-    <script src="/static/app.js?v=18"></script>
+    <script src="/static/app.js?v=19"></script>
 
     <script>
   // Wire segmented status buttons to existing tab logic

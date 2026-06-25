@@ -43,6 +43,103 @@ def _normalize_address_key(value: str | None) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+def _split_multi_value(value: str | None) -> list[str]:
+    return [_normalize_text(part) for part in str(value or "").split(",") if _normalize_text(part)]
+
+
+def _dedupe(values: list[str]) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        key = re.sub(r"\D+", "", value) or value.lower()
+        if not value or key in seen:
+            continue
+        seen.add(key)
+        out.append(value)
+    return out
+
+
+def _contact_book(
+    *,
+    names_raw: str | None,
+    emails_raw: str | None,
+    mobiles_raw: str | None,
+    phones_raw: str | None,
+    default_label: str,
+    is_company: bool = False,
+) -> dict[str, object]:
+    names = _split_multi_value(names_raw)
+    emails = _split_multi_value(emails_raw)
+    mobiles = _split_multi_value(mobiles_raw)
+    phones = _split_multi_value(phones_raw)
+
+    if not names and not emails and not mobiles and not phones:
+        return {"contacts": [], "extra_mobiles": [], "extra_phones": [], "raw": {}}
+
+    contact_count = max(len(names), len(emails), 1)
+    contacts: list[dict[str, object]] = []
+    for idx in range(contact_count):
+        if contact_count == 1:
+            contact_mobiles = mobiles
+            contact_phones = phones
+        else:
+            contact_mobiles = [mobiles[idx]] if idx < len(mobiles) else []
+            contact_phones = [phones[idx]] if idx < len(phones) else []
+        all_phones = _dedupe(contact_mobiles + contact_phones)
+        contacts.append(
+            {
+                "name": names[idx] if idx < len(names) else (default_label if contact_count == 1 else f"{default_label} {idx + 1}"),
+                "email": emails[idx] if idx < len(emails) else "",
+                "mobile": contact_mobiles[0] if contact_mobiles else "",
+                "phone": contact_phones[0] if contact_phones else "",
+                "phones": all_phones,
+                "is_company": is_company,
+            }
+        )
+
+    extra_mobiles = mobiles[contact_count:] if contact_count > 1 else []
+    extra_phones = phones[contact_count:] if contact_count > 1 else []
+    return {
+        "contacts": contacts,
+        "extra_mobiles": _dedupe(extra_mobiles),
+        "extra_phones": _dedupe(extra_phones),
+        "raw": {
+            "names": names,
+            "emails": emails,
+            "mobiles": mobiles,
+            "phones": phones,
+        },
+    }
+
+
+def _json_dumps(value: object) -> str:
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+
+def _json_loads(value: str | None) -> dict[str, object]:
+    if not value:
+        return {"contacts": [], "extra_mobiles": [], "extra_phones": [], "raw": {}}
+    try:
+        parsed = json.loads(value)
+        return parsed if isinstance(parsed, dict) else {"contacts": [], "extra_mobiles": [], "extra_phones": [], "raw": {}}
+    except Exception:
+        return {"contacts": [], "extra_mobiles": [], "extra_phones": [], "raw": {}}
+
+
+def _primary_contact(book: dict[str, object]) -> dict[str, str]:
+    contacts = book.get("contacts")
+    if not isinstance(contacts, list) or not contacts:
+        return {"name": "", "email": "", "phone": ""}
+    first = contacts[0] if isinstance(contacts[0], dict) else {}
+    phones = first.get("phones") if isinstance(first.get("phones"), list) else []
+    phone = first.get("mobile") or first.get("phone") or (phones[0] if phones else "")
+    return {
+        "name": str(first.get("name") or ""),
+        "email": str(first.get("email") or ""),
+        "phone": str(phone or ""),
+    }
+
+
 def _normalize_state_code(value: str | None) -> str | None:
     text = _normalize_text(value).upper()
     return text or None
@@ -157,11 +254,25 @@ def _sheet_rows(zf: zipfile.ZipFile, path: str, sst: list[str]) -> list[dict[str
 
 def _header_map(rows: list[dict[str, str]]) -> tuple[int, dict[str, str]]:
     aliases = {
+        "crm_property_id": {"property id", "crm property id", "property code"},
         "property_address": {"property address", "address", "property", "property name", "address 1", "street address"},
         "address_line_2": {"address 2", "address2", "unit", "line 2"},
         "suburb": {"suburb", "city", "town"},
         "state_code": {"state", "province"},
         "postcode": {"postcode", "post code", "zip", "zip code"},
+        "property_type": {"property type", "type"},
+        "rental_type": {"rental type", "rental"},
+        "key_number": {"key number", "key no", "keys", "key"},
+        "owner_is_company": {"owner is a company", "owner company", "landlord company"},
+        "owner_names": {"owner/landlord", "owner", "landlord", "owners", "landlords"},
+        "owner_emails": {"owner/landlord email", "owner email", "landlord email", "owner emails", "landlord emails"},
+        "owner_mobiles": {"landlord mobile", "owner mobile", "landlord mobiles", "owner mobiles"},
+        "owner_phones": {"landlord phone", "owner phone", "landlord phones", "owner phones"},
+        "tenant_names": {"tenant", "tenants", "tenant name", "tenant names"},
+        "tenant_emails": {"tenant email", "tenant emails"},
+        "tenant_mobiles": {"tenant mobile", "tenant mobiles"},
+        "tenant_phones": {"tenant phone", "tenant phones"},
+        "tenancy_status": {"status", "tenancy status", "lease status"},
     }
     for idx, row in enumerate(rows[:10]):
         mapping: dict[str, str] = {}
@@ -221,38 +332,78 @@ def _parse_property_workbook(content: bytes) -> list[dict[str, str | None]]:
     items: list[dict[str, str | None]] = []
     seen: set[str] = set()
     for row in data_rows:
+        def mapped(field: str) -> str:
+            col = mapping.get(field)
+            return _normalize_text(row.get(col, "")) if col else ""
+
         raw_address = _normalize_text(row.get(mapping["property_address"]))
         parsed = _split_full_address(raw_address)
         address = parsed["property_address"] or raw_address
-        suburb = _normalize_text(row.get(mapping.get("suburb", ""))) or parsed["suburb"]
-        state_code = _normalize_state_code(row.get(mapping.get("state_code", ""))) or parsed["state_code"]
-        postcode = _normalize_text(row.get(mapping.get("postcode", ""))) or parsed["postcode"]
+        suburb = mapped("suburb") or parsed["suburb"]
+        state_code = _normalize_state_code(mapped("state_code")) or parsed["state_code"]
+        postcode = mapped("postcode") or parsed["postcode"]
         if not address:
             continue
         key = _property_identity_key(address, suburb, state_code, postcode)
         if key in seen:
             continue
         seen.add(key)
+        owner_is_company = mapped("owner_is_company").lower() in {"yes", "y", "true", "1", "company"}
+        owners = _contact_book(
+            names_raw=mapped("owner_names"),
+            emails_raw=mapped("owner_emails"),
+            mobiles_raw=mapped("owner_mobiles"),
+            phones_raw=mapped("owner_phones"),
+            default_label="Landlord",
+            is_company=owner_is_company,
+        )
+        tenants = _contact_book(
+            names_raw=mapped("tenant_names"),
+            emails_raw=mapped("tenant_emails"),
+            mobiles_raw=mapped("tenant_mobiles"),
+            phones_raw=mapped("tenant_phones"),
+            default_label="Tenant",
+        )
         items.append(
             {
+                "crm_property_id": mapped("crm_property_id") or None,
                 "property_address": address,
-                "address_line_2": _normalize_text(row.get(mapping.get("address_line_2", ""))) or None,
+                "address_line_2": mapped("address_line_2") or None,
                 "suburb": suburb,
                 "state_code": state_code,
                 "postcode": postcode,
+                "property_type": mapped("property_type") or None,
+                "rental_type": mapped("rental_type") or None,
+                "key_number": mapped("key_number") or None,
+                "owner_is_company": owner_is_company,
+                "tenancy_status": mapped("tenancy_status") or None,
+                "owners_json": _json_dumps(owners),
+                "tenants_json": _json_dumps(tenants),
             }
         )
     return items
 
 
 def _property_to_dict(row: ManagedProperty) -> dict[str, object]:
+    owners = _json_loads(row.owners_json)
+    tenants = _json_loads(row.tenants_json)
     return {
         "id": row.id,
+        "crm_property_id": row.crm_property_id,
         "property_address": row.property_address,
         "address_line_2": row.address_line_2,
         "suburb": row.suburb,
         "state_code": row.state_code,
         "postcode": row.postcode,
+        "property_type": row.property_type,
+        "rental_type": row.rental_type,
+        "key_number": row.key_number,
+        "owner_is_company": row.owner_is_company,
+        "tenancy_status": row.tenancy_status,
+        "owners": owners,
+        "tenants": tenants,
+        "primary_owner": _primary_contact(owners),
+        "primary_tenant": _primary_contact(tenants),
         "is_active": row.is_active,
         "source": row.source,
         "created_at": row.created_at,
@@ -370,23 +521,39 @@ async def import_xlsx(
         )
         match = existing_by_key.get(address_key)
         if match:
+            match.crm_property_id = item.get("crm_property_id")
             match.address_line_2 = item["address_line_2"]
             match.suburb = item["suburb"]
             match.state_code = _vic_state_code(item["state_code"])
             match.postcode = item["postcode"]
+            match.property_type = item.get("property_type")
+            match.rental_type = item.get("rental_type")
+            match.key_number = item.get("key_number")
+            match.owner_is_company = bool(item.get("owner_is_company"))
+            match.tenancy_status = item.get("tenancy_status")
+            match.owners_json = item.get("owners_json")
+            match.tenants_json = item.get("tenants_json")
             match.is_active = True
-            match.source = "xlsx_import"
+            match.source = "crm_import"
             match.updated_at = now
         else:
             new_row = ManagedProperty(
                 mailbox=mailbox,
+                crm_property_id=item.get("crm_property_id"),
                 property_address=item["property_address"] or "",
                 address_line_2=item["address_line_2"],
                 suburb=item["suburb"],
                 state_code=_vic_state_code(item["state_code"]),
                 postcode=item["postcode"],
+                property_type=item.get("property_type"),
+                rental_type=item.get("rental_type"),
+                key_number=item.get("key_number"),
+                owner_is_company=bool(item.get("owner_is_company")),
+                tenancy_status=item.get("tenancy_status"),
+                owners_json=item.get("owners_json"),
+                tenants_json=item.get("tenants_json"),
                 is_active=True,
-                source="xlsx_import",
+                source="crm_import",
                 created_at=now,
                 updated_at=now,
             )
@@ -477,6 +644,13 @@ def list_properties(
                 ManagedProperty.property_address.ilike(like),
                 ManagedProperty.suburb.ilike(like),
                 ManagedProperty.postcode.ilike(like),
+                ManagedProperty.crm_property_id.ilike(like),
+                ManagedProperty.property_type.ilike(like),
+                ManagedProperty.rental_type.ilike(like),
+                ManagedProperty.key_number.ilike(like),
+                ManagedProperty.tenancy_status.ilike(like),
+                ManagedProperty.owners_json.ilike(like),
+                ManagedProperty.tenants_json.ilike(like),
             )
         )
     page = max(int(page or 1), 1)
@@ -515,11 +689,21 @@ def property_options(
             {
                 "id": r.id,
                 "label": ", ".join([x for x in [r.property_address, r.suburb, r.postcode] if x]),
+                "crm_property_id": r.crm_property_id,
                 "property_address": r.property_address,
                 "address_line_2": r.address_line_2,
                 "suburb": r.suburb,
                 "state_code": r.state_code,
                 "postcode": r.postcode,
+                "property_type": r.property_type,
+                "rental_type": r.rental_type,
+                "key_number": r.key_number,
+                "owner_is_company": r.owner_is_company,
+                "tenancy_status": r.tenancy_status,
+                "owners": _json_loads(r.owners_json),
+                "tenants": _json_loads(r.tenants_json),
+                "primary_owner": _primary_contact(_json_loads(r.owners_json)),
+                "primary_tenant": _primary_contact(_json_loads(r.tenants_json)),
             }
             for r in rows
         ]

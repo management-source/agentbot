@@ -197,6 +197,7 @@ let rolePagePermissions = {};
 let allowedPages = new Set(["portal"]);
 let propertyOptionsCache = [];
 let propertyOptionsByLabel = {};
+let propertyResultsCache = {};
 let addressSuggestionsByLabel = {};
 let addressSuggestionTimer = null;
 let complianceRecordsCache = {};
@@ -2130,7 +2131,45 @@ function updateMaintenancePropertySelection() {
     if (!search || !hidden) return null;
     const match = resolvePropertySearchValue(search.value);
     hidden.value = match ? String(match.id) : "";
+    if (match) applyPropertyContactsToMaintenance(match, false);
     return match;
+}
+
+function setMaintenanceFieldFromProperty(id, value, force = false) {
+    const el = document.getElementById(id);
+    const text = String(value || "").trim();
+    if (!el || !text) return;
+    if (force || !String(el.value || "").trim()) el.value = text;
+}
+
+function applyPropertyContactsToMaintenance(property, force = false) {
+    if (!property) return;
+    const owner = property.primary_owner || propertyPrimaryContact(property.owners);
+    const tenant = property.primary_tenant || propertyPrimaryContact(property.tenants);
+    setMaintenanceFieldFromProperty("maintenanceOwnerName", owner.name, force);
+    setMaintenanceFieldFromProperty("maintenanceOwnerEmail", owner.email, force);
+    setMaintenanceFieldFromProperty("maintenanceOwnerPhone", owner.phone, force);
+    setMaintenanceFieldFromProperty("maintenanceTenantName", tenant.name, force);
+    setMaintenanceFieldFromProperty("maintenanceTenantEmail", tenant.email, force);
+    setMaintenanceFieldFromProperty("maintenanceTenantPhone", tenant.phone, force);
+    if (force) {
+        setMaintenanceFieldFromProperty("maintenancePropertySearch", property.label || propertyFullAddress(property), true);
+        setMaintenanceFieldFromProperty("maintenancePropertyId", property.id, true);
+    }
+}
+
+async function openMaintenanceForProperty(propertyId) {
+    const id = Number(propertyId);
+    if (!propertyOptionsCache.length) await refreshPropertyOptions();
+    const property = propertyOptionsCache.find((p) => Number(p.id) === id) || propertyResultsCache[id];
+    if (!property) {
+        alert("Could not find this property in the current property register.");
+        return;
+    }
+    switchDashboardTab("maintenance");
+    applyPropertyContactsToMaintenance(property, true);
+    const title = document.getElementById("maintenanceTitle");
+    if (title && !String(title.value || "").trim()) title.focus();
 }
 
 function maintenanceFormPayload() {
@@ -3011,6 +3050,122 @@ function getPropertyFilters() {
     return { query: (document.getElementById("propertySearchBox")?.value || "").trim() };
 }
 
+function propertyText(value, fallback = "-") {
+    const text = String(value ?? "").trim();
+    return text || fallback;
+}
+
+function propertyFullAddress(row) {
+    const tail = [row.suburb, row.state_code, row.postcode].map((x) => String(x || "").trim()).filter(Boolean).join(" ");
+    return [row.property_address, tail].map((x) => String(x || "").trim()).filter(Boolean).join(", ");
+}
+
+function propertyContactList(book) {
+    const contacts = book && Array.isArray(book.contacts) ? book.contacts : [];
+    return contacts.filter((contact) => contact && (contact.name || contact.email || contact.mobile || contact.phone || (Array.isArray(contact.phones) && contact.phones.length)));
+}
+
+function propertyContactPhones(contact) {
+    const phones = Array.isArray(contact?.phones) ? contact.phones : [];
+    return [...phones, contact?.mobile, contact?.phone]
+        .map((x) => String(x || "").trim())
+        .filter(Boolean)
+        .filter((value, index, arr) => arr.findIndex((other) => other.replace(/\D+/g, "") === value.replace(/\D+/g, "")) === index);
+}
+
+function propertyPrimaryContact(book) {
+    const contacts = propertyContactList(book);
+    if (!contacts.length) return { name: "", email: "", phone: "" };
+    const first = contacts[0];
+    const phones = propertyContactPhones(first);
+    return {
+        name: String(first.name || ""),
+        email: String(first.email || ""),
+        phone: String(first.mobile || first.phone || phones[0] || ""),
+    };
+}
+
+function renderPropertyContactBook(book, emptyText) {
+    const contacts = propertyContactList(book);
+    const extraMobiles = book && Array.isArray(book.extra_mobiles) ? book.extra_mobiles : [];
+    const extraPhones = book && Array.isArray(book.extra_phones) ? book.extra_phones : [];
+    const contactHtml = contacts.length
+        ? contacts.map((contact) => {
+            const phones = propertyContactPhones(contact);
+            const phoneHtml = phones.length
+                ? phones.map((phone) => `<a href="tel:${escapeHtml(String(phone).replace(/\s+/g, ""))}">${escapeHtml(String(phone))}</a>`).join("")
+                : `<span>No phone recorded</span>`;
+            const email = String(contact.email || "").trim();
+            return `
+              <div class="property-contact">
+                <strong>${escapeHtml(String(contact.name || "Contact"))}${contact.is_company ? " (Company)" : ""}</strong>
+                ${email ? `<a href="mailto:${escapeHtml(email)}">${escapeHtml(email)}</a>` : `<span>No email recorded</span>`}
+                ${phoneHtml}
+              </div>
+            `;
+        }).join("")
+        : `<div class="property-extra-note">${escapeHtml(emptyText)}</div>`;
+    const extras = [...extraMobiles, ...extraPhones]
+        .map((x) => String(x || "").trim())
+        .filter(Boolean)
+        .filter((value, index, arr) => arr.findIndex((other) => other.replace(/\D+/g, "") === value.replace(/\D+/g, "")) === index);
+    const extraHtml = extras.length
+        ? `<div class="property-extra-note"><strong>Additional numbers not assigned to a specific person:</strong><br>${extras.map((x) => escapeHtml(x)).join(", ")}</div>`
+        : "";
+    return contactHtml + extraHtml;
+}
+
+function renderPropertyProfileRow(row) {
+    const address = propertyFullAddress(row);
+    const ownerCount = propertyContactList(row.owners).length;
+    const tenantCount = propertyContactList(row.tenants).length;
+    return `
+      <article class="property-profile-row">
+        <section class="property-crm-card">
+          <div class="property-crm-head landlord">
+            <h3>Landlords</h3>
+            <span>${ownerCount || 0} contact${ownerCount === 1 ? "" : "s"}</span>
+          </div>
+          <div class="property-crm-body">
+            ${renderPropertyContactBook(row.owners, "No landlord details imported for this property.")}
+          </div>
+        </section>
+
+        <section class="property-crm-card">
+          <div class="property-crm-head">
+            <h3>${escapeHtml(address || "Property")}</h3>
+            <span>${escapeHtml(propertyText(row.tenancy_status, "Status unknown"))}</span>
+          </div>
+          <div class="property-crm-body">
+            <div class="property-meta-grid">
+              <div class="property-meta"><span>CRM Property ID</span><strong>${escapeHtml(propertyText(row.crm_property_id))}</strong></div>
+              <div class="property-meta"><span>Key Number</span><strong>${escapeHtml(propertyText(row.key_number))}</strong></div>
+              <div class="property-meta"><span>Property Type</span><strong>${escapeHtml(propertyText(row.property_type))}</strong></div>
+              <div class="property-meta"><span>Rental Type</span><strong>${escapeHtml(propertyText(row.rental_type))}</strong></div>
+              <div class="property-meta"><span>Suburb</span><strong>${escapeHtml(propertyText(row.suburb))}</strong></div>
+              <div class="property-meta"><span>Postcode</span><strong>${escapeHtml(propertyText(row.postcode))}</strong></div>
+            </div>
+            <div class="property-extra-note">This connected profile feeds Maintenance owner and tenant details when the property is selected.</div>
+            <div class="property-card-actions">
+              <button class="btn primary" onclick="openMaintenanceForProperty(${Number(row.id)})">Use in Maintenance</button>
+              <button class="btn danger" onclick="deleteProperty(${Number(row.id)})">Delete</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="property-crm-card">
+          <div class="property-crm-head tenant">
+            <h3>Tenants</h3>
+            <span>${tenantCount || 0} contact${tenantCount === 1 ? "" : "s"}</span>
+          </div>
+          <div class="property-crm-body">
+            ${renderPropertyContactBook(row.tenants, "No current tenant details imported for this property.")}
+          </div>
+        </section>
+      </article>
+    `;
+}
+
 async function loadProperties(page = null) {
     if (page !== null) currentPropertiesPage = page;
     const p = currentPropertiesPage || 1;
@@ -3020,32 +3175,25 @@ async function loadProperties(page = null) {
     url.searchParams.set("page_size", "25");
     if (query) url.searchParams.set("query", query);
 
-    const body = document.getElementById("propertiesTableBody");
-    if (body) body.innerHTML = `<tr><td colspan="6" class="muted">Loading...</td></tr>`;
+    const results = document.getElementById("propertiesProfileResults");
+    if (results) results.innerHTML = `<div class="ticket-empty"><strong>Loading properties...</strong></div>`;
 
     const r = await apiFetch(url.toString());
     const t = await r.text();
     if (!r.ok) {
-        if (body) body.innerHTML = `<tr><td colspan="6" class="muted">Failed to load properties: ${escapeHtml(t)}</td></tr>`;
+        if (results) results.innerHTML = `<div class="ticket-empty"><strong>Failed to load properties</strong><div class="small muted" style="margin-top:6px">${escapeHtml(t)}</div></div>`;
         return;
     }
     const data = JSON.parse(t);
     propertiesLoadedOnce = true;
     const items = Array.isArray(data.items) ? data.items : [];
-    if (body) {
+    propertyResultsCache = {};
+    items.forEach((row) => { propertyResultsCache[row.id] = row; });
+    if (results) {
         if (!items.length) {
-            body.innerHTML = `<tr><td colspan="6" class="muted">No properties found.</td></tr>`;
+            results.innerHTML = `<div class="ticket-empty"><strong>No properties found</strong><div class="small muted" style="margin-top:6px">Try searching by address, owner, tenant, email, phone, or key number.</div></div>`;
         } else {
-            body.innerHTML = items.map((row) => `
-                <tr>
-                    <td><div style="font-weight:700">${escapeHtml(row.property_address || "")}</div><div class="small muted">${escapeHtml(row.address_line_2 || "")}</div></td>
-                    <td>${escapeHtml(row.suburb || "-")}</td>
-                    <td>${escapeHtml(row.state_code || "-")}</td>
-                    <td>${escapeHtml(row.postcode || "-")}</td>
-                    <td>${escapeHtml(row.source || "-")}</td>
-                    <td><button class="btn danger" onclick="deleteProperty(${row.id})">Delete</button></td>
-                </tr>
-            `).join("");
+            results.innerHTML = items.map(renderPropertyProfileRow).join("");
         }
     }
     const pi = document.getElementById("propertiesPageInfo");
@@ -3060,6 +3208,13 @@ async function loadProperties(page = null) {
     const btnNext = document.getElementById("propertiesBtnNext");
     if (btnPrev) btnPrev.disabled = Number(data.page || 1) <= 1;
     if (btnNext) btnNext.disabled = !Boolean(data.has_more);
+}
+
+function clearPropertySearch() {
+    const search = document.getElementById("propertySearchBox");
+    if (search) search.value = "";
+    currentPropertiesPage = 1;
+    loadProperties(1);
 }
 
 function splitAustralianAddress(value) {
@@ -3285,7 +3440,7 @@ async function importPropertiesWorkbook() {
     }
     let j = null;
     try { j = JSON.parse(t); } catch { j = null; }
-    if (meta) meta.textContent = `Imported ${j?.imported_rows || "-"} properties from ${escapeHtml(f.name)} at ${new Date().toLocaleString()}.`;
+    if (meta) meta.textContent = `Imported ${j?.imported_rows || "-"} CRM property profiles from ${escapeHtml(f.name)} at ${new Date().toLocaleString()}.`;
     currentPropertiesPage = 1;
     propertiesLoadedOnce = false;
     await loadProperties();
@@ -3313,8 +3468,16 @@ async function refreshPropertyOptions() {
         propertyOptionsCache = Array.isArray(data.items) ? data.items : [];
         propertyOptionsByLabel = {};
         propertyOptionsCache.forEach((p) => {
-            propertyOptionsByLabel[String(p.label || "").trim().toLowerCase()] = p;
-            propertyOptionsByLabel[String(p.property_address || "").trim().toLowerCase()] = p;
+            [
+                p.label,
+                p.property_address,
+                propertyFullAddress(p),
+                p.crm_property_id,
+                [p.property_address, p.suburb].filter(Boolean).join(", "),
+            ].forEach((value) => {
+                const key = String(value || "").trim().toLowerCase();
+                if (key) propertyOptionsByLabel[key] = p;
+            });
         });
         const optionsHtml = propertyOptionsCache
             .map((p) => `<option value="${escapeHtml(p.label || "")}"></option>`)

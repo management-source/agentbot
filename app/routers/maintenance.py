@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import json
 import re
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -156,6 +157,29 @@ def _get_property(db: Session, mailbox: str, property_id: int | None) -> Managed
     return prop
 
 
+def _property_primary_contact(prop: ManagedProperty | None, attr: str) -> dict[str, str]:
+    if not prop:
+        return {"name": "", "email": "", "phone": ""}
+    raw = getattr(prop, attr, None)
+    if not raw:
+        return {"name": "", "email": "", "phone": ""}
+    try:
+        parsed = json.loads(raw)
+    except Exception:
+        return {"name": "", "email": "", "phone": ""}
+    contacts = parsed.get("contacts") if isinstance(parsed, dict) else []
+    if not isinstance(contacts, list) or not contacts:
+        return {"name": "", "email": "", "phone": ""}
+    first = contacts[0] if isinstance(contacts[0], dict) else {}
+    phones = first.get("phones") if isinstance(first.get("phones"), list) else []
+    phone = first.get("mobile") or first.get("phone") or (phones[0] if phones else "")
+    return {
+        "name": str(first.get("name") or ""),
+        "email": str(first.get("email") or ""),
+        "phone": str(phone or ""),
+    }
+
+
 def _apply_property(row: MaintenanceOrder, prop: ManagedProperty | None, payload) -> None:
     if prop:
         row.property_id = prop.id
@@ -163,6 +187,14 @@ def _apply_property(row: MaintenanceOrder, prop: ManagedProperty | None, payload
         row.suburb = prop.suburb
         row.state_code = prop.state_code
         row.postcode = prop.postcode
+        owner_contact = _property_primary_contact(prop, "owners_json")
+        tenant_contact = _property_primary_contact(prop, "tenants_json")
+        row.owner_name = row.owner_name or owner_contact["name"] or None
+        row.owner_email = row.owner_email or owner_contact["email"] or None
+        row.owner_phone = row.owner_phone or owner_contact["phone"] or None
+        row.tenant_name = row.tenant_name or tenant_contact["name"] or None
+        row.tenant_email = row.tenant_email or tenant_contact["email"] or None
+        row.tenant_phone = row.tenant_phone or tenant_contact["phone"] or None
         return
 
     address = _clean(getattr(payload, "property_address", None))
@@ -532,6 +564,8 @@ def create_maintenance_order(
     if not prop and not _clean(payload.property_address):
         raise HTTPException(status_code=400, detail="Property is required.")
     assignee = _get_assignee(db, payload.assignee_user_id)
+    owner_contact = _property_primary_contact(prop, "owners_json")
+    tenant_contact = _property_primary_contact(prop, "tenants_json")
     now = datetime.utcnow()
     row = MaintenanceOrder(
         mailbox=mailbox,
@@ -545,12 +579,12 @@ def create_maintenance_order(
         priority=_clean(payload.priority) or "normal",
         description=description,
         access_notes=_clean(payload.access_notes),
-        owner_name=_clean(payload.owner_name),
-        owner_email=_clean(payload.owner_email),
-        owner_phone=_clean(payload.owner_phone),
-        tenant_name=_clean(payload.tenant_name),
-        tenant_email=_clean(payload.tenant_email),
-        tenant_phone=_clean(payload.tenant_phone),
+        owner_name=_clean(payload.owner_name) or owner_contact["name"] or None,
+        owner_email=_clean(payload.owner_email) or owner_contact["email"] or None,
+        owner_phone=_clean(payload.owner_phone) or owner_contact["phone"] or None,
+        tenant_name=_clean(payload.tenant_name) or tenant_contact["name"] or None,
+        tenant_email=_clean(payload.tenant_email) or tenant_contact["email"] or None,
+        tenant_phone=_clean(payload.tenant_phone) or tenant_contact["phone"] or None,
         due_by=payload.due_by,
         assignee_user_id=assignee.id if assignee else None,
         created_by_user_id=user.id,

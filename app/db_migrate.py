@@ -328,4 +328,30 @@ def migrate(engine: Engine) -> None:
         stmts = []
         if not _column_exists(engine, mp, "source"):
             stmts.append(f"ALTER TABLE {mp} ADD COLUMN source VARCHAR")
+        if not _column_exists(engine, mp, "crm_property_id"):
+            stmts.append(f"ALTER TABLE {mp} ADD COLUMN crm_property_id VARCHAR")
+        if not _column_exists(engine, mp, "property_type"):
+            stmts.append(f"ALTER TABLE {mp} ADD COLUMN property_type VARCHAR")
+        if not _column_exists(engine, mp, "rental_type"):
+            stmts.append(f"ALTER TABLE {mp} ADD COLUMN rental_type VARCHAR")
+        if not _column_exists(engine, mp, "key_number"):
+            stmts.append(f"ALTER TABLE {mp} ADD COLUMN key_number VARCHAR")
+        if not _column_exists(engine, mp, "owner_is_company"):
+            stmts.append(f"ALTER TABLE {mp} ADD COLUMN owner_is_company BOOLEAN DEFAULT FALSE")
+        if not _column_exists(engine, mp, "tenancy_status"):
+            stmts.append(f"ALTER TABLE {mp} ADD COLUMN tenancy_status VARCHAR")
+        if not _column_exists(engine, mp, "owners_json"):
+            stmts.append(f"ALTER TABLE {mp} ADD COLUMN owners_json TEXT")
+        if not _column_exists(engine, mp, "tenants_json"):
+            stmts.append(f"ALTER TABLE {mp} ADD COLUMN tenants_json TEXT")
         _exec_statements(engine, stmts)
+
+        with engine.begin() as conn:
+            for stmt in (
+                f"CREATE INDEX IF NOT EXISTS ix_managed_properties_crm_property_id ON {mp}(crm_property_id)",
+                f"CREATE INDEX IF NOT EXISTS ix_managed_properties_tenancy_status ON {mp}(tenancy_status)",
+            ):
+                try:
+                    conn.execute(text(stmt))
+                except Exception:
+                    pass
