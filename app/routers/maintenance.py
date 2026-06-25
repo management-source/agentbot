@@ -517,8 +517,8 @@ def maintenance_summary(
 ):
     base = db.query(MaintenanceOrder).filter(MaintenanceOrder.mailbox == mailbox)
     counts = {
-        row.status.value if hasattr(row.status, "value") else str(row.status): count
-        for row, count in base.with_entities(MaintenanceOrder.status, func.count(MaintenanceOrder.id))
+        status.value if hasattr(status, "value") else str(status): count
+        for status, count in base.with_entities(MaintenanceOrder.status, func.count(MaintenanceOrder.id))
         .group_by(MaintenanceOrder.status)
         .all()
     }
