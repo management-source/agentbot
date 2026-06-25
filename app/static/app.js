@@ -267,6 +267,20 @@ function setLastSyncSummary(value = null) {
     if (mirror) mirror.textContent = text;
 }
 
+function syncResultItems(payload) {
+    if (!payload || typeof payload !== "object") return [];
+    if (Array.isArray(payload.results)) {
+        return payload.results.filter(item => item && typeof item === "object");
+    }
+    return [payload];
+}
+
+function warnIfSyncHitLimit(payload) {
+    const capped = syncResultItems(payload).filter(item => item.hit_limit);
+    if (!capped.length) return;
+    alert("Sync completed, but Gmail reported more changed emails than the current Limit. Increase the Limit and run Check Updates or Fetch Now again before relying on the queue as complete.");
+}
+
 let googleConnected = false;
 async function initMailboxes() {
     const sel = document.getElementById("mailboxSelect");
@@ -3115,9 +3129,7 @@ async function fetchNow() {
         }
         const j = JSON.parse(text);
 
-        if (j && j.hit_limit) {
-            alert("Fetch completed, but hit the configured limit. Increase Max and fetch again to capture more emails for the selected range.");
-        }
+        warnIfSyncHitLimit(j);
         if (j && j.target_mailbox) {
             setMailboxSummary(j.target_mailbox);
         }
@@ -3179,6 +3191,9 @@ async function checkUpdates() {
             alert(`Check Updates failed (${r.status}):\n\n${text}`);
             return;
         }
+
+        const j = JSON.parse(text);
+        warnIfSyncHitLimit(j);
 
         setLastSyncSummary();
 

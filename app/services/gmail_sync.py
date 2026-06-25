@@ -127,9 +127,12 @@ def _exclude_from_me_query() -> str | None:
 
 
 def _thread_ids_from_history(service, start_history_id: str) -> Set[str]:
-    """Return threadIds that changed since start_history_id for INBOX.
+    """Return threadIds that changed since start_history_id.
 
     This is the accurate way to do incremental sync without missing messages.
+    We intentionally do not scope this to INBOX only: staff replies sent from
+    Gmail/delegated access may only appear as SENT history, and those outbound
+    replies are required to close awaiting-reply tickets correctly.
     """
     thread_ids: Set[str] = set()
     page_token = None
@@ -138,7 +141,6 @@ def _thread_ids_from_history(service, start_history_id: str) -> Set[str]:
             userId=gmail_user_id(),
             startHistoryId=start_history_id,
             historyTypes=["messageAdded", "labelAdded", "labelRemoved"],
-            labelId="INBOX",
             maxResults=500,
             pageToken=page_token,
         )
@@ -553,9 +555,18 @@ def sync_inbox_threads(
                 logger.warning("Failed to fetch thread %s: %s", tid, he)
                 skipped += 1
 
-        # Advance watermark only for the incremental (no-range) flow.
-        if (not start and not end) and current_history_id:
+        # Advance watermark only after we processed every changed thread.
+        # If the safety cap was hit, keeping the old watermark lets a larger
+        # follow-up sync recover the skipped changed threads instead of losing them.
+        if (not start and not end) and current_history_id and not hit_limit:
             set_state(db, "gmail_history_id", current_history_id, mailbox)
+        elif (not start and not end) and current_history_id and hit_limit:
+            logger.warning(
+                "Gmail sync hit max_threads=%s for %s; not advancing history watermark %s.",
+                max_threads,
+                mailbox,
+                current_history_id,
+            )
 
         db.commit()
         return {
