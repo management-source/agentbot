@@ -3178,8 +3178,6 @@ function setTab(tab) {
         });
     }
 
-    // UX: when changing tabs, jump to top so the user sees the newest tickets first.
-    try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch { window.scrollTo(0, 0); }
     loadTickets();
 }
 
@@ -3690,7 +3688,7 @@ function ticketBelongsToCurrentTab(status, isNotReplied) {
     const key = String(status || "").toUpperCase();
     if (currentTab === "all") return true;
     if (currentTab === "awaiting_reply") {
-        return Boolean(isNotReplied) && key !== "RESPONDED" && key !== "NO_REPLY_NEEDED";
+        return Boolean(isNotReplied) && key === "PENDING";
     }
     if (currentTab === "in_progress") return key === "IN_PROGRESS";
     if (currentTab === "responded") return key === "RESPONDED";

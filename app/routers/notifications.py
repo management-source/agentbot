@@ -70,12 +70,13 @@ def notification_summary(
         ):
             due_at = _email_due_at(ticket)
             assignee = ticket.assignee_name or "Unassigned"
+            target_tab = "in_progress" if ticket.status == TicketStatus.IN_PROGRESS else "awaiting_reply"
             items.append(
                 {
                     "kind": "email",
                     "severity": "overdue",
                     "page": "inbox",
-                    "tab": "awaiting_reply",
+                    "tab": target_tab,
                     "thread_id": ticket.thread_id,
                     "title": ticket.subject or "Unreplied email",
                     "detail": f"{ticket.from_name or ticket.from_email or 'Unknown sender'} - {assignee}",

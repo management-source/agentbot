@@ -94,9 +94,9 @@ def _tab_filter(q, tab: str):
     tab = (tab or "all").lower().strip()
 
     if tab in ("awaiting_reply", "awaiting"):
-        # Canonical KPI tab
+        # Canonical action queue: new unreplied emails that have not been picked up yet.
         return q.filter(ThreadTicket.is_not_replied == True).filter(
-            ThreadTicket.status.notin_([TicketStatus.RESPONDED, TicketStatus.NO_REPLY_NEEDED])
+            ThreadTicket.status == TicketStatus.PENDING
         )
 
     if tab == "in_progress":
@@ -233,7 +233,7 @@ def list_tickets(
     counts = {
         "all": base.count(),
         "awaiting_reply": base.filter(ThreadTicket.is_not_replied == True)
-        .filter(ThreadTicket.status.notin_([TicketStatus.RESPONDED, TicketStatus.NO_REPLY_NEEDED]))
+        .filter(ThreadTicket.status == TicketStatus.PENDING)
         .count(),
         "in_progress": base.filter(ThreadTicket.status == TicketStatus.IN_PROGRESS).count(),
         "responded": base.filter(ThreadTicket.status == TicketStatus.RESPONDED).count(),
