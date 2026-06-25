@@ -384,6 +384,9 @@
       gap: var(--gap);
       align-items:start;
     }
+    .dashboard-shell.inbox-mode{
+      grid-template-columns: 1fr;
+    }
     .dashboard-shell.rent-mode{
       grid-template-columns: 1fr;
     }
@@ -405,6 +408,7 @@
     .dashboard-shell.system-mode{
       grid-template-columns: 1fr;
     }
+    .dashboard-shell.inbox-mode .left-rail,
     .dashboard-shell.rent-mode .left-rail,
     .dashboard-shell.portal-mode .left-rail,
     .dashboard-shell.myspace-mode .left-rail,
@@ -633,9 +637,19 @@
       font-weight:600;
       font-size:13px;
       cursor:pointer;
-      box-shadow:0 1px 1px rgba(16,24,40,.04);
+      box-shadow:0 1px 1px rgba(16,24,40,.04), inset 0 0 0 0 rgba(5,5,5,0);
+      transition:
+        transform .24s cubic-bezier(.2,.8,.2,1),
+        box-shadow .24s cubic-bezier(.2,.8,.2,1),
+        background .32s ease,
+        background-color .32s ease,
+        border-color .32s ease,
+        color .22s ease;
     }
-    .btn:hover{background:#fbfbfd}
+    .btn:hover{
+      background:#fbfbfd;
+      box-shadow:0 10px 18px rgba(15,23,42,.08), inset 0 0 0 0 rgba(5,5,5,0);
+    }
     .btn.primary{
       background:var(--primary);
       border-color:var(--primary);
@@ -710,9 +724,9 @@
       gap:14px;
     }
     .mail-board-head{
-      display:flex;
-      justify-content:space-between;
-      align-items:flex-end;
+      display:grid;
+      grid-template-columns:minmax(0, 1fr) minmax(320px, 430px);
+      align-items:stretch;
       gap:16px;
       padding:18px;
       border:1px solid #dbe4ef;
@@ -721,6 +735,14 @@
         linear-gradient(180deg, rgba(255,255,255,.98), rgba(248,250,252,.98)),
         radial-gradient(circle at top right, rgba(201,162,70,.14), transparent 44%);
       box-shadow:0 10px 28px rgba(15,23,42,.06);
+    }
+    .mail-banner-copy{
+      position:relative;
+      z-index:1;
+      display:flex;
+      flex-direction:column;
+      justify-content:center;
+      min-width:0;
     }
     .mail-board-title{
       margin:0;
@@ -740,6 +762,91 @@
       gap:8px;
       flex-wrap:wrap;
       justify-content:flex-end;
+    }
+    .mail-banner-account{
+      position:relative;
+      z-index:1;
+      justify-self:end;
+      width:min(430px, 100%);
+      padding:16px;
+      border:1px solid rgba(249,231,167,.26);
+      border-radius:22px;
+      background:rgba(255,255,255,.94);
+      color:#101828;
+      box-shadow:0 18px 36px rgba(8,13,23,.2);
+      backdrop-filter:blur(14px);
+    }
+    .mail-banner-account .pill{
+      background:#fff;
+      color:#667085;
+      border-color:#dbe4ef;
+      box-shadow:0 1px 2px rgba(16,24,40,.04);
+    }
+    .mail-account-actions{
+      display:flex;
+      flex-wrap:wrap;
+      gap:10px;
+      margin-top:12px;
+    }
+    .mail-banner-account .btn{
+      min-height:38px;
+      background:#fff;
+      border-color:#dbe4ef;
+      color:#101828;
+      padding:9px 14px;
+    }
+    .mail-banner-account .btn:hover{
+      background:#050505;
+      border-color:#050505;
+      color:#fff;
+    }
+    .mail-account-field{
+      display:flex;
+      flex-direction:column;
+      gap:6px;
+      margin-top:14px;
+    }
+    .mail-account-field label,
+    .mail-account-meta span{
+      color:#667085;
+      font-size:12px;
+    }
+    .mail-account-field select{
+      min-height:38px;
+      border-radius:12px;
+      border-color:#dbe4ef;
+      background:#fff;
+    }
+    .mail-account-meta{
+      display:grid;
+      grid-template-columns:1fr;
+      gap:4px;
+      margin-top:10px;
+    }
+    .mail-account-meta strong{
+      color:#344054;
+      font-weight:800;
+    }
+    .email-sync-panel{
+      width:100%;
+      padding:18px;
+    }
+    .email-sync-head{
+      align-items:flex-start;
+    }
+    .email-sync-grid{
+      display:grid;
+      grid-template-columns:repeat(2, minmax(160px, 1fr)) minmax(120px, .7fr) repeat(2, minmax(128px, .8fr));
+      gap:10px;
+      align-items:end;
+      margin-top:14px;
+    }
+    .email-sync-grid .field{
+      min-width:0;
+    }
+    .email-sync-panel .controls-actions{
+      justify-content:flex-start;
+      margin-top:14px;
     }
     .mail-toolbar{
       display:grid;
@@ -811,9 +918,16 @@
       background:#f8fafc;
     }
     @media (max-width: 980px){
-      .mail-board-head{align-items:flex-start; flex-direction:column}
+      .mail-board-head{grid-template-columns:1fr}
+      .mail-banner-account{justify-self:stretch}
       .mail-board-meta{justify-content:flex-start}
+      .email-sync-grid{grid-template-columns:repeat(2, minmax(0, 1fr))}
       .mail-toolbar{grid-template-columns:1fr}
+    }
+    @media (max-width: 640px){
+      .email-sync-grid{grid-template-columns:1fr}
+      .mail-account-actions .btn,
+      .email-sync-panel .controls-actions .btn{flex:1}
     }
 
     .rent-table-wrap{
@@ -2107,17 +2221,29 @@
       border-radius:999px;
       min-height:40px;
       font-weight:850;
-      transition:transform .16s ease, box-shadow .16s ease, background .16s ease, border-color .16s ease;
+      transition:
+        transform .24s cubic-bezier(.2,.8,.2,1),
+        box-shadow .24s cubic-bezier(.2,.8,.2,1),
+        background .32s ease,
+        background-color .32s ease,
+        border-color .32s ease,
+        color .22s ease;
     }
-    .btn:hover{transform:translateY(-1px); box-shadow:0 10px 18px rgba(15,23,42,.08)}
+    .btn:hover{
+      transform:translateY(-1px);
+      box-shadow:0 10px 18px rgba(15,23,42,.08), inset 0 0 0 0 rgba(5,5,5,0);
+    }
+    .btn:active{transform:translateY(0) scale(.99)}
     .btn.primary{
       background:linear-gradient(135deg, #111827, #9a7820);
       border-color:#9a7820;
+      box-shadow:0 1px 1px rgba(16,24,40,.04), inset 0 0 0 0 rgba(5,5,5,0);
     }
     .btn.primary:hover{
-      background:#050505;
+      background:linear-gradient(135deg, #111827, #9a7820);
       border-color:#050505;
       color:#fff;
+      box-shadow:0 10px 18px rgba(15,23,42,.08), inset 0 0 0 999px rgba(5,5,5,.98);
     }
     input[type="text"], input[type="email"], input[type="password"], input[type="date"], input[type="number"], input[type="url"], select, textarea{
       border-color:#dbe4ef;
@@ -2396,44 +2522,44 @@
 
         <div class="page">
           <div class="dashboard-shell portal-mode" id="dashboardShell">
-            <aside class="left-rail">
+            <aside class="left-rail" aria-hidden="true">
               <div class="top-grid">
                 <div class="card brand">
                   <div style="margin-top:14px" class="row space">
                     <div class="pill"><span class="dot"
-                        id="authDot"></span><span id="authText">Not
+                        id="authDotLegacy"></span><span id="authTextLegacy">Not
                         signed in</span></div>
                   </div>
 
                   <div style="margin-top:10px" class="row">
-                    <button class="btn" id="btnSettings"
+                    <button class="btn" id="btnSettingsLegacy"
                       onclick="openSettings()">Settings</button>
-                    <button class="btn" id="googleBtn"
+                    <button class="btn" id="googleBtnLegacy"
                       onclick="googleConnectOrManage()">Connect to
                       Google</button>
                     <!-- Autopilot / Query rules removed -->
-                    <button class="btn" id="btnBlacklist"
+                    <button class="btn" id="btnBlacklistLegacy"
                       onclick="openBlacklistModal()">Blacklist</button>
                   </div>
 
                   <p class="small muted" style="margin-top:10px">Mailbox:
-                    <select id="mailboxSelect"
+                    <select id="mailboxSelectLegacy"
                       style="margin-left:8px; padding:4px 8px; border:1px solid var(--border); border-radius:8px; background:#fff;"></select>
-                    <span id="mailboxLabel" class="hidden">—</span></p>
+                    <span id="mailboxLabelLegacy" class="hidden">—</span></p>
                   <p class="small muted" style="margin-top:0">Status: <span
-                      id="statusLine">—</span></p>
+                      id="statusLineLegacy">—</span></p>
                   <p class="small muted" style="margin-top:0">Last sync: <span
-                      id="lastSync">—</span></p>
+                      id="lastSyncLegacy">—</span></p>
                 </div>
 
                 <div class="card">
                   <div class="row space">
                     <div>
                       <p class="panel-title">Email Sync</p>
-                      <p class="panel-sub" id="syncInfo">Fetch unreplied emails
+                      <p class="panel-sub" id="syncInfoLegacy">Fetch unreplied emails
                         and keep tickets current.</p>
                     </div>
-                    <div class="pill" id="googlePill"
+                    <div class="pill" id="googlePillLegacy"
                       style="display:none"><span
                         class="dot green"></span><span>Google
                         Connected</span></div>
@@ -2442,33 +2568,33 @@
                   <div style="margin-top:12px" class="row">
                     <div class="field">
                       <div class="label">From</div>
-                      <input type="date" id="fromDate" />
+                      <input type="date" id="fromDateLegacy" />
                     </div>
                     <div class="field">
                       <div class="label">To</div>
-                      <input type="date" id="toDate" />
+                      <input type="date" id="toDateLegacy" />
                     </div>
                     <div class="field" style="max-width:120px">
                       <div class="label">Limit</div>
-                      <input type="number" id="limit" min="1" max="2000"
+                      <input type="number" id="limitLegacy" min="1" max="2000"
                         value="500" />
                     </div>
                     <label class="checkbox">
-                      <input type="checkbox" id="incremental" checked />
+                      <input type="checkbox" id="incrementalLegacy" checked />
                       Incremental
                     </label>
                     <label class="checkbox">
-                      <input type="checkbox" id="allMail" />
+                      <input type="checkbox" id="allMailLegacy" />
                       All Mail
                     </label>
                   </div>
 
                   <div class="controls-actions">
-                    <button class="btn primary" id="btnFetch"
+                    <button class="btn primary" id="btnFetchLegacy"
                       onclick="fetchNow()">Fetch Now</button>
-                    <button class="btn" id="btnCheckUpdates"
+                    <button class="btn" id="btnCheckUpdatesLegacy"
                       onclick="checkUpdates()">Check Updates</button>
-                    <button class="btn" id="btnClearFilter"
+                    <button class="btn" id="btnClearFilterLegacy"
                       onclick="clearDateFilter()">Clear Dates</button>
                   </div>
                 </div>
@@ -2760,17 +2886,86 @@
               <div id="inboxPanel" class="hidden">
                 <section class="mail-workspace">
                   <div class="mail-board-head page-banner">
-                    <div>
+                    <div class="mail-banner-copy">
                       <div class="page-banner-kicker">Shared Inbox</div>
                       <h2 class="mail-board-title">Email Manager</h2>
                       <p class="mail-board-sub">Triage active conversations,
                         draft replies, and keep the shared inbox moving.</p>
                     </div>
-                    <div class="mail-board-meta">
-                      <span class="chip">Mailbox: <span
-                          id="mailboxBadge">-</span></span>
-                      <span class="chip">Last sync: <span
-                          id="mailLastSyncMirror">-</span></span>
+                    <div class="mail-banner-account">
+                      <div class="row space">
+                        <div class="pill"><span class="dot"
+                            id="authDot"></span><span id="authText">Not
+                            signed in</span></div>
+                      </div>
+
+                      <div class="mail-account-actions">
+                        <button class="btn" id="btnSettings"
+                          onclick="openSettings()">Settings</button>
+                        <button class="btn" id="googleBtn"
+                          onclick="googleConnectOrManage()">Connect to
+                          Google</button>
+                        <!-- Autopilot / Query rules removed -->
+                        <button class="btn" id="btnBlacklist"
+                          onclick="openBlacklistModal()">Blacklist</button>
+                      </div>
+
+                      <div class="mail-account-field">
+                        <label for="mailboxSelect">Mailbox</label>
+                        <select id="mailboxSelect"></select>
+                        <span id="mailboxLabel" class="hidden">-</span>
+                      </div>
+                      <div class="mail-account-meta">
+                        <span>Status: <strong id="statusLine">-</strong></span>
+                        <span>Last sync: <strong id="lastSync">-</strong></span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="card email-sync-panel">
+                    <div class="row space email-sync-head">
+                      <div>
+                        <p class="panel-title">Email Sync</p>
+                        <p class="panel-sub" id="syncInfo">Fetch unreplied
+                          emails and keep tickets current.</p>
+                      </div>
+                      <div class="pill" id="googlePill"
+                        style="display:none"><span
+                          class="dot green"></span><span>Google
+                          Connected</span></div>
+                    </div>
+
+                    <div class="email-sync-grid">
+                      <div class="field">
+                        <div class="label">From</div>
+                        <input type="date" id="fromDate" />
+                      </div>
+                      <div class="field">
+                        <div class="label">To</div>
+                        <input type="date" id="toDate" />
+                      </div>
+                      <div class="field">
+                        <div class="label">Limit</div>
+                        <input type="number" id="limit" min="1" max="2000"
+                          value="500" />
+                      </div>
+                      <label class="checkbox">
+                        <input type="checkbox" id="incremental" checked />
+                        Incremental
+                      </label>
+                      <label class="checkbox">
+                        <input type="checkbox" id="allMail" />
+                        All Mail
+                      </label>
+                    </div>
+
+                    <div class="controls-actions">
+                      <button class="btn primary" id="btnFetch"
+                        onclick="fetchNow()">Fetch Now</button>
+                      <button class="btn" id="btnCheckUpdates"
+                        onclick="checkUpdates()">Check Updates</button>
+                      <button class="btn" id="btnClearFilter"
+                        onclick="clearDateFilter()">Clear Dates</button>
                     </div>
                   </div>
 
