@@ -2430,6 +2430,7 @@ function renderMaintenanceDetail(order) {
           <button class="btn" onclick="openMaintenanceEmailDraft(${order.id}, 'tenant')">Draft Tenant Arrangement</button>
           <button class="btn primary" onclick="setMaintenanceStatus(${order.id}, 'COMPLETED')">Complete Job</button>
           <button class="btn danger" onclick="setMaintenanceStatus(${order.id}, 'CANCELLED')">Cancel</button>
+          <button class="btn danger" onclick="deleteMaintenanceOrder(${order.id})">Delete Order</button>
         </div>
       </div>
 
@@ -2491,6 +2492,33 @@ async function setMaintenanceStatus(orderId, status) {
     fillMaintenanceForm(order);
     renderMaintenanceDetail(order);
     await loadMaintenanceDashboard(currentMaintenancePage || 1);
+    await loadNotifications();
+}
+
+async function deleteMaintenanceOrder(orderId) {
+    if (!confirm("Delete this maintenance order permanently? Attachments and activity history for this order will also be removed.")) return;
+    const r = await apiFetch(`/maintenance/orders/${orderId}`, { method: "DELETE" });
+    if (!r.ok) {
+        alert(`Failed to delete maintenance order: ${await extractErrorMessage(r)}`);
+        return;
+    }
+    selectedMaintenanceOrderId = null;
+    resetMaintenanceForm();
+    const title = document.getElementById("maintenanceDetailTitle");
+    const sub = document.getElementById("maintenanceDetailSub");
+    const status = document.getElementById("maintenanceDetailStatus");
+    const body = document.getElementById("maintenanceDetailBody");
+    if (title) title.textContent = "Select an order";
+    if (sub) sub.textContent = "Create or choose a maintenance order to manage the workflow.";
+    if (status) {
+        status.className = "maintenance-status";
+        status.textContent = "-";
+    }
+    if (body) {
+        body.innerHTML = `<div class="ticket-empty"><strong>Maintenance order deleted</strong><div class="small muted" style="margin-top:6px">Choose another order or create a new one.</div></div>`;
+    }
+    currentMaintenancePage = 1;
+    await loadMaintenanceDashboard(1);
     await loadNotifications();
 }
 

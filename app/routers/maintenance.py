@@ -692,6 +692,19 @@ def update_maintenance_order(
     return _order_to_dict(_get_order(db, mailbox, order_id), include_detail=True)
 
 
+@router.delete("/orders/{order_id}")
+def delete_maintenance_order(
+    order_id: int,
+    mailbox: str = Depends(get_current_mailbox),
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    row = _get_order(db, mailbox, order_id)
+    db.delete(row)
+    db.commit()
+    return {"ok": True, "deleted_id": order_id}
+
+
 @router.post("/orders/{order_id}/status")
 def update_maintenance_status(
     order_id: int,
