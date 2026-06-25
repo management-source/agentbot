@@ -21,7 +21,6 @@ from app.models import (
     ManagedProperty,
     User,
 )
-from app.services.gmail_send import send_new_email
 
 
 router = APIRouter()
@@ -433,6 +432,49 @@ def _tradie_email_body(row: MaintenanceOrder) -> str:
     return "\n".join(lines)
 
 
+def _email_draft(row: MaintenanceOrder, kind: str, body_text: str | None = None) -> dict[str, object]:
+    draft_kind = (kind or "").strip().lower()
+    if draft_kind in {"owner", "landlord", "owner_approval"}:
+        recipient = row.owner_email
+        subject = f"Maintenance request approval - {row.title} - {row.property_address}"
+        body = _clean(body_text) or _owner_email_body(row)
+        next_status = MaintenanceOrderStatus.WAITING_OWNER_APPROVAL
+        label = "Owner Approval"
+    elif draft_kind in {"tenant", "tenant_arrangement"}:
+        recipient = row.tenant_email
+        subject = f"Maintenance update - {row.title} - {row.property_address}"
+        body = _clean(body_text) or _tenant_email_body(row)
+        next_status = MaintenanceOrderStatus.TENANT_NOTIFIED
+        label = "Tenant Arrangement"
+    elif draft_kind in {"tradie", "tradesperson", "work_order"}:
+        recipient = row.tradie_email
+        subject = f"Maintenance work order - {row.title} - {row.property_address}"
+        body = _clean(body_text) or _tradie_email_body(row)
+        next_status = MaintenanceOrderStatus.TRADIE_ARRANGED
+        label = "Tradie Work Order"
+    else:
+        raise HTTPException(status_code=400, detail="Invalid maintenance email draft type.")
+
+    return {
+        "kind": draft_kind,
+        "label": label,
+        "to_email": recipient or "",
+        "subject": subject,
+        "body_text": body,
+        "copy_text": "\n".join(
+            [
+                f"To: {recipient or ''}",
+                f"Subject: {subject}",
+                "",
+                body,
+            ]
+        ),
+        "next_status": next_status.value,
+        "next_status_label": _status_label(next_status),
+        "sends_email": False,
+    }
+
+
 def _apply_update_fields(row: MaintenanceOrder, payload: MaintenanceOrderUpdateIn) -> None:
     fields = _fields_set(payload)
     simple_fields = [
@@ -616,6 +658,18 @@ def get_maintenance_order(
     return _order_to_dict(_get_order(db, mailbox, order_id), include_detail=True)
 
 
+@router.get("/orders/{order_id}/email-draft/{kind}")
+def get_maintenance_email_draft(
+    order_id: int,
+    kind: str,
+    mailbox: str = Depends(get_current_mailbox),
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    row = _get_order(db, mailbox, order_id)
+    return _email_draft(row, kind)
+
+
 @router.patch("/orders/{order_id}")
 def update_maintenance_order(
     order_id: int,
@@ -650,6 +704,8 @@ def update_maintenance_status(
     now = datetime.utcnow()
     row.status = payload.status
     row.updated_at = now
+    if payload.status == MaintenanceOrderStatus.WAITING_OWNER_APPROVAL:
+        row.owner_sent_at = now
     if payload.status in {
         MaintenanceOrderStatus.OWNER_APPROVED,
         MaintenanceOrderStatus.OWNER_DECLINED,
@@ -681,22 +737,14 @@ def send_owner_email(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    # Legacy route name kept for older clients. It intentionally returns a draft
+    # only; Maintenance no longer sends emails directly.
+    del user
     row = _get_order(db, mailbox, order_id)
-    if not _clean(row.owner_email):
-        raise HTTPException(status_code=400, detail="Owner email is required before sending.")
-    body = _clean(payload.body_text) or _owner_email_body(row)
-    subject = f"Maintenance request approval - {row.title} - {row.property_address}"
-    try:
-        send_new_email(db=db, mailbox=mailbox, to_email=row.owner_email, subject=subject, body_text=body, cc=payload.cc, bcc=payload.bcc)
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Failed to send owner email: {e}")
-    now = datetime.utcnow()
-    row.owner_sent_at = now
-    row.status = MaintenanceOrderStatus.WAITING_OWNER_APPROVAL
-    row.updated_at = now
-    _add_event(db, row, "owner_email_sent", user, f"Owner approval email sent to {row.owner_email}.")
-    db.commit()
-    return _order_to_dict(_get_order(db, mailbox, order_id), include_detail=True)
+    draft = _email_draft(row, "owner", payload.body_text)
+    draft["cc"] = payload.cc or ""
+    draft["bcc"] = payload.bcc or ""
+    return draft
 
 
 @router.post("/orders/{order_id}/send-tenant-email")
@@ -707,22 +755,14 @@ def send_tenant_email(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    # Legacy route name kept for older clients. It intentionally returns a draft
+    # only; Maintenance no longer sends emails directly.
+    del user
     row = _get_order(db, mailbox, order_id)
-    if not _clean(row.tenant_email):
-        raise HTTPException(status_code=400, detail="Tenant email is required before sending.")
-    body = _clean(payload.body_text) or _tenant_email_body(row)
-    subject = f"Maintenance update - {row.title} - {row.property_address}"
-    try:
-        send_new_email(db=db, mailbox=mailbox, to_email=row.tenant_email, subject=subject, body_text=body, cc=payload.cc, bcc=payload.bcc)
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Failed to send tenant email: {e}")
-    now = datetime.utcnow()
-    row.tenant_notified_at = now
-    row.status = MaintenanceOrderStatus.TENANT_NOTIFIED
-    row.updated_at = now
-    _add_event(db, row, "tenant_email_sent", user, f"Tenant/tradie arrangement email sent to {row.tenant_email}.")
-    db.commit()
-    return _order_to_dict(_get_order(db, mailbox, order_id), include_detail=True)
+    draft = _email_draft(row, "tenant", payload.body_text)
+    draft["cc"] = payload.cc or ""
+    draft["bcc"] = payload.bcc or ""
+    return draft
 
 
 @router.post("/orders/{order_id}/send-tradie-email")
@@ -733,22 +773,14 @@ def send_tradie_email(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    # Legacy route name kept for older clients. It intentionally returns a draft
+    # only; Maintenance no longer sends emails directly.
+    del user
     row = _get_order(db, mailbox, order_id)
-    if not _clean(row.tradie_email):
-        raise HTTPException(status_code=400, detail="Tradie email is required before sending.")
-    body = _clean(payload.body_text) or _tradie_email_body(row)
-    subject = f"Maintenance work order - {row.title} - {row.property_address}"
-    try:
-        send_new_email(db=db, mailbox=mailbox, to_email=row.tradie_email, subject=subject, body_text=body, cc=payload.cc, bcc=payload.bcc)
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Failed to send tradie email: {e}")
-    now = datetime.utcnow()
-    row.tradie_arranged_at = now
-    row.status = MaintenanceOrderStatus.TRADIE_ARRANGED
-    row.updated_at = now
-    _add_event(db, row, "tradie_email_sent", user, f"Work order email sent to {row.tradie_email}.")
-    db.commit()
-    return _order_to_dict(_get_order(db, mailbox, order_id), include_detail=True)
+    draft = _email_draft(row, "tradie", payload.body_text)
+    draft["cc"] = payload.cc or ""
+    draft["bcc"] = payload.bcc or ""
+    return draft
 
 
 @router.post("/orders/{order_id}/attachments")

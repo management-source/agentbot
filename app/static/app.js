@@ -2420,14 +2420,14 @@ function renderMaintenanceDetail(order) {
       <div class="maintenance-detail-panel">
         <h4>Workflow Actions</h4>
         <div class="maintenance-action-strip">
-          <button class="btn" onclick="sendMaintenanceOwnerEmail(${order.id})">Email Owner for Approval</button>
+          <button class="btn" onclick="openMaintenanceEmailDraft(${order.id}, 'owner')">Draft Owner Approval Email</button>
           <button class="btn" onclick="setMaintenanceStatus(${order.id}, 'OWNER_APPROVED')">Mark Owner Approved</button>
           <button class="btn" onclick="setMaintenanceStatus(${order.id}, 'OWNER_DECLINED')">Mark Owner Declined</button>
           <button class="btn" onclick="setMaintenanceStatus(${order.id}, 'OWNER_ARRANGING')">Owner Arranging Themselves</button>
           <button class="btn" onclick="setMaintenanceStatus(${order.id}, 'QUOTE_REQUESTED')">Looking for Quote</button>
-          <button class="btn" onclick="sendMaintenanceTradieEmail(${order.id})">Email Tradie Work Order</button>
+          <button class="btn" onclick="openMaintenanceEmailDraft(${order.id}, 'tradie')">Draft Tradie Work Order</button>
           <button class="btn" onclick="setMaintenanceStatus(${order.id}, 'TRADIE_ARRANGED')">Tradie Arranged</button>
-          <button class="btn" onclick="sendMaintenanceTenantEmail(${order.id})">Email Tenant Arrangement</button>
+          <button class="btn" onclick="openMaintenanceEmailDraft(${order.id}, 'tenant')">Draft Tenant Arrangement</button>
           <button class="btn primary" onclick="setMaintenanceStatus(${order.id}, 'COMPLETED')">Complete Job</button>
           <button class="btn danger" onclick="setMaintenanceStatus(${order.id}, 'CANCELLED')">Cancel</button>
         </div>
@@ -2494,58 +2494,113 @@ async function setMaintenanceStatus(orderId, status) {
     await loadNotifications();
 }
 
-async function sendMaintenanceOwnerEmail(orderId) {
-    if (!confirm("Send the maintenance details to the owner and move this job to Waiting Owner Approval?")) return;
-    const r = await apiFetch(`/maintenance/orders/${orderId}/send-owner-email`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-    });
+function closeMaintenanceEmailDraftModal() {
+    const modal = document.getElementById("maintenanceEmailDraftModal");
+    if (modal) modal.classList.add("hidden");
+}
+
+function setMaintenanceDraftError(message = "") {
+    const error = document.getElementById("maintenanceEmailDraftError");
+    if (!error) return;
+    error.style.display = message ? "block" : "none";
+    error.textContent = message;
+}
+
+function maintenanceDraftText() {
+    const to = String(document.getElementById("maintenanceEmailDraftTo")?.value || "").trim();
+    const subject = String(document.getElementById("maintenanceEmailDraftSubject")?.value || "").trim();
+    const body = String(document.getElementById("maintenanceEmailDraftBody")?.value || "").trim();
+    return `To: ${to}\nSubject: ${subject}\n\n${body}`;
+}
+
+async function copyTextToClipboard(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+        return true;
+    }
+    const temp = document.createElement("textarea");
+    temp.value = text;
+    temp.setAttribute("readonly", "");
+    temp.style.position = "fixed";
+    temp.style.left = "-9999px";
+    document.body.appendChild(temp);
+    temp.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(temp);
+    return ok;
+}
+
+async function copyMaintenanceEmailDraft() {
+    try {
+        await copyTextToClipboard(maintenanceDraftText());
+        setMaintenanceDraftError("");
+        alert("Full email draft copied.");
+    } catch {
+        setMaintenanceDraftError("Could not copy automatically. Please select the draft text and copy it manually.");
+    }
+}
+
+async function copyMaintenanceEmailBody() {
+    const body = String(document.getElementById("maintenanceEmailDraftBody")?.value || "").trim();
+    try {
+        await copyTextToClipboard(body);
+        setMaintenanceDraftError("");
+        alert("Email body copied.");
+    } catch {
+        setMaintenanceDraftError("Could not copy automatically. Please select the email body and copy it manually.");
+    }
+}
+
+async function openMaintenanceEmailDraft(orderId, kind) {
+    const r = await apiFetch(`/maintenance/orders/${orderId}/email-draft/${encodeURIComponent(kind)}`);
     if (!r.ok) {
-        alert(`Owner email failed: ${await extractErrorMessage(r)}`);
+        alert(`Failed to generate email draft: ${await extractErrorMessage(r)}`);
         return;
     }
-    const order = await r.json();
-    fillMaintenanceForm(order);
-    renderMaintenanceDetail(order);
-    await loadMaintenanceDashboard(currentMaintenancePage || 1);
-    await loadNotifications();
+    const draft = await r.json();
+    const modal = document.getElementById("maintenanceEmailDraftModal");
+    const title = document.getElementById("maintenanceEmailDraftTitle");
+    const subtitle = document.getElementById("maintenanceEmailDraftSubtitle");
+    const orderInput = document.getElementById("maintenanceEmailDraftOrderId");
+    const statusInput = document.getElementById("maintenanceEmailDraftNextStatus");
+    const toInput = document.getElementById("maintenanceEmailDraftTo");
+    const subjectInput = document.getElementById("maintenanceEmailDraftSubject");
+    const bodyInput = document.getElementById("maintenanceEmailDraftBody");
+    const markBtn = document.getElementById("maintenanceEmailDraftMarkBtn");
+    if (title) title.textContent = `${draft.label || "Maintenance"} Draft`;
+    if (subtitle) subtitle.textContent = "No email will be sent from the portal. Edit, copy, and send manually.";
+    if (orderInput) orderInput.value = String(orderId || "");
+    if (statusInput) statusInput.value = String(draft.next_status || "");
+    if (toInput) toInput.value = draft.to_email || "";
+    if (subjectInput) subjectInput.value = draft.subject || "";
+    if (bodyInput) bodyInput.value = draft.body_text || "";
+    if (markBtn) markBtn.textContent = draft.next_status_label ? `Mark ${draft.next_status_label}` : "Mark Step Complete";
+    setMaintenanceDraftError("");
+    if (modal) modal.classList.remove("hidden");
+}
+
+async function markMaintenanceDraftStatus() {
+    const orderId = document.getElementById("maintenanceEmailDraftOrderId")?.value || "";
+    const nextStatus = document.getElementById("maintenanceEmailDraftNextStatus")?.value || "";
+    if (!orderId || !nextStatus) {
+        setMaintenanceDraftError("No workflow status is attached to this draft.");
+        return;
+    }
+    if (!confirm("Only continue after staff have manually sent this email. Update the maintenance workflow status now?")) return;
+    closeMaintenanceEmailDraftModal();
+    await setMaintenanceStatus(orderId, nextStatus);
+}
+
+async function sendMaintenanceOwnerEmail(orderId) {
+    return openMaintenanceEmailDraft(orderId, "owner");
 }
 
 async function sendMaintenanceTenantEmail(orderId) {
-    if (!confirm("Send the tradie/access arrangement email to the tenant?")) return;
-    const r = await apiFetch(`/maintenance/orders/${orderId}/send-tenant-email`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-    });
-    if (!r.ok) {
-        alert(`Tenant email failed: ${await extractErrorMessage(r)}`);
-        return;
-    }
-    const order = await r.json();
-    fillMaintenanceForm(order);
-    renderMaintenanceDetail(order);
-    await loadMaintenanceDashboard(currentMaintenancePage || 1);
-    await loadNotifications();
+    return openMaintenanceEmailDraft(orderId, "tenant");
 }
 
 async function sendMaintenanceTradieEmail(orderId) {
-    if (!confirm("Send the work order details to the tradie and mark this job as Tradie Arranged?")) return;
-    const r = await apiFetch(`/maintenance/orders/${orderId}/send-tradie-email`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-    });
-    if (!r.ok) {
-        alert(`Tradie email failed: ${await extractErrorMessage(r)}`);
-        return;
-    }
-    const order = await r.json();
-    fillMaintenanceForm(order);
-    renderMaintenanceDetail(order);
-    await loadMaintenanceDashboard(currentMaintenancePage || 1);
-    await loadNotifications();
+    return openMaintenanceEmailDraft(orderId, "tradie");
 }
 
 async function uploadMaintenanceQuote(orderId) {

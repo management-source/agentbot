@@ -4441,7 +4441,55 @@
       </div>
     </div>
 
-    <script src="/static/app.js?v=19"></script>
+    <div class="modal-backdrop hidden" id="maintenanceEmailDraftModal">
+      <div class="modal">
+        <div class="modal-head">
+          <div>
+            <h3 id="maintenanceEmailDraftTitle">Maintenance Email Draft</h3>
+            <div class="small muted" id="maintenanceEmailDraftSubtitle"
+              style="margin-top:4px">No email will be sent from the
+              portal.</div>
+          </div>
+          <button class="btn ghost"
+            onclick="closeMaintenanceEmailDraftModal()">Close</button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" id="maintenanceEmailDraftOrderId" />
+          <input type="hidden" id="maintenanceEmailDraftNextStatus" />
+          <div class="field">
+            <div class="label">To</div>
+            <input id="maintenanceEmailDraftTo" type="email"
+              placeholder="recipient@example.com.au" />
+          </div>
+          <div class="field" style="margin-top:10px">
+            <div class="label">Subject</div>
+            <input id="maintenanceEmailDraftSubject" type="text" />
+          </div>
+          <div class="field" style="margin-top:10px">
+            <div class="label">Email Body</div>
+            <textarea id="maintenanceEmailDraftBody"
+              style="min-height:320px"
+              placeholder="Draft email wording..."></textarea>
+          </div>
+          <div class="property-extra-note" style="margin-top:10px">This is an
+            editable draft only. Review it, copy it, send it manually, then use
+            the workflow button below if you want to update the maintenance
+            status.</div>
+          <div class="error" id="maintenanceEmailDraftError"
+            style="display:none"></div>
+        </div>
+        <div class="modal-foot">
+          <button class="btn" onclick="copyMaintenanceEmailBody()">Copy
+            Body</button>
+          <button class="btn" onclick="copyMaintenanceEmailDraft()">Copy Full
+            Email</button>
+          <button class="btn primary" id="maintenanceEmailDraftMarkBtn"
+            onclick="markMaintenanceDraftStatus()">Mark Step Complete</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="/static/app.js?v=20"></script>
 
     <script>
   // Wire segmented status buttons to existing tab logic
