@@ -1519,6 +1519,13 @@
       background:#fff;
     }
     .myspace-note{min-height:320px;margin-top:14px}
+    #mySpaceNotesCard .myspace-note{
+      min-height:360px;
+      font-size:14px;
+      line-height:1.6;
+      border-radius:18px;
+      background:#fff;
+    }
     .myspace-todo-meta{display:flex;gap:6px;flex-wrap:wrap}
     .myspace-todo-actions{
       grid-column:2;
@@ -1541,8 +1548,69 @@
     .myspace-tool-form,
     .myspace-guide-upload{
       display:grid;
-      gap:10px;
+      gap:12px;
       margin-top:14px;
+      padding:14px;
+      border:1px solid #dbe4ef;
+      border-radius:18px;
+      background:
+        radial-gradient(circle at 100% 0%, rgba(201,162,70,.10), transparent 32%),
+        #f8fafc;
+    }
+    .myspace-tool-form:focus-within,
+    .myspace-tool-item:focus-within{
+      border-color:rgba(201,162,70,.55);
+      box-shadow:0 12px 26px rgba(15,23,42,.08), 0 0 0 4px rgba(201,162,70,.10);
+    }
+    .myspace-tool-form input,
+    .myspace-tool-form textarea,
+    .myspace-tool-item input,
+    .myspace-tool-item textarea{
+      width:100%;
+      border:1px solid #cfdbea;
+      border-radius:16px;
+      background:#fff;
+      color:#101828;
+      padding:12px 14px;
+      font-size:14px;
+      line-height:1.5;
+      box-shadow:inset 0 1px 0 rgba(15,23,42,.02);
+      transition:border-color .16s ease, box-shadow .16s ease, background .16s ease;
+    }
+    .myspace-tool-form .field,
+    .myspace-tool-item .field{
+      min-width:0;
+    }
+    .myspace-tool-form .label,
+    .myspace-tool-item .label{
+      color:#344054;
+      font-size:11px;
+      font-weight:900;
+      letter-spacing:.07em;
+      text-transform:uppercase;
+    }
+    .myspace-tool-form input,
+    .myspace-tool-item input{
+      min-height:46px;
+    }
+    .myspace-tool-form textarea,
+    .myspace-tool-item textarea{
+      min-height:108px;
+      resize:vertical;
+    }
+    .myspace-tool-form input::placeholder,
+    .myspace-tool-form textarea::placeholder,
+    .myspace-tool-item input::placeholder,
+    .myspace-tool-item textarea::placeholder{
+      color:#98a2b3;
+    }
+    .myspace-tool-form input:focus,
+    .myspace-tool-form textarea:focus,
+    .myspace-tool-item input:focus,
+    .myspace-tool-item textarea:focus{
+      border-color:#c9a246;
+      box-shadow:0 0 0 4px rgba(201,162,70,.12);
+      outline:none;
     }
     .myspace-tool-list,
     .myspace-guide-list{
@@ -1556,10 +1624,11 @@
       display:grid;
       grid-template-columns:minmax(0, 1fr) auto;
       gap:12px;
-      padding:13px;
+      padding:14px;
       border:1px solid #dbe4ef;
-      border-radius:16px;
-      background:#fff;
+      border-radius:18px;
+      background:linear-gradient(180deg, #fff, #fbfcfe);
+      transition:border-color .16s ease, box-shadow .16s ease, transform .16s ease;
     }
     .myspace-tool-main{display:grid;gap:8px;min-width:0}
     .myspace-tool-actions,
@@ -2044,6 +2113,11 @@
     .btn.primary{
       background:linear-gradient(135deg, #111827, #9a7820);
       border-color:#9a7820;
+    }
+    .btn.primary:hover{
+      background:#050505;
+      border-color:#050505;
+      color:#fff;
     }
     input[type="text"], input[type="email"], input[type="password"], input[type="date"], input[type="number"], input[type="url"], select, textarea{
       border-color:#dbe4ef;
@@ -2576,7 +2650,7 @@
                       </div>
                     </div>
 
-                    <div class="myspace-card" id="mySpaceNotesCard">
+                    <div class="myspace-card wide" id="mySpaceNotesCard">
                       <div class="row space">
                         <div>
                           <h3>Private Notes</h3>
@@ -2603,12 +2677,21 @@
                       <p>Keep your daily portals, report URLs, calendars, and
                         supplier pages one click away.</p>
                       <div class="myspace-tool-form">
-                        <input type="text" id="mySpaceLinkTitle"
-                          placeholder="Link title" />
-                        <input type="url" id="mySpaceLinkUrl"
-                          placeholder="https://..." />
-                        <textarea id="mySpaceLinkNotes"
-                          placeholder="Optional notes for this link..."></textarea>
+                        <div class="field">
+                          <div class="label">Link Title</div>
+                          <input type="text" id="mySpaceLinkTitle"
+                            placeholder="Example: OurProperty login" />
+                        </div>
+                        <div class="field">
+                          <div class="label">URL</div>
+                          <input type="url" id="mySpaceLinkUrl"
+                            placeholder="https://..." />
+                        </div>
+                        <div class="field">
+                          <div class="label">Notes</div>
+                          <textarea id="mySpaceLinkNotes"
+                            placeholder="Optional notes for when or how to use this link..."></textarea>
+                        </div>
                         <button class="btn primary"
                           onclick="addMySpaceQuickLink()">Add Quick
                           Link</button>
@@ -2623,14 +2706,23 @@
                         requests, tenant updates, and owner replies.</p>
                       <div class="myspace-tool-form">
                         <div class="myspace-inline-fields">
-                          <input type="text" id="mySpaceSnippetTitle"
-                            placeholder="Snippet title" />
-                          <input type="text" id="mySpaceSnippetCategory"
-                            placeholder="Category" />
+                          <div class="field">
+                            <div class="label">Snippet Title</div>
+                            <input type="text" id="mySpaceSnippetTitle"
+                              placeholder="Example: Rent arrears follow-up" />
+                          </div>
+                          <div class="field">
+                            <div class="label">Category</div>
+                            <input type="text" id="mySpaceSnippetCategory"
+                              placeholder="Rent, owner, tenant..." />
+                          </div>
                         </div>
-                        <textarea id="mySpaceSnippetBody"
-                          class="myspace-snippet-body"
-                          placeholder="Write the email wording here..."></textarea>
+                        <div class="field">
+                          <div class="label">Email Wording</div>
+                          <textarea id="mySpaceSnippetBody"
+                            class="myspace-snippet-body"
+                            placeholder="Write the email wording here..."></textarea>
+                        </div>
                         <button class="btn primary"
                           onclick="addMySpaceSnippet()">Add Snippet</button>
                       </div>
