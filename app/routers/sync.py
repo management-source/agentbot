@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from fastapi import APIRouter, Depends
 from app.authz import get_current_user
 from app.deps import get_current_mailbox
@@ -56,10 +58,11 @@ def fetch_now(
 @router.post("/check-updates")
 def check_updates(
     max_threads: int = 200,
+    fallback_start: Optional[str] = None,
     mailbox: str = "all",
     user=Depends(get_current_user),
 ):
-    """Incremental sync for one or all mailboxes."""
+    """Incremental sync for one or all mailboxes from the last Check Updates checkpoint."""
     mbs = settings.monitored_mailboxes_list()
     if not mbs:
         return {"ok": False, "error": "No monitored mailboxes configured."}
@@ -70,6 +73,7 @@ def check_updates(
 
     results = []
     for mb in targets:
+        checkpoint_started_at = datetime.utcnow()
         results.append(
             sync_inbox_threads(
                 mailbox=mb,
@@ -80,6 +84,10 @@ def check_updates(
                 include_anywhere=False,
                 awaiting_only=True,
                 auto_triage=False,
+                history_state_key="gmail_check_updates_history_id",
+                checkpoint_state_key="gmail_check_updates_at",
+                checkpoint_started_at=checkpoint_started_at,
+                fallback_start=fallback_start,
             )
         )
     return {"ok": True, "mailboxes": targets, "results": results}

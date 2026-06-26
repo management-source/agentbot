@@ -454,6 +454,10 @@ def sync_inbox_threads(
     include_anywhere: bool = False,
     awaiting_only: bool = True,
     auto_triage: bool = True,
+    history_state_key: str = "gmail_history_id",
+    checkpoint_state_key: str | None = None,
+    checkpoint_started_at: datetime | None = None,
+    fallback_start: str | None = None,
 ) -> dict:
     """Synchronize Gmail INBOX threads into the local DB.
 
@@ -485,7 +489,7 @@ def sync_inbox_threads(
             thread_ids, hit_limit = _list_thread_ids_in_range(service, start=start, end=end, max_threads=max_threads, include_anywhere=include_anywhere)
         else:
             # Daily/ongoing sync: prefer historyId (accurate, doesn't miss messages).
-            last_history_id = get_state(db, "gmail_history_id", mailbox)
+            last_history_id = get_state(db, history_state_key, mailbox)
             if incremental and last_history_id and current_history_id:
                 try:
                     tids = _thread_ids_from_history(service, start_history_id=last_history_id)
@@ -500,13 +504,13 @@ def sync_inbox_threads(
                         logger.warning("HistoryId too old; falling back to recent sync and resetting watermark.")
                         # Pull last 30 days to rebuild state. This matches the product requirement
                         # ("check emails up to a month") and avoids missing active unreplied threads.
-                        recent_start = (date.today() - timedelta(days=30)).isoformat()
+                        recent_start = fallback_start or (date.today() - timedelta(days=30)).isoformat()
                         thread_ids, hit_limit = _list_thread_ids_in_range(service, start=recent_start, end=None, max_threads=max_threads, include_anywhere=False)
                     else:
                         raise
             else:
-                # First sync: pull a recent window (30 days) and set watermark.
-                recent_start = (date.today() - timedelta(days=30)).isoformat()
+                # First sync for this state key: pull a bounded window and set the watermark.
+                recent_start = fallback_start or (date.today() - timedelta(days=30)).isoformat()
                 thread_ids, hit_limit = _list_thread_ids_in_range(service, start=recent_start, end=None, max_threads=max_threads, include_anywhere=False)
 
         blacklisted_senders = {
@@ -559,7 +563,10 @@ def sync_inbox_threads(
         # If the safety cap was hit, keeping the old watermark lets a larger
         # follow-up sync recover the skipped changed threads instead of losing them.
         if (not start and not end) and current_history_id and not hit_limit:
-            set_state(db, "gmail_history_id", current_history_id, mailbox)
+            set_state(db, history_state_key, current_history_id, mailbox)
+            if checkpoint_state_key:
+                checkpoint_at = checkpoint_started_at or datetime.utcnow()
+                set_state(db, checkpoint_state_key, checkpoint_at.isoformat(), mailbox)
         elif (not start and not end) and current_history_id and hit_limit:
             logger.warning(
                 "Gmail sync hit max_threads=%s for %s; not advancing history watermark %s.",
@@ -576,6 +583,8 @@ def sync_inbox_threads(
             "skipped": skipped,
             "mode": "history" if used_history else ("range" if (start or end) else "recent"),
             "watermark": current_history_id,
+            "history_state_key": history_state_key,
+            "checkpoint_at": (checkpoint_started_at.isoformat() if checkpoint_started_at else None),
             "hit_limit": hit_limit,
             "fetch_failures": fetch_failures,
             "batch_size": GMAIL_BATCH_SIZE,

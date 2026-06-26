@@ -260,10 +260,10 @@ function updateSyncContextUI() {
     if (!info) return;
     if (isAllEmailsTab()) {
         if (viewBadge) viewBadge.textContent = "All Emails";
-        info.textContent = "All Emails mode: choose a From/To date range, then Fetch or Check updates for that range.";
+        info.textContent = "All Emails mode: Fetch uses the date range; Check Updates only checks forward from the last Check Updates checkpoint.";
     } else {
         if (viewBadge) viewBadge.textContent = "Awaiting Reply";
-        info.textContent = "Awaiting Reply mode: incremental updates focus on active inbox threads that need a response.";
+        info.textContent = "Awaiting Reply mode: Check Updates only checks forward from the last Check Updates checkpoint.";
     }
 }
 
@@ -4271,7 +4271,6 @@ async function checkUpdates() {
     }
 
     try {
-        const allMode = isAllEmailsTab();
         const startEl = document.getElementById("startDate") || document.getElementById("fromDate");
         const endEl = document.getElementById("endDate") || document.getElementById("toDate");
         const maxEl = document.getElementById("maxThreads") || document.getElementById("limit");
@@ -4279,25 +4278,14 @@ async function checkUpdates() {
         const end = endEl ? (endEl.value || currentDateFilter.end || "") : (currentDateFilter.end || "");
         const maxThreads = parseInt((maxEl && maxEl.value) ? maxEl.value : "200", 10);
 
-        let url;
-        if (allMode) {
-            if (!start || !end) {
-                alert("In All Emails mode, choose both From and To dates before checking updates.");
-                return;
-            }
+        if (start || end) {
             currentDateFilter = { start, end };
-            url = new URL("/sync/fetch-now", window.location.origin);
-            url.searchParams.set("start", start);
-            url.searchParams.set("end", end);
-            url.searchParams.set("incremental", "false");
-            url.searchParams.set("include_anywhere", "true");
-            url.searchParams.set("awaiting_only", "false");
-            url.searchParams.set("max_threads", String(!Number.isNaN(maxThreads) && maxThreads > 0 ? maxThreads : 500));
-        } else {
-            url = new URL("/sync/check-updates", window.location.origin);
-            // Safety cap; frequent use should stay light.
-            url.searchParams.set("max_threads", String(!Number.isNaN(maxThreads) && maxThreads > 0 ? maxThreads : 200));
         }
+
+        const url = new URL("/sync/check-updates", window.location.origin);
+        // Safety cap; frequent use should stay light.
+        url.searchParams.set("max_threads", String(!Number.isNaN(maxThreads) && maxThreads > 0 ? maxThreads : 200));
+        if (start) url.searchParams.set("fallback_start", start);
         if (currentMailbox) url.searchParams.set("mailbox", currentMailbox);
 
         const r = await apiFetch(url.toString(), { method: "POST" });
