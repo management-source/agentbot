@@ -14,10 +14,10 @@ from pydantic import BaseModel
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
-from app.authz import get_current_user
+from app.authz import get_current_user, require_role
 from app.db import get_db
 from app.deps import get_current_mailbox
-from app.models import ManagedProperty, User
+from app.models import ManagedProperty, User, UserRole
 
 router = APIRouter()
 
@@ -159,6 +159,104 @@ def _property_identity_key(
     postcode: str | None = None,
 ) -> str:
     return _normalize_address_key(" ".join([x for x in [property_address, suburb, state_code, postcode] if x]))
+
+
+def _crm_identity_key(value: str | None) -> str:
+    return _normalize_text(value).lower()
+
+
+def _property_match_keys(
+    property_address: str | None,
+    suburb: str | None = None,
+    state_code: str | None = None,
+    postcode: str | None = None,
+) -> list[str]:
+    keys: list[str] = []
+
+    def add_key(*parts: str | None) -> None:
+        key = _normalize_address_key(" ".join([part for part in parts if part]))
+        if key and key not in keys:
+            keys.append(key)
+
+    add_key(property_address, suburb, state_code, postcode)
+    add_key(property_address, suburb, postcode)
+
+    parsed = _split_full_address(property_address)
+    parsed_address = parsed.get("property_address")
+    parsed_suburb = suburb or parsed.get("suburb")
+    parsed_state = state_code or parsed.get("state_code")
+    parsed_postcode = postcode or parsed.get("postcode")
+    add_key(parsed_address, parsed_suburb, parsed_state, parsed_postcode)
+    add_key(parsed_address, parsed_suburb, parsed_postcode)
+
+    return keys
+
+
+def _index_property(
+    row: ManagedProperty,
+    by_crm: dict[str, list[ManagedProperty]],
+    by_address: dict[str, list[ManagedProperty]],
+) -> None:
+    crm_key = _crm_identity_key(row.crm_property_id)
+    if crm_key and row not in by_crm.setdefault(crm_key, []):
+        by_crm[crm_key].append(row)
+    for key in _property_match_keys(row.property_address, row.suburb, row.state_code, row.postcode):
+        if row not in by_address.setdefault(key, []):
+            by_address[key].append(row)
+
+
+def _best_property_match(candidates: list[ManagedProperty]) -> ManagedProperty | None:
+    if not candidates:
+        return None
+    return sorted(candidates, key=lambda row: (not bool(row.is_active), row.id or 0))[0]
+
+
+def _matching_existing_properties(
+    item: dict[str, str | bool | None],
+    by_crm: dict[str, list[ManagedProperty]],
+    by_address: dict[str, list[ManagedProperty]],
+) -> list[ManagedProperty]:
+    candidates: list[ManagedProperty] = []
+
+    def add_candidates(rows: list[ManagedProperty]) -> None:
+        for row in rows:
+            if row not in candidates:
+                candidates.append(row)
+
+    crm_key = _crm_identity_key(str(item.get("crm_property_id") or ""))
+    if crm_key:
+        add_candidates(by_crm.get(crm_key, []))
+    for key in _property_match_keys(
+        str(item.get("property_address") or ""),
+        str(item.get("suburb") or ""),
+        str(item.get("state_code") or ""),
+        str(item.get("postcode") or ""),
+    ):
+        add_candidates(by_address.get(key, []))
+    return candidates
+
+
+def _apply_imported_property(
+    row: ManagedProperty,
+    item: dict[str, str | bool | None],
+    now: datetime,
+) -> None:
+    row.crm_property_id = item.get("crm_property_id") or row.crm_property_id
+    row.property_address = str(item["property_address"] or row.property_address or "")
+    row.address_line_2 = item["address_line_2"]
+    row.suburb = item["suburb"]
+    row.state_code = _vic_state_code(str(item["state_code"] or "VIC"))
+    row.postcode = item["postcode"]
+    row.property_type = item.get("property_type")
+    row.rental_type = item.get("rental_type")
+    row.key_number = item.get("key_number")
+    row.owner_is_company = bool(item.get("owner_is_company"))
+    row.tenancy_status = item.get("tenancy_status")
+    row.owners_json = item.get("owners_json")
+    row.tenants_json = item.get("tenants_json")
+    row.is_active = True
+    row.source = "crm_import"
+    row.updated_at = now
 
 
 def _split_full_address(value: str | None) -> dict[str, str | None]:
@@ -507,61 +605,54 @@ async def import_xlsx(
 
     now = datetime.utcnow()
     imported = 0
+    created = 0
+    updated = 0
+    reactivated = 0
+    duplicates_archived = 0
     existing = db.query(ManagedProperty).filter(ManagedProperty.mailbox == mailbox).all()
-    existing_by_key = {
-        _property_identity_key(prop.property_address, prop.suburb, prop.state_code, prop.postcode): prop
-        for prop in existing
-    }
+    existing_by_crm: dict[str, list[ManagedProperty]] = {}
+    existing_by_address: dict[str, list[ManagedProperty]] = {}
+    for prop in existing:
+        _index_property(prop, existing_by_crm, existing_by_address)
+
     for item in rows:
-        address_key = _property_identity_key(
-            item["property_address"],
-            item["suburb"],
-            item["state_code"],
-            item["postcode"],
-        )
-        match = existing_by_key.get(address_key)
+        candidates = _matching_existing_properties(item, existing_by_crm, existing_by_address)
+        match = _best_property_match(candidates)
         if match:
-            match.crm_property_id = item.get("crm_property_id")
-            match.address_line_2 = item["address_line_2"]
-            match.suburb = item["suburb"]
-            match.state_code = _vic_state_code(item["state_code"])
-            match.postcode = item["postcode"]
-            match.property_type = item.get("property_type")
-            match.rental_type = item.get("rental_type")
-            match.key_number = item.get("key_number")
-            match.owner_is_company = bool(item.get("owner_is_company"))
-            match.tenancy_status = item.get("tenancy_status")
-            match.owners_json = item.get("owners_json")
-            match.tenants_json = item.get("tenants_json")
-            match.is_active = True
-            match.source = "crm_import"
-            match.updated_at = now
+            was_inactive = not bool(match.is_active)
+            _apply_imported_property(match, item, now)
+            for duplicate in candidates:
+                if duplicate is match or not duplicate.is_active:
+                    continue
+                duplicate.is_active = False
+                duplicate.updated_at = now
+                duplicates_archived += 1
+            if was_inactive:
+                reactivated += 1
+            else:
+                updated += 1
+            _index_property(match, existing_by_crm, existing_by_address)
         else:
             new_row = ManagedProperty(
                 mailbox=mailbox,
-                crm_property_id=item.get("crm_property_id"),
-                property_address=item["property_address"] or "",
-                address_line_2=item["address_line_2"],
-                suburb=item["suburb"],
-                state_code=_vic_state_code(item["state_code"]),
-                postcode=item["postcode"],
-                property_type=item.get("property_type"),
-                rental_type=item.get("rental_type"),
-                key_number=item.get("key_number"),
-                owner_is_company=bool(item.get("owner_is_company")),
-                tenancy_status=item.get("tenancy_status"),
-                owners_json=item.get("owners_json"),
-                tenants_json=item.get("tenants_json"),
                 is_active=True,
-                source="crm_import",
                 created_at=now,
                 updated_at=now,
             )
+            _apply_imported_property(new_row, item, now)
             db.add(new_row)
-            existing_by_key[address_key] = new_row
+            _index_property(new_row, existing_by_crm, existing_by_address)
+            created += 1
         imported += 1
     db.commit()
-    return {"ok": True, "imported_rows": imported}
+    return {
+        "ok": True,
+        "imported_rows": imported,
+        "created": created,
+        "updated": updated,
+        "reactivated": reactivated,
+        "duplicates_archived": duplicates_archived,
+    }
 
 
 @router.post("")
@@ -580,11 +671,24 @@ def create_property(
     suburb = _normalize_text(payload.suburb) or parsed_address.get("suburb")
     state_code = _vic_state_code(parsed_address.get("state_code") or payload.state_code)
     postcode = _normalize_text(payload.postcode) or parsed_address.get("postcode")
-    target_key = _property_identity_key(address, suburb, state_code, postcode)
+    target_keys = set(_property_match_keys(address, suburb, state_code, postcode))
     existing = db.query(ManagedProperty).filter(ManagedProperty.mailbox == mailbox).all()
     for row in existing:
-        if _property_identity_key(row.property_address, row.suburb, row.state_code, row.postcode) == target_key:
-            raise HTTPException(status_code=400, detail="This property already exists.")
+        row_keys = set(_property_match_keys(row.property_address, row.suburb, row.state_code, row.postcode))
+        if target_keys.intersection(row_keys):
+            if row.is_active:
+                raise HTTPException(status_code=400, detail="This property already exists.")
+            row.property_address = address
+            row.address_line_2 = _normalize_text(payload.address_line_2) or None
+            row.suburb = suburb
+            row.state_code = state_code
+            row.postcode = postcode
+            row.is_active = True
+            row.source = "manual"
+            row.updated_at = datetime.utcnow()
+            db.commit()
+            db.refresh(row)
+            return _property_to_dict(row)
 
     now = datetime.utcnow()
     row = ManagedProperty(
@@ -603,6 +707,26 @@ def create_property(
     db.commit()
     db.refresh(row)
     return _property_to_dict(row)
+
+
+@router.delete("/flush")
+def flush_properties(
+    mailbox: str = Depends(get_current_mailbox),
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_role(UserRole.ADMIN)),
+):
+    now = datetime.utcnow()
+    rows = (
+        db.query(ManagedProperty)
+        .filter(ManagedProperty.mailbox == mailbox)
+        .filter(ManagedProperty.is_active == True)
+        .all()
+    )
+    for row in rows:
+        row.is_active = False
+        row.updated_at = now
+    db.commit()
+    return {"ok": True, "deleted": len(rows), "archived": len(rows)}
 
 
 @router.delete("/{property_id}")

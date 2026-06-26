@@ -1413,6 +1413,11 @@ function applyPageVisibility() {
         tile.classList.toggle("hidden", !canAccessPage(pageId));
     });
 
+    const flushPropertiesBtn = document.getElementById("btnFlushProperties");
+    if (flushPropertiesBtn) {
+        flushPropertiesBtn.classList.toggle("hidden", !canAccessPage("system"));
+    }
+
     if (!canAccessPage(currentDashboardTab)) {
         switchDashboardTab(firstAccessiblePage());
     }
@@ -3650,6 +3655,34 @@ async function deleteProperty(propertyId, label = "this property") {
     if (coverageLoadedOnce) await loadComplianceCoverage(1);
 }
 
+async function flushProperties() {
+    const confirmed = confirm(
+        "Flush the active property register?\n\n" +
+        "This will archive all currently active properties so the list becomes empty. " +
+        "Compliance and maintenance history will be kept, and the next CRM import can reactivate matching properties."
+    );
+    if (!confirmed) return;
+
+    const meta = document.getElementById("propertyImportMeta");
+    if (meta) meta.textContent = "Flushing active property register...";
+    const r = await apiFetch("/properties/flush", { method: "DELETE" });
+    const t = await r.text();
+    if (!r.ok) {
+        if (meta) meta.textContent = "Property flush failed.";
+        alert(`Property flush failed (${r.status}):\n\n${t}`);
+        return;
+    }
+    let j = null;
+    try { j = JSON.parse(t); } catch { j = null; }
+    if (meta) meta.textContent = `Flushed ${j?.deleted || 0} active properties at ${new Date().toLocaleString()}. Import the latest CRM workbook to rebuild the register.`;
+    currentPropertiesPage = 1;
+    propertiesLoadedOnce = false;
+    await loadProperties();
+    await refreshPropertyOptions();
+    if (complianceLoadedOnce) await loadComplianceDashboard(1);
+    if (coverageLoadedOnce) await loadComplianceCoverage(1);
+}
+
 async function importPropertiesWorkbook() {
     const fileInput = document.getElementById("propertyImportFile");
     const f = fileInput && fileInput.files ? fileInput.files[0] : null;
@@ -3670,7 +3703,14 @@ async function importPropertiesWorkbook() {
     }
     let j = null;
     try { j = JSON.parse(t); } catch { j = null; }
-    if (meta) meta.textContent = `Imported ${j?.imported_rows || "-"} CRM property profiles from ${escapeHtml(f.name)} at ${new Date().toLocaleString()}.`;
+    if (meta) {
+        const imported = j?.imported_rows ?? "-";
+        const created = j?.created ?? 0;
+        const updated = j?.updated ?? 0;
+        const reactivated = j?.reactivated ?? 0;
+        const archived = j?.duplicates_archived ?? 0;
+        meta.textContent = `Processed ${imported} CRM property profiles from ${f.name}: ${created} new, ${updated} updated, ${reactivated} reactivated, ${archived} duplicates archived at ${new Date().toLocaleString()}.`;
+    }
     currentPropertiesPage = 1;
     propertiesLoadedOnce = false;
     await loadProperties();
