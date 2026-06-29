@@ -180,6 +180,9 @@ let currentMaintenancePage = 1;
 let maintenanceLoadedOnce = false;
 let selectedMaintenanceOrderId = null;
 let maintenanceOrdersCache = {};
+let maintenanceViewMode = "dashboard";
+let tenantRegistrationsCache = [];
+let maintenanceTradiesCache = [];
 let currentPropertiesPage = 1;
 let propertiesLoadedOnce = false;
 let currentCompliancePage = 1;
@@ -1407,6 +1410,8 @@ function applyPageVisibility() {
             el.style.display = visible ? "flex" : "none";
         }
     }
+    const maintenanceSideSubnav = document.getElementById("maintenanceSideSubnav");
+    if (maintenanceSideSubnav) maintenanceSideSubnav.classList.toggle("hidden", !canAccessPage("maintenance"));
 
     document.querySelectorAll("[data-page-tile]").forEach((tile) => {
         const pageId = tile.getAttribute("data-page-tile") || "";
@@ -2157,6 +2162,7 @@ function switchDashboardTab(tab) {
     }
     if (currentDashboardTab === "maintenance" && !maintenanceLoadedOnce) {
         refreshPropertyOptions();
+        loadMaintenanceTradies();
         loadMaintenanceDashboard();
     }
     if (currentDashboardTab === "myspace" && !mySpaceLoadedOnce) {
@@ -2266,6 +2272,86 @@ function maintenanceMoney(value) {
     const amount = Number(value || 0);
     if (!(amount > 0)) return "-";
     return amount.toLocaleString(undefined, { style: "currency", currency: "AUD" });
+}
+
+function switchMaintenanceView(mode = "dashboard") {
+    const view = ["dashboard", "new", "active", "complete", "tenants", "tradies"].includes(mode) ? mode : "dashboard";
+    maintenanceViewMode = view;
+    document.querySelectorAll("[data-maintenance-view]").forEach((btn) => {
+        btn.classList.toggle("active", btn.dataset.maintenanceView === view);
+    });
+    const dashboard = document.getElementById("maintenanceDashboardView");
+    const work = document.getElementById("maintenanceWorkView");
+    const form = document.getElementById("maintenanceFormCard");
+    const queue = document.getElementById("maintenanceQueueView");
+    const tenantView = document.getElementById("maintenanceTenantRegistrationsView");
+    const tradieView = document.getElementById("maintenanceTradiesView");
+
+    [dashboard, work, tenantView, tradieView].forEach((el) => {
+        if (el) el.classList.add("hidden");
+    });
+    if (work) work.classList.remove("new-only");
+    if (form) form.classList.remove("hidden");
+    if (queue) queue.classList.remove("hidden");
+
+    if (view === "dashboard") {
+        if (dashboard) dashboard.classList.remove("hidden");
+        loadMaintenanceDashboard(currentMaintenancePage || 1);
+        return;
+    }
+    if (view === "tenants") {
+        if (tenantView) tenantView.classList.remove("hidden");
+        loadTenantRegistrations();
+        return;
+    }
+    if (view === "tradies") {
+        if (tradieView) tradieView.classList.remove("hidden");
+        loadMaintenanceTradies();
+        return;
+    }
+
+    if (work) work.classList.remove("hidden");
+    if (view === "new") {
+        resetMaintenanceForm();
+        if (queue) queue.classList.add("hidden");
+        if (work) work.classList.add("new-only");
+        return;
+    }
+
+    const statusFilter = document.getElementById("maintenanceStatusFilter");
+    if (statusFilter) statusFilter.value = view === "complete" ? "COMPLETED" : "OPEN";
+    currentMaintenancePage = 1;
+    loadMaintenanceDashboard(1);
+}
+
+function renderMaintenanceTradieOptions() {
+    const list = document.getElementById("maintenanceTradieOptions");
+    if (!list) return;
+    list.innerHTML = maintenanceTradiesCache
+        .filter((item) => item.is_active !== false)
+        .map((item) => `<option value="${escapeHtml(item.company || item.label || "")}"></option>`)
+        .join("");
+}
+
+function findMaintenanceTradieByCompany(value) {
+    const key = String(value || "").trim().toLowerCase();
+    if (!key) return null;
+    return maintenanceTradiesCache.find((item) => String(item.company || "").trim().toLowerCase() === key)
+        || maintenanceTradiesCache.find((item) => String(item.label || "").trim().toLowerCase() === key)
+        || null;
+}
+
+function applyMaintenanceTradieToOrder(value) {
+    const tradie = findMaintenanceTradieByCompany(value || document.getElementById("maintenanceTradieCompany")?.value);
+    if (!tradie) return;
+    const set = (id, text) => {
+        const el = document.getElementById(id);
+        if (el) el.value = text || "";
+    };
+    set("maintenanceTradieCompany", tradie.company);
+    set("maintenanceTradieName", tradie.contact_name);
+    set("maintenanceTradieEmail", tradie.email);
+    set("maintenanceTradiePhone", tradie.phone);
 }
 
 function renderMaintenanceAssigneeOptions(selectedId = "") {
@@ -2442,6 +2528,11 @@ async function saveMaintenanceOrder() {
     selectedMaintenanceOrderId = order.id;
     fillMaintenanceForm(order);
     renderMaintenanceDetail(order);
+    if (maintenanceViewMode === "new") {
+        await loadNotifications();
+        switchMaintenanceView("active");
+        return;
+    }
     await loadMaintenanceDashboard(currentMaintenancePage || 1);
     await loadNotifications();
 }
@@ -2477,6 +2568,188 @@ function renderMaintenanceList(items) {
         <p>${escapeHtml(item.category || "General")} - ${escapeHtml(item.priority || "normal")} - Updated ${escapeHtml(formatDateShort(item.updated_at))}</p>
       </button>
     `).join("");
+}
+
+function tenantRegistrationStatusChip(item) {
+    const active = item && item.is_active !== false;
+    const verified = item && item.is_verified === true;
+    return `
+      <span class="maintenance-status ${active ? "done" : "stop"}">${active ? "Active" : "Inactive"}</span>
+      <span class="maintenance-status ${verified ? "action" : "wait"}">${verified ? "Verified" : "Pending"}</span>
+    `;
+}
+
+function renderTenantRegistrations(items = []) {
+    tenantRegistrationsCache = Array.isArray(items) ? items : [];
+    const list = document.getElementById("tenantRegistrationsList");
+    if (!list) return;
+    if (!tenantRegistrationsCache.length) {
+        list.innerHTML = `<div class="ticket-empty"><strong>No tenant registrations found</strong><div class="small muted" style="margin-top:6px">Tenant portal registrations will appear here.</div></div>`;
+        return;
+    }
+    list.innerHTML = tenantRegistrationsCache.map((item) => `
+      <article class="tenant-registration-card">
+        <div>
+          <div class="row" style="gap:8px;flex-wrap:wrap">${tenantRegistrationStatusChip(item)}</div>
+          <h4 style="margin-top:10px">${escapeHtml(item.name || item.email || "Tenant")}</h4>
+          <p>${escapeHtml(item.email || "-")} ${item.phone ? `- ${escapeHtml(item.phone)}` : ""}</p>
+          <p><strong>Property:</strong> ${escapeHtml(item.property_label || item.property_address || "-")}</p>
+          <p class="small muted">Registered ${escapeHtml(formatDateShort(item.created_at))}${item.last_login_at ? ` - Last login ${escapeHtml(formatDateShort(item.last_login_at))}` : ""}</p>
+        </div>
+        <div class="row" style="justify-content:flex-end">
+          <button class="btn" onclick="updateTenantRegistration(${item.id}, { is_verified: ${item.is_verified ? "false" : "true"} })">${item.is_verified ? "Unverify" : "Verify"}</button>
+          <button class="btn ${item.is_active ? "danger" : "primary"}" onclick="updateTenantRegistration(${item.id}, { is_active: ${item.is_active ? "false" : "true"} })">${item.is_active ? "Deactivate" : "Activate"}</button>
+        </div>
+      </article>
+    `).join("");
+}
+
+async function loadTenantRegistrations() {
+    const list = document.getElementById("tenantRegistrationsList");
+    if (list) list.innerHTML = `<div class="ticket-empty">Loading tenant registrations...</div>`;
+    const url = new URL("/tenant/api/admin/registrations", window.location.origin);
+    const query = document.getElementById("tenantRegistrationSearch")?.value || "";
+    const active = document.getElementById("tenantRegistrationStatus")?.value || "all";
+    if (query.trim()) url.searchParams.set("query", query.trim());
+    if (active) url.searchParams.set("active", active);
+    const r = await apiFetch(url.toString());
+    if (!r.ok) {
+        if (list) list.innerHTML = `<div class="ticket-empty"><strong>Failed to load tenant registrations</strong><div class="small muted">${escapeHtml(await extractErrorMessage(r))}</div></div>`;
+        return;
+    }
+    const data = await r.json();
+    renderTenantRegistrations(Array.isArray(data.items) ? data.items : []);
+}
+
+async function updateTenantRegistration(tenantId, payload) {
+    const r = await apiFetch(`/tenant/api/admin/registrations/${tenantId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload || {}),
+    });
+    if (!r.ok) {
+        alert(`Failed to update tenant registration: ${await extractErrorMessage(r)}`);
+        return;
+    }
+    await loadTenantRegistrations();
+}
+
+function clearMaintenanceTradieForm() {
+    ["tradieId", "tradieCompany", "tradieContactName", "tradieTradeType", "tradieEmail", "tradiePhone", "tradieNotes"].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.value = "";
+    });
+    const active = document.getElementById("tradieActive");
+    if (active) active.value = "true";
+}
+
+function fillMaintenanceTradieForm(tradieId) {
+    const item = maintenanceTradiesCache.find((tradie) => Number(tradie.id) === Number(tradieId));
+    if (!item) return;
+    const set = (id, value) => {
+        const el = document.getElementById(id);
+        if (el) el.value = value || "";
+    };
+    set("tradieId", item.id);
+    set("tradieCompany", item.company);
+    set("tradieContactName", item.contact_name);
+    set("tradieTradeType", item.trade_type);
+    set("tradieEmail", item.email);
+    set("tradiePhone", item.phone);
+    set("tradieNotes", item.notes);
+    const active = document.getElementById("tradieActive");
+    if (active) active.value = item.is_active === false ? "false" : "true";
+    document.getElementById("tradieCompany")?.focus();
+}
+
+function maintenanceTradiePayload() {
+    return {
+        company: String(document.getElementById("tradieCompany")?.value || "").trim(),
+        contact_name: String(document.getElementById("tradieContactName")?.value || "").trim(),
+        trade_type: String(document.getElementById("tradieTradeType")?.value || "").trim(),
+        email: String(document.getElementById("tradieEmail")?.value || "").trim(),
+        phone: String(document.getElementById("tradiePhone")?.value || "").trim(),
+        notes: String(document.getElementById("tradieNotes")?.value || "").trim(),
+        is_active: (document.getElementById("tradieActive")?.value || "true") === "true",
+    };
+}
+
+async function saveMaintenanceTradie() {
+    const payload = maintenanceTradiePayload();
+    if (!payload.company) {
+        alert("Enter a tradie company or name first.");
+        return;
+    }
+    const id = document.getElementById("tradieId")?.value || "";
+    const r = await apiFetch(id ? `/maintenance/tradies/${id}` : "/maintenance/tradies", {
+        method: id ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+    });
+    if (!r.ok) {
+        alert(`Failed to save tradie: ${await extractErrorMessage(r)}`);
+        return;
+    }
+    clearMaintenanceTradieForm();
+    await loadMaintenanceTradies();
+}
+
+function renderMaintenanceTradies(items = []) {
+    maintenanceTradiesCache = Array.isArray(items) ? items : [];
+    renderMaintenanceTradieOptions();
+    const list = document.getElementById("maintenanceTradiesList");
+    if (!list) return;
+    if (!maintenanceTradiesCache.length) {
+        list.innerHTML = `<div class="ticket-empty"><strong>No tradies found</strong><div class="small muted" style="margin-top:6px">Register your preferred trades and contractors above.</div></div>`;
+        return;
+    }
+    list.innerHTML = maintenanceTradiesCache.map((item) => `
+      <article class="tradie-card">
+        <div>
+          <div class="row" style="gap:8px;flex-wrap:wrap">
+            <span class="maintenance-status ${item.is_active ? "done" : "stop"}">${item.is_active ? "Active" : "Inactive"}</span>
+            ${item.trade_type ? `<span class="maintenance-status action">${escapeHtml(item.trade_type)}</span>` : ""}
+          </div>
+          <h4 style="margin-top:10px">${escapeHtml(item.company || "Tradie")}</h4>
+          <p>${escapeHtml(item.contact_name || "")}${item.email ? ` - ${escapeHtml(item.email)}` : ""}${item.phone ? ` - ${escapeHtml(item.phone)}` : ""}</p>
+          ${item.notes ? `<p class="small muted">${escapeHtml(item.notes)}</p>` : ""}
+        </div>
+        <div class="row" style="justify-content:flex-end">
+          <button class="btn" onclick="fillMaintenanceTradieForm(${item.id})">Edit</button>
+          <button class="btn ${item.is_active ? "danger" : "primary"}" onclick="toggleMaintenanceTradie(${item.id}, ${item.is_active ? "false" : "true"})">${item.is_active ? "Deactivate" : "Activate"}</button>
+        </div>
+      </article>
+    `).join("");
+}
+
+async function loadMaintenanceTradies() {
+    const url = new URL("/maintenance/tradies", window.location.origin);
+    const query = document.getElementById("tradieSearch")?.value || "";
+    const active = document.getElementById("tradieStatus")?.value || "active";
+    if (query.trim()) url.searchParams.set("query", query.trim());
+    if (active) url.searchParams.set("active", active);
+    const list = document.getElementById("maintenanceTradiesList");
+    if (list) list.innerHTML = `<div class="ticket-empty">Loading tradies...</div>`;
+    const r = await apiFetch(url.toString());
+    if (!r.ok) {
+        if (list) list.innerHTML = `<div class="ticket-empty"><strong>Failed to load tradies</strong><div class="small muted">${escapeHtml(await extractErrorMessage(r))}</div></div>`;
+        return;
+    }
+    const data = await r.json();
+    renderMaintenanceTradies(Array.isArray(data.items) ? data.items : []);
+}
+
+async function toggleMaintenanceTradie(tradieId, active) {
+    const r = await apiFetch(`/maintenance/tradies/${tradieId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ is_active: !!active }),
+    });
+    if (!r.ok) {
+        alert(`Failed to update tradie: ${await extractErrorMessage(r)}`);
+        return;
+    }
+    await loadMaintenanceTradies();
 }
 
 async function loadMaintenanceDashboard(page = null) {
@@ -6027,6 +6300,11 @@ window.addEventListener("load", async () => {
         maintenancePropertySearch.addEventListener("input", updateMaintenancePropertySelection);
         maintenancePropertySearch.addEventListener("change", updateMaintenancePropertySelection);
     }
+    const maintenanceTradieCompany = document.getElementById("maintenanceTradieCompany");
+    if (maintenanceTradieCompany) {
+        maintenanceTradieCompany.addEventListener("change", () => applyMaintenanceTradieToOrder());
+        maintenanceTradieCompany.addEventListener("blur", () => applyMaintenanceTradieToOrder());
+    }
     const maintenanceStatusFilter = document.getElementById("maintenanceStatusFilter");
     if (maintenanceStatusFilter) {
         maintenanceStatusFilter.addEventListener("change", () => {
@@ -6047,6 +6325,46 @@ window.addEventListener("load", async () => {
                     loadMaintenanceDashboard();
                 }
             }, 250);
+        });
+    }
+    const tenantRegistrationSearch = document.getElementById("tenantRegistrationSearch");
+    if (tenantRegistrationSearch) {
+        let tmr = null;
+        tenantRegistrationSearch.addEventListener("input", () => {
+            if (tmr) clearTimeout(tmr);
+            tmr = setTimeout(() => {
+                if (currentDashboardTab === "maintenance" && maintenanceViewMode === "tenants") {
+                    loadTenantRegistrations();
+                }
+            }, 250);
+        });
+    }
+    const tenantRegistrationStatus = document.getElementById("tenantRegistrationStatus");
+    if (tenantRegistrationStatus) {
+        tenantRegistrationStatus.addEventListener("change", () => {
+            if (currentDashboardTab === "maintenance" && maintenanceViewMode === "tenants") {
+                loadTenantRegistrations();
+            }
+        });
+    }
+    const tradieSearch = document.getElementById("tradieSearch");
+    if (tradieSearch) {
+        let tmr = null;
+        tradieSearch.addEventListener("input", () => {
+            if (tmr) clearTimeout(tmr);
+            tmr = setTimeout(() => {
+                if (currentDashboardTab === "maintenance" && maintenanceViewMode === "tradies") {
+                    loadMaintenanceTradies();
+                }
+            }, 250);
+        });
+    }
+    const tradieStatus = document.getElementById("tradieStatus");
+    if (tradieStatus) {
+        tradieStatus.addEventListener("change", () => {
+            if (currentDashboardTab === "maintenance" && maintenanceViewMode === "tradies") {
+                loadMaintenanceTradies();
+            }
         });
     }
     ["complianceStateFilter", "complianceTypeFilter"].forEach((id) => {

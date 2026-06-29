@@ -527,12 +527,16 @@ class MaintenanceAttachment(Base):
     filename: Mapped[str] = mapped_column(String)
     content_type: Mapped[str] = mapped_column(String, default="application/octet-stream")
     content_bytes: Mapped[bytes] = mapped_column(LargeBinary)
+    storage_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    file_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     uploaded_by_user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    uploaded_by_tenant_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("tenant_accounts.id"), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
     order = relationship("MaintenanceOrder", back_populates="attachments")
     uploaded_by = relationship("User")
+    uploaded_by_tenant = relationship("TenantAccount")
 
 
 class MaintenanceEvent(Base):
@@ -548,6 +552,22 @@ class MaintenanceEvent(Base):
 
     order = relationship("MaintenanceOrder", back_populates="events")
     actor = relationship("User")
+
+
+class MaintenanceTradie(Base):
+    __tablename__ = "maintenance_tradies"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    mailbox: Mapped[str] = mapped_column(String, index=True)
+    company: Mapped[str] = mapped_column(String, index=True)
+    contact_name: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    trade_type: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    email: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    phone: Mapped[str | None] = mapped_column(String, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
 
 class ComplianceRecord(Base):

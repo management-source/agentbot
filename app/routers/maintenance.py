@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 import json
+from pathlib import Path
 import re
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -11,6 +12,7 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, selectinload
 
 from app.authz import require_page_access
+from app.config import settings
 from app.db import get_db
 from app.deps import get_current_mailbox
 from app.models import (
@@ -18,6 +20,7 @@ from app.models import (
     MaintenanceEvent,
     MaintenanceOrder,
     MaintenanceOrderStatus,
+    MaintenanceTradie,
     ManagedProperty,
     User,
 )
@@ -111,6 +114,26 @@ class MaintenanceNoteIn(BaseModel):
     note: str
 
 
+class MaintenanceTradieIn(BaseModel):
+    company: str
+    contact_name: str | None = None
+    trade_type: str | None = None
+    email: str | None = None
+    phone: str | None = None
+    notes: str | None = None
+    is_active: bool = True
+
+
+class MaintenanceTradieUpdateIn(BaseModel):
+    company: str | None = None
+    contact_name: str | None = None
+    trade_type: str | None = None
+    email: str | None = None
+    phone: str | None = None
+    notes: str | None = None
+    is_active: bool | None = None
+
+
 def _clean(value: str | None) -> str | None:
     text = (value or "").strip()
     return text or None
@@ -120,6 +143,48 @@ def _safe_filename(value: str | None) -> str:
     name = (value or "maintenance-attachment").replace("\\", "/").split("/")[-1].strip()
     name = re.sub(r"[\r\n\t\x00-\x1f\x7f]+", "", name).replace('"', "")
     return name[:180] or "maintenance-attachment"
+
+
+def _tenant_upload_root() -> Path:
+    root = Path(settings.TENANT_UPLOAD_DIR).resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def _attachment_disk_path(row: MaintenanceAttachment) -> Path | None:
+    if not row.storage_path:
+        return None
+    root = _tenant_upload_root()
+    candidate = Path(row.storage_path)
+    if not candidate.is_absolute():
+        candidate = root / candidate
+    resolved = candidate.resolve()
+    if root != resolved and root not in resolved.parents:
+        raise HTTPException(status_code=400, detail="Attachment storage path is invalid.")
+    return resolved
+
+
+def _attachment_content(row: MaintenanceAttachment) -> bytes:
+    disk_path = _attachment_disk_path(row)
+    if not disk_path:
+        return row.content_bytes or b""
+    if not disk_path.exists() or not disk_path.is_file():
+        raise HTTPException(status_code=404, detail="Attachment file is missing from disk.")
+    try:
+        return disk_path.read_bytes()
+    except OSError:
+        raise HTTPException(status_code=503, detail="Attachment storage is unavailable.")
+
+
+def _delete_attachment_file(row: MaintenanceAttachment) -> None:
+    disk_path = _attachment_disk_path(row)
+    if not disk_path:
+        return
+    try:
+        if disk_path.exists() and disk_path.is_file():
+            disk_path.unlink()
+    except OSError:
+        raise HTTPException(status_code=503, detail="Could not remove attachment from disk.")
 
 
 def _fields_set(payload: BaseModel) -> set[str]:
@@ -250,6 +315,7 @@ def _add_event(
 
 
 def _attachment_to_dict(row: MaintenanceAttachment) -> dict:
+    size = row.file_size if row.file_size is not None else len(row.content_bytes or b"")
     return {
         "id": row.id,
         "kind": row.kind,
@@ -258,7 +324,10 @@ def _attachment_to_dict(row: MaintenanceAttachment) -> dict:
         "notes": row.notes,
         "created_at": row.created_at,
         "uploaded_by_user_id": row.uploaded_by_user_id,
-        "size": len(row.content_bytes or b""),
+        "uploaded_by_tenant_id": row.uploaded_by_tenant_id,
+        "storage": "disk" if row.storage_path else "database",
+        "source": "tenant" if row.uploaded_by_tenant_id else "staff",
+        "size": size,
     }
 
 
@@ -269,6 +338,22 @@ def _event_to_dict(row: MaintenanceEvent) -> dict:
         "detail": row.detail,
         "actor_name": row.actor.name if row.actor else None,
         "created_at": row.created_at,
+    }
+
+
+def _tradie_to_dict(row: MaintenanceTradie) -> dict:
+    return {
+        "id": row.id,
+        "company": row.company,
+        "contact_name": row.contact_name,
+        "trade_type": row.trade_type,
+        "email": row.email,
+        "phone": row.phone,
+        "notes": row.notes,
+        "is_active": row.is_active,
+        "created_at": row.created_at,
+        "updated_at": row.updated_at,
+        "label": " - ".join([x for x in [row.company, row.contact_name, row.trade_type] if x]),
     }
 
 
@@ -512,6 +597,97 @@ def _apply_update_fields(row: MaintenanceOrder, payload: MaintenanceOrderUpdateI
         setattr(row, field, value)
 
 
+@router.get("/tradies")
+def list_maintenance_tradies(
+    query: str | None = None,
+    active: str | None = "active",
+    mailbox: str = Depends(get_current_mailbox),
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_page_access("maintenance")),
+):
+    q = db.query(MaintenanceTradie).filter(MaintenanceTradie.mailbox == mailbox)
+    key = (active or "").strip().lower()
+    if key in {"active", "true", "1", ""}:
+        q = q.filter(MaintenanceTradie.is_active == True)
+    elif key in {"inactive", "false", "0"}:
+        q = q.filter(MaintenanceTradie.is_active == False)
+    elif key not in {"all"}:
+        raise HTTPException(status_code=400, detail="Invalid tradie active filter.")
+    if query and query.strip():
+        like = f"%{query.strip()}%"
+        q = q.filter(
+            or_(
+                MaintenanceTradie.company.ilike(like),
+                MaintenanceTradie.contact_name.ilike(like),
+                MaintenanceTradie.trade_type.ilike(like),
+                MaintenanceTradie.email.ilike(like),
+                MaintenanceTradie.phone.ilike(like),
+            )
+        )
+    rows = q.order_by(MaintenanceTradie.is_active.desc(), MaintenanceTradie.company.asc()).limit(500).all()
+    return {"items": [_tradie_to_dict(row) for row in rows]}
+
+
+@router.post("/tradies")
+def create_maintenance_tradie(
+    payload: MaintenanceTradieIn,
+    mailbox: str = Depends(get_current_mailbox),
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_page_access("maintenance")),
+):
+    company = _clean(payload.company)
+    if not company:
+        raise HTTPException(status_code=400, detail="Tradie company/name is required.")
+    now = datetime.utcnow()
+    row = MaintenanceTradie(
+        mailbox=mailbox,
+        company=company,
+        contact_name=_clean(payload.contact_name),
+        trade_type=_clean(payload.trade_type),
+        email=_clean(payload.email),
+        phone=_clean(payload.phone),
+        notes=_clean(payload.notes),
+        is_active=bool(payload.is_active),
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return _tradie_to_dict(row)
+
+
+@router.patch("/tradies/{tradie_id}")
+def update_maintenance_tradie(
+    tradie_id: int,
+    payload: MaintenanceTradieUpdateIn,
+    mailbox: str = Depends(get_current_mailbox),
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_page_access("maintenance")),
+):
+    row = (
+        db.query(MaintenanceTradie)
+        .filter(MaintenanceTradie.mailbox == mailbox)
+        .filter(MaintenanceTradie.id == tradie_id)
+        .first()
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Tradie not found.")
+    fields = _fields_set(payload)
+    for field in ["company", "contact_name", "trade_type", "email", "phone", "notes"]:
+        if field in fields:
+            value = _clean(getattr(payload, field))
+            if field == "company" and not value:
+                raise HTTPException(status_code=400, detail="Tradie company/name is required.")
+            setattr(row, field, value)
+    if "is_active" in fields and payload.is_active is not None:
+        row.is_active = bool(payload.is_active)
+    row.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(row)
+    return _tradie_to_dict(row)
+
+
 @router.get("/summary")
 def maintenance_summary(
     mailbox: str = Depends(get_current_mailbox),
@@ -705,6 +881,8 @@ def delete_maintenance_order(
     _user: User = Depends(require_page_access("maintenance")),
 ):
     row = _get_order(db, mailbox, order_id)
+    for attachment in list(row.attachments or []):
+        _delete_attachment_file(attachment)
     db.delete(row)
     db.commit()
     return {"ok": True, "deleted_id": order_id}
@@ -863,7 +1041,7 @@ def view_maintenance_attachment(
         raise HTTPException(status_code=404, detail="Attachment not found.")
     filename = _safe_filename(row.filename)
     return Response(
-        content=row.content_bytes,
+        content=_attachment_content(row),
         media_type=row.content_type or "application/octet-stream",
         headers={"Content-Disposition": f'inline; filename="{filename}"'},
     )
@@ -886,6 +1064,7 @@ def delete_maintenance_attachment(
         raise HTTPException(status_code=404, detail="Attachment not found.")
     order = _get_order(db, mailbox, row.order_id)
     filename = row.filename
+    _delete_attachment_file(row)
     db.delete(row)
     order.updated_at = datetime.utcnow()
     _add_event(db, order, "attachment_deleted", user, f"Attachment deleted: {filename}")

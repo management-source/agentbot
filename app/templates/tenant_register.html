@@ -224,7 +224,9 @@
                 </div>
                 <div class="field wide">
                   <label for="tenantAddress">Property address</label>
-                  <input id="tenantAddress" autocomplete="street-address" placeholder="Example: 2/3 Fox St, Dandenong VIC 3175" required />
+                  <input id="tenantAddress" list="tenantPropertyOptions" autocomplete="off" placeholder="Start typing your managed property address..." required />
+                  <datalist id="tenantPropertyOptions"></datalist>
+                  <input id="tenantPropertyId" type="hidden" />
                 </div>
                 <div class="field">
                   <label for="tenantSuburb">Suburb</label>
@@ -239,7 +241,7 @@
                   <input id="tenantPassword" type="password" autocomplete="new-password" placeholder="12+ chars with uppercase, number, and symbol" required />
                 </div>
               </div>
-              <div class="hint">After registering, you can log in and submit maintenance requests. If your property cannot be matched automatically, staff can still review the request.</div>
+              <div class="hint">Start typing and select your property from the suggestions. Registration cannot continue unless the property exists in our active register.</div>
 
               <div id="tenantRecaptchaWrap" class="recaptcha{% if not app_config.recaptcha_enabled %} hidden{% endif %}">
                 <div id="tenantRecaptcha"></div>
@@ -262,6 +264,8 @@
     <script>
       window.TENANT_PORTAL_CONFIG = {{ app_config | tojson }};
       let tenantRecaptchaWidgetId = null;
+      let propertySuggestionTimer = null;
+      let tenantPropertySuggestions = [];
 
       window.onTenantRecaptchaLoad = function () {
         const config = window.TENANT_PORTAL_CONFIG || {};
@@ -295,6 +299,61 @@
         return data;
       }
 
+      function escapeHtml(text) {
+        return String(text || "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#039;");
+      }
+
+      function rememberPropertySelection(option) {
+        document.getElementById("tenantPropertyId").value = option ? String(option.id || "") : "";
+        if (option) {
+          document.getElementById("tenantAddress").value = option.label || option.property_address || "";
+          document.getElementById("tenantSuburb").value = option.suburb || "";
+          document.getElementById("tenantPostcode").value = option.postcode || "";
+        }
+      }
+
+      function resolveTypedProperty() {
+        const value = (document.getElementById("tenantAddress").value || "").trim().toLowerCase();
+        const match = tenantPropertySuggestions.find((item) => String(item.label || "").trim().toLowerCase() === value);
+        rememberPropertySelection(match || null);
+        return match || null;
+      }
+
+      async function loadPropertySuggestions() {
+        const input = document.getElementById("tenantAddress");
+        const list = document.getElementById("tenantPropertyOptions");
+        const query = (input.value || "").trim();
+        document.getElementById("tenantPropertyId").value = "";
+        if (query.length < 3) {
+          tenantPropertySuggestions = [];
+          list.innerHTML = "";
+          return;
+        }
+        try {
+          const data = await tenantApi(`/tenant/api/property-suggestions?q=${encodeURIComponent(query)}`, { method: "GET" });
+          tenantPropertySuggestions = Array.isArray(data.items) ? data.items : [];
+          list.innerHTML = tenantPropertySuggestions
+            .map((item) => `<option value="${escapeHtml(item.label || "")}"></option>`)
+            .join("");
+          resolveTypedProperty();
+        } catch {
+          tenantPropertySuggestions = [];
+          list.innerHTML = "";
+        }
+      }
+
+      document.getElementById("tenantAddress").addEventListener("input", function () {
+        if (propertySuggestionTimer) clearTimeout(propertySuggestionTimer);
+        propertySuggestionTimer = setTimeout(loadPropertySuggestions, 260);
+      });
+      document.getElementById("tenantAddress").addEventListener("change", resolveTypedProperty);
+      document.getElementById("tenantAddress").addEventListener("blur", resolveTypedProperty);
+
       document.getElementById("tenantRegisterForm").addEventListener("submit", async function (event) {
         event.preventDefault();
         const config = window.TENANT_PORTAL_CONFIG || {};
@@ -311,6 +370,7 @@
           name: (document.getElementById("tenantName").value || "").trim(),
           phone: (document.getElementById("tenantPhone").value || "").trim(),
           email: (document.getElementById("tenantEmail").value || "").trim(),
+          property_id: document.getElementById("tenantPropertyId").value ? Number(document.getElementById("tenantPropertyId").value) : null,
           property_address: (document.getElementById("tenantAddress").value || "").trim(),
           suburb: (document.getElementById("tenantSuburb").value || "").trim(),
           postcode: (document.getElementById("tenantPostcode").value || "").trim(),
@@ -320,6 +380,10 @@
 
         if (!payload.name || !payload.email || !payload.property_address || !payload.password) {
           setStatus("Please complete name, email, property address, and password.", true);
+          return;
+        }
+        if (!payload.property_id) {
+          setStatus("Please select your property from the suggestions before registering.", true);
           return;
         }
 

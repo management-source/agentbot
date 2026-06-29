@@ -401,3 +401,39 @@ def migrate(engine: Engine) -> None:
                     conn.execute(text(stmt))
                 except Exception:
                     pass
+
+    ma = "maintenance_attachments"
+    if _table_exists(engine, ma):
+        stmts = []
+        if not _column_exists(engine, ma, "storage_path"):
+            stmts.append(f"ALTER TABLE {ma} ADD COLUMN storage_path TEXT")
+        if not _column_exists(engine, ma, "file_size"):
+            stmts.append(f"ALTER TABLE {ma} ADD COLUMN file_size INTEGER")
+        if not _column_exists(engine, ma, "uploaded_by_tenant_id"):
+            stmts.append(f"ALTER TABLE {ma} ADD COLUMN uploaded_by_tenant_id INTEGER")
+        _exec_statements(engine, stmts)
+
+        with engine.begin() as conn:
+            for stmt in (
+                f"CREATE INDEX IF NOT EXISTS ix_maintenance_attachments_uploaded_by_tenant_id ON {ma}(uploaded_by_tenant_id)",
+            ):
+                try:
+                    conn.execute(text(stmt))
+                except Exception:
+                    pass
+
+    mt = "maintenance_tradies"
+    if _table_exists(engine, mt):
+        with engine.begin() as conn:
+            for stmt in (
+                f"CREATE INDEX IF NOT EXISTS ix_maintenance_tradies_mailbox ON {mt}(mailbox)",
+                f"CREATE INDEX IF NOT EXISTS ix_maintenance_tradies_company ON {mt}(company)",
+                f"CREATE INDEX IF NOT EXISTS ix_maintenance_tradies_contact_name ON {mt}(contact_name)",
+                f"CREATE INDEX IF NOT EXISTS ix_maintenance_tradies_trade_type ON {mt}(trade_type)",
+                f"CREATE INDEX IF NOT EXISTS ix_maintenance_tradies_email ON {mt}(email)",
+                f"CREATE INDEX IF NOT EXISTS ix_maintenance_tradies_is_active ON {mt}(is_active)",
+            ):
+                try:
+                    conn.execute(text(stmt))
+                except Exception:
+                    pass

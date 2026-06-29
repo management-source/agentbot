@@ -185,9 +185,20 @@
         padding-top:14px;
         resize:vertical;
       }
+      input[type="file"]{
+        padding:14px 16px;
+        height:auto;
+        min-height:58px;
+      }
       input:focus,select:focus,textarea:focus{
         border-color:var(--gold);
         box-shadow:0 0 0 4px rgba(205,162,74,.16);
+      }
+      .upload-note{
+        margin-top:-2px;
+        color:var(--muted);
+        font-size:12px;
+        line-height:1.45;
       }
       .btn{
         min-height:54px;
@@ -344,6 +355,11 @@
                   <label for="requestContact">Preferred contact</label>
                   <input id="requestContact" placeholder="Example: SMS after 3pm" />
                 </div>
+                <div class="field wide">
+                  <label for="requestFiles">Photos or videos</label>
+                  <input id="requestFiles" type="file" accept="image/*,video/*" multiple />
+                  <div class="upload-note">Optional. Upload images or videos only, up to 25MB per file.</div>
+                </div>
               </div>
               <div style="margin-top:18px">
                 <button class="btn" type="submit">Send request to Dons Premier</button>
@@ -372,10 +388,11 @@
       }
 
       async function tenantApi(path, options = {}) {
+        const isFormData = options && options.body instanceof FormData;
         const response = await fetch(path, {
           ...options,
           headers: {
-            "Content-Type": "application/json",
+            ...(isFormData ? {} : { "Content-Type": "application/json" }),
             ...authHeaders(),
             ...((options && options.headers) || {})
           }
@@ -487,6 +504,17 @@
 
       document.getElementById("maintenanceRequestForm").addEventListener("submit", async function (event) {
         event.preventDefault();
+        const fileInput = document.getElementById("requestFiles");
+        const files = Array.from((fileInput && fileInput.files) || []);
+        const maxFileBytes = 25 * 1024 * 1024;
+        const invalidFile = files.find((file) => {
+          const type = String(file.type || "");
+          return file.size > maxFileBytes || (type && !(type.startsWith("image/") || type.startsWith("video/")));
+        });
+        if (invalidFile) {
+          setStatus("Photos/videos must be image or video files and 25MB or smaller each.", true);
+          return;
+        }
         const payload = {
           title: (document.getElementById("requestTitle").value || "").trim(),
           category: (document.getElementById("requestCategory").value || "").trim(),
@@ -500,12 +528,21 @@
           return;
         }
         try {
-          await tenantApi("/tenant/api/maintenance-requests", {
+          const created = await tenantApi("/tenant/api/maintenance-requests", {
             method: "POST",
             body: JSON.stringify(payload)
           });
+          const requestId = created && created.request ? created.request.id : null;
+          if (requestId && files.length) {
+            const form = new FormData();
+            files.forEach((file) => form.append("files", file, file.name));
+            await tenantApi(`/tenant/api/maintenance-requests/${requestId}/attachments`, {
+              method: "POST",
+              body: form
+            });
+          }
           document.getElementById("maintenanceRequestForm").reset();
-          setStatus("Request submitted. The Dons Premier team can now manage it from their Maintenance portal.", false);
+          setStatus(files.length ? "Request submitted with media. The Dons Premier team can now manage it from their Maintenance portal." : "Request submitted. The Dons Premier team can now manage it from their Maintenance portal.", false);
           const requests = await tenantApi("/tenant/api/maintenance-requests");
           renderRequests(Array.isArray(requests.items) ? requests.items : []);
         } catch (error) {

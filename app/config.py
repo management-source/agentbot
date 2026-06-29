@@ -73,6 +73,10 @@ class Settings(BaseSettings):
 
     REMINDER_TO_EMAIL: Optional[str] = None
 
+    # Tenant portal media uploads. On Render, mount the persistent disk at /var/data.
+    TENANT_UPLOAD_DIR: str = "/var/data/tenant_uploads"
+    TENANT_UPLOAD_MAX_BYTES: int = 25 * 1024 * 1024
+
     OPENAI_API_KEY: Optional[str] = None
     OPENAI_MODEL: str = "gpt-4o-mini"
     OPENAI_TRANSCRIBE_MODEL: str = "whisper-1"

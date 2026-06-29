@@ -195,6 +195,32 @@
       background:rgba(255,255,255,.07);
       border-color:rgba(255,255,255,.1);
     }
+    .side-subnav{
+      display:grid;
+      gap:4px;
+      margin:0 0 4px 30px;
+      padding-left:9px;
+      border-left:1px solid rgba(255,255,255,.11);
+    }
+    .side-subnav button{
+      min-height:28px;
+      border:1px solid transparent;
+      border-radius:8px;
+      padding:0 9px;
+      background:transparent;
+      color:#aebdd0;
+      text-align:left;
+      font:inherit;
+      font-size:12px;
+      font-weight:800;
+      cursor:pointer;
+    }
+    .side-subnav button:hover,
+    .side-subnav button.active{
+      background:rgba(255,255,255,.08);
+      color:#fff7df;
+      border-color:rgba(201,162,70,.2);
+    }
     .side-bottom{
       margin-top:auto;
       display:flex;
@@ -256,9 +282,13 @@
     .app-shell.sidebar-collapsed .nav-label{
       display:none;
     }
+    .app-shell.sidebar-collapsed .side-subnav{
+      display:none;
+    }
     @media (max-width: 1040px){
       .app-shell.sidebar-collapsed .side-nav a{justify-content:flex-start}
       .app-shell.sidebar-collapsed .nav-label{display:inline}
+      .app-shell.sidebar-collapsed .side-subnav{display:grid}
       .app-shell.sidebar-collapsed .side-section-label{display:block}
       .app-shell.sidebar-collapsed .side-brand{width:auto;height:auto;margin:0;padding:8px}
       .app-shell.sidebar-collapsed .brand-logo-full{display:block}
@@ -1462,6 +1492,106 @@
       gap:16px;
       align-items:start;
     }
+    .maintenance-grid.new-only{
+      grid-template-columns:minmax(320px, 780px);
+    }
+    .maintenance-subnav{
+      display:flex;
+      flex-wrap:wrap;
+      gap:10px;
+      margin:16px 0;
+      padding:8px;
+      border:1px solid #dbe4ef;
+      border-radius:22px;
+      background:rgba(255,255,255,.78);
+      box-shadow:0 10px 28px rgba(15,23,42,.05);
+    }
+    .maintenance-subnav button{
+      min-height:42px;
+      border:1px solid transparent;
+      border-radius:16px;
+      padding:0 14px;
+      background:transparent;
+      color:#344054;
+      font:inherit;
+      font-weight:900;
+      cursor:pointer;
+      transition:background-color .22s ease, color .22s ease, border-color .22s ease, transform .22s ease;
+    }
+    .maintenance-subnav button:hover,
+    .maintenance-subnav button.active{
+      background:#0b0f17;
+      color:#fff;
+      border-color:#0b0f17;
+      transform:translateY(-1px);
+    }
+    .maintenance-dashboard-grid{
+      display:grid;
+      grid-template-columns:repeat(3, minmax(0, 1fr));
+      gap:16px;
+    }
+    .maintenance-dashboard-card{
+      min-height:150px;
+      border:1px solid #dbe4ef;
+      border-radius:24px;
+      padding:18px;
+      background:#fff;
+      box-shadow:0 12px 32px rgba(15,23,42,.06);
+    }
+    .maintenance-dashboard-card strong{
+      display:block;
+      margin-bottom:8px;
+      color:#101828;
+      font-size:16px;
+    }
+    .maintenance-dashboard-card p{
+      margin:0;
+      color:#667085;
+      line-height:1.55;
+    }
+    .maintenance-full-card{
+      border:1px solid #dbe4ef;
+      border-radius:24px;
+      padding:18px;
+      background:#fff;
+      box-shadow:0 12px 32px rgba(15,23,42,.06);
+    }
+    .maintenance-record-list{
+      display:grid;
+      gap:12px;
+      margin-top:14px;
+    }
+    .tenant-registration-card,
+    .tradie-card{
+      display:grid;
+      grid-template-columns:minmax(0, 1fr) auto;
+      gap:14px;
+      align-items:center;
+      border:1px solid #dbe4ef;
+      border-radius:18px;
+      padding:14px;
+      background:#fbfcfe;
+    }
+    .tenant-registration-card h4,
+    .tradie-card h4{
+      margin:0;
+      color:#101828;
+    }
+    .tenant-registration-card p,
+    .tradie-card p{
+      margin:5px 0 0;
+      color:#667085;
+      line-height:1.45;
+    }
+    .maintenance-mini-form{
+      display:grid;
+      grid-template-columns:repeat(3, minmax(0, 1fr));
+      gap:12px;
+      margin-top:14px;
+    }
+    .maintenance-mini-form .wide{
+      grid-column:1 / -1;
+    }
     .maintenance-form-card{
       padding:18px;
       border-radius:22px;
@@ -1670,12 +1800,16 @@
       margin-top:8px;
     }
     @media (max-width: 1080px){
-      .maintenance-grid{grid-template-columns:1fr}
+      .maintenance-grid,
+      .maintenance-dashboard-grid{grid-template-columns:1fr}
     }
     @media (max-width: 760px){
       .maintenance-form-grid,
       .maintenance-action-strip,
-      .maintenance-meta-grid{grid-template-columns:1fr}
+      .maintenance-meta-grid,
+      .maintenance-mini-form{grid-template-columns:1fr}
+      .tenant-registration-card,
+      .tradie-card{grid-template-columns:1fr}
     }
     .ticket-meta{
       display:flex;
@@ -3150,11 +3284,28 @@
                   d="m4 8 8 6 8-6"></path></svg></span><span
               class="nav-label">Email Manager</span></a>
           <a id="navMaintenance" href="javascript:void(0)"
-            onclick="switchDashboardTab('maintenance')" title="Maintenance"><span
+            onclick="switchDashboardTab('maintenance'); switchMaintenanceView('dashboard')"
+            title="Maintenance"><span
               class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path
                   d="M14.7 6.3a4 4 0 0 0-5 5L4 17v3h3l5.7-5.7a4 4 0 0 0 5-5l-2.8 2.8-2-2z"></path><path
                   d="M15 19h5"></path></svg></span><span
               class="nav-label">Maintenance</span></a>
+          <div class="side-subnav" id="maintenanceSideSubnav">
+            <button type="button" data-maintenance-view="new"
+              onclick="switchDashboardTab('maintenance'); switchMaintenanceView('new')">New
+              Request</button>
+            <button type="button" data-maintenance-view="active"
+              onclick="switchDashboardTab('maintenance'); switchMaintenanceView('active')">Active
+              Jobs</button>
+            <button type="button" data-maintenance-view="complete"
+              onclick="switchDashboardTab('maintenance'); switchMaintenanceView('complete')">Complete
+              Jobs</button>
+            <button type="button" data-maintenance-view="tenants"
+              onclick="switchDashboardTab('maintenance'); switchMaintenanceView('tenants')">Tenant
+              Registrations</button>
+            <button type="button" data-maintenance-view="tradies"
+              onclick="switchDashboardTab('maintenance'); switchMaintenanceView('tradies')">Tradies</button>
+          </div>
           <a id="navRentTracker" href="javascript:void(0)"
             onclick="switchDashboardTab('rent')" title="Rent Tracker"><span
               class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path
@@ -3782,31 +3933,80 @@
                   </div>
                 </div>
 
-                <div class="kpi-row">
-                  <div class="card kpi">
-                    <h3>Open Jobs</h3>
-                    <div class="num" id="maintenanceKpiOpen">0</div>
+                <div class="maintenance-subnav" role="tablist"
+                  aria-label="Maintenance views">
+                  <button type="button" data-maintenance-view="dashboard"
+                    class="active"
+                    onclick="switchMaintenanceView('dashboard')">Dashboard</button>
+                  <button type="button" data-maintenance-view="new"
+                    onclick="switchMaintenanceView('new')">New Request</button>
+                  <button type="button" data-maintenance-view="active"
+                    onclick="switchMaintenanceView('active')">Active Jobs</button>
+                  <button type="button" data-maintenance-view="complete"
+                    onclick="switchMaintenanceView('complete')">Complete Jobs</button>
+                  <button type="button" data-maintenance-view="tenants"
+                    onclick="switchMaintenanceView('tenants')">Tenant
+                    Registrations</button>
+                  <button type="button" data-maintenance-view="tradies"
+                    onclick="switchMaintenanceView('tradies')">Tradies</button>
+                </div>
+
+                <div id="maintenanceDashboardView"
+                  class="maintenance-view">
+                  <div class="kpi-row">
+                    <div class="card kpi">
+                      <h3>Open Jobs</h3>
+                      <div class="num" id="maintenanceKpiOpen">0</div>
+                    </div>
+                    <div class="card kpi">
+                      <h3>Waiting Owner</h3>
+                      <div class="num warn" id="maintenanceKpiWaiting">0</div>
+                    </div>
+                    <div class="card kpi">
+                      <h3>Quotes</h3>
+                      <div class="num accent" id="maintenanceKpiQuotes">0</div>
+                    </div>
+                    <div class="card kpi">
+                      <h3>Scheduled</h3>
+                      <div class="num ok" id="maintenanceKpiScheduled">0</div>
+                    </div>
+                    <div class="card kpi">
+                      <h3>Completed</h3>
+                      <div class="num" id="maintenanceKpiCompleted">0</div>
+                    </div>
                   </div>
-                  <div class="card kpi">
-                    <h3>Waiting Owner</h3>
-                    <div class="num warn" id="maintenanceKpiWaiting">0</div>
-                  </div>
-                  <div class="card kpi">
-                    <h3>Quotes</h3>
-                    <div class="num accent" id="maintenanceKpiQuotes">0</div>
-                  </div>
-                  <div class="card kpi">
-                    <h3>Scheduled</h3>
-                    <div class="num ok" id="maintenanceKpiScheduled">0</div>
-                  </div>
-                  <div class="card kpi">
-                    <h3>Completed</h3>
-                    <div class="num" id="maintenanceKpiCompleted">0</div>
+                  <div class="maintenance-dashboard-grid">
+                    <div class="maintenance-dashboard-card">
+                      <strong>Start a new request</strong>
+                      <p>Create a work order with property, owner, tenant,
+                        access, and tradie details in one place.</p>
+                      <button class="btn" style="margin-top:14px"
+                        onclick="switchMaintenanceView('new')">New
+                        Request</button>
+                    </div>
+                    <div class="maintenance-dashboard-card">
+                      <strong>Work active jobs</strong>
+                      <p>Review owner approval, quote, scheduled, and tenant
+                        update jobs that still need staff action.</p>
+                      <button class="btn" style="margin-top:14px"
+                        onclick="switchMaintenanceView('active')">Active
+                        Jobs</button>
+                    </div>
+                    <div class="maintenance-dashboard-card">
+                      <strong>Manage setup</strong>
+                      <p>Approve tenant registrations and keep tradie contact
+                        details ready for faster work orders.</p>
+                      <button class="btn" style="margin-top:14px"
+                        onclick="switchMaintenanceView('tenants')">Tenant
+                        Registrations</button>
+                    </div>
                   </div>
                 </div>
 
-                <div class="maintenance-grid">
-                  <div class="card maintenance-form-card">
+                <div id="maintenanceWorkView"
+                  class="maintenance-view maintenance-grid hidden">
+                  <div id="maintenanceFormCard"
+                    class="card maintenance-form-card">
                     <div class="row space">
                       <div>
                         <p class="panel-title" id="maintenanceFormTitle">New
@@ -3905,7 +4105,9 @@
                       </div>
                       <div class="field">
                         <div class="label">Tradie Company</div>
-                        <input type="text" id="maintenanceTradieCompany" />
+                        <input type="text" id="maintenanceTradieCompany"
+                          list="maintenanceTradieOptions" />
+                        <datalist id="maintenanceTradieOptions"></datalist>
                       </div>
                       <div class="field">
                         <div class="label">Tradie Email</div>
@@ -3938,7 +4140,7 @@
                     </div>
                   </div>
 
-                  <div class="maintenance-detail">
+                  <div id="maintenanceQueueView" class="maintenance-detail">
                     <div class="card">
                       <div class="row space">
                         <div>
@@ -4005,6 +4207,117 @@
                         class="maintenance-detail"></div>
                     </div>
                   </div>
+                </div>
+
+                <div id="maintenanceTenantRegistrationsView"
+                  class="maintenance-view maintenance-full-card hidden">
+                  <div class="row space">
+                    <div>
+                      <p class="panel-title">Tenant Registrations</p>
+                      <p class="panel-sub">Review tenant portal accounts and
+                        control whether they can log in and submit maintenance
+                        requests.</p>
+                    </div>
+                    <button class="btn"
+                      onclick="loadTenantRegistrations()">Refresh</button>
+                  </div>
+                  <div class="filters-row">
+                    <div class="field" style="min-width:260px">
+                      <div class="label">Search</div>
+                      <input type="text" id="tenantRegistrationSearch"
+                        placeholder="Name, email, phone, property..." />
+                    </div>
+                    <div class="field">
+                      <div class="label">Status</div>
+                      <select id="tenantRegistrationStatus">
+                        <option value="all">All</option>
+                        <option value="active">Active</option>
+                        <option value="inactive">Inactive</option>
+                      </select>
+                    </div>
+                    <button class="btn" style="align-self:flex-end"
+                      onclick="loadTenantRegistrations()">Apply</button>
+                  </div>
+                  <div id="tenantRegistrationsList"
+                    class="maintenance-record-list"></div>
+                </div>
+
+                <div id="maintenanceTradiesView"
+                  class="maintenance-view maintenance-full-card hidden">
+                  <div class="row space">
+                    <div>
+                      <p class="panel-title">Tradies</p>
+                      <p class="panel-sub">Register trades and contractors so
+                        work orders can autofill contact details.</p>
+                    </div>
+                    <button class="btn"
+                      onclick="loadMaintenanceTradies()">Refresh</button>
+                  </div>
+                  <div class="maintenance-mini-form">
+                    <div class="field">
+                      <div class="label">Company / Name</div>
+                      <input type="text" id="tradieCompany"
+                        placeholder="Example: ABC Plumbing" />
+                    </div>
+                    <div class="field">
+                      <div class="label">Contact Name</div>
+                      <input type="text" id="tradieContactName"
+                        placeholder="Main contact" />
+                    </div>
+                    <div class="field">
+                      <div class="label">Trade Type</div>
+                      <input type="text" id="tradieTradeType"
+                        placeholder="Plumbing, Electrical..." />
+                    </div>
+                    <div class="field">
+                      <div class="label">Email</div>
+                      <input type="email" id="tradieEmail"
+                        placeholder="tradie@example.com" />
+                    </div>
+                    <div class="field">
+                      <div class="label">Phone</div>
+                      <input type="text" id="tradiePhone"
+                        placeholder="Phone number" />
+                    </div>
+                    <div class="field">
+                      <div class="label">Active</div>
+                      <select id="tradieActive">
+                        <option value="true">Active</option>
+                        <option value="false">Inactive</option>
+                      </select>
+                    </div>
+                    <div class="field wide">
+                      <div class="label">Notes</div>
+                      <textarea id="tradieNotes"
+                        placeholder="Areas serviced, call-out notes, preferred jobs, insurance reminders..."></textarea>
+                    </div>
+                    <div class="row wide">
+                      <button class="btn primary"
+                        onclick="saveMaintenanceTradie()">Save Tradie</button>
+                      <button class="btn"
+                        onclick="clearMaintenanceTradieForm()">Clear</button>
+                    </div>
+                    <input type="hidden" id="tradieId" />
+                  </div>
+                  <div class="filters-row">
+                    <div class="field" style="min-width:260px">
+                      <div class="label">Search Tradies</div>
+                      <input type="text" id="tradieSearch"
+                        placeholder="Company, contact, trade, phone..." />
+                    </div>
+                    <div class="field">
+                      <div class="label">Status</div>
+                      <select id="tradieStatus">
+                        <option value="active">Active</option>
+                        <option value="all">All</option>
+                        <option value="inactive">Inactive</option>
+                      </select>
+                    </div>
+                    <button class="btn" style="align-self:flex-end"
+                      onclick="loadMaintenanceTradies()">Apply</button>
+                  </div>
+                  <div id="maintenanceTradiesList"
+                    class="maintenance-record-list"></div>
                 </div>
               </div>
 

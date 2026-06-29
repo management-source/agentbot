@@ -1,22 +1,30 @@
 from __future__ import annotations
 
 import json
+import mimetypes
 import re
+import uuid
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
 from pydantic import BaseModel, EmailStr
+from sqlalchemy import or_
 from sqlalchemy.orm import Session, selectinload
 
+from app.authz import require_page_access
 from app.config import settings
 from app.db import get_db
+from app.deps import get_current_mailbox
 from app.models import (
+    MaintenanceAttachment,
     MaintenanceEvent,
     MaintenanceOrder,
     MaintenanceOrderStatus,
     ManagedProperty,
     TenantAccount,
+    User,
 )
 from app.security import create_access_token, decode_access_token, hash_password, verify_password
 
@@ -24,6 +32,8 @@ router = APIRouter(prefix="/tenant/api", tags=["tenant"])
 
 MAX_LOGIN_ATTEMPTS = 5
 LOCKOUT_MINUTES = 15
+MAX_TENANT_UPLOAD_FILES = 8
+TENANT_UPLOAD_KIND = "TENANT_MEDIA"
 
 
 class TenantRegisterIn(BaseModel):
@@ -31,6 +41,7 @@ class TenantRegisterIn(BaseModel):
     email: EmailStr
     phone: str | None = None
     password: str
+    property_id: int | None = None
     property_address: str
     suburb: str | None = None
     postcode: str | None = None
@@ -52,11 +63,59 @@ class TenantMaintenanceIn(BaseModel):
     preferred_contact: str | None = None
 
 
+class TenantRegistrationUpdateIn(BaseModel):
+    is_active: bool | None = None
+    is_verified: bool | None = None
+
+
 def _clean(value: str | None, max_len: int | None = None) -> str | None:
     text = re.sub(r"\s+", " ", str(value or "").strip())
     if max_len:
         text = text[:max_len]
     return text or None
+
+
+def _safe_filename(value: str | None) -> str:
+    name = Path(value or "tenant-upload").name
+    name = re.sub(r"[\r\n\t\x00-\x1f\x7f]+", "", name).replace('"', "")
+    name = re.sub(r"[^A-Za-z0-9._ -]+", "-", name).strip(" .-_")
+    return name[:180] or "tenant-upload"
+
+
+def _tenant_upload_root() -> Path:
+    root = Path(settings.TENANT_UPLOAD_DIR).resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def _tenant_upload_path(tenant_id: int, order_id: int, filename: str) -> tuple[Path, str]:
+    safe_name = _safe_filename(filename)
+    relative = Path(f"tenant_{tenant_id}") / f"order_{order_id}" / f"{uuid.uuid4().hex}_{safe_name}"
+    root = _tenant_upload_root()
+    target = (root / relative).resolve()
+    if root != target and root not in target.parents:
+        raise HTTPException(status_code=400, detail="Invalid upload path.")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    return target, relative.as_posix()
+
+
+def _upload_content_type(file: UploadFile) -> str:
+    content_type = (file.content_type or "").split(";", 1)[0].strip().lower()
+    if not content_type or content_type == "application/octet-stream":
+        guessed, _ = mimetypes.guess_type(file.filename or "")
+        content_type = (guessed or content_type or "application/octet-stream").lower()
+    return content_type
+
+
+def _validate_tenant_media(file: UploadFile, raw: bytes) -> str:
+    if not raw:
+        raise HTTPException(status_code=400, detail=f"{file.filename or 'Upload'} is empty.")
+    if len(raw) > settings.TENANT_UPLOAD_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="Tenant uploads must be 25MB or smaller per file.")
+    content_type = _upload_content_type(file)
+    if not (content_type.startswith("image/") or content_type.startswith("video/")):
+        raise HTTPException(status_code=400, detail="Only image and video uploads are allowed.")
+    return content_type
 
 
 def _normalize_key(value: str | None) -> str:
@@ -159,6 +218,32 @@ def _property_label(prop: ManagedProperty | None, fallback: str | None = None) -
     return ", ".join([x for x in [prop.property_address, tail] if x])
 
 
+def _property_suggestion(row: ManagedProperty) -> dict[str, object]:
+    return {
+        "id": row.id,
+        "label": _property_label(row),
+        "property_address": row.property_address,
+        "suburb": row.suburb,
+        "state_code": row.state_code,
+        "postcode": row.postcode,
+    }
+
+
+def _get_registered_property(db: Session, mailbox: str, property_id: int | None) -> ManagedProperty:
+    if not property_id:
+        raise HTTPException(status_code=400, detail="Please select your property from the portal property list.")
+    prop = (
+        db.query(ManagedProperty)
+        .filter(ManagedProperty.mailbox == mailbox)
+        .filter(ManagedProperty.id == property_id)
+        .filter(ManagedProperty.is_active == True)
+        .first()
+    )
+    if not prop:
+        raise HTTPException(status_code=400, detail="Please select a valid property from the portal property list.")
+    return prop
+
+
 def _find_tenant_property(db: Session, mailbox: str, email: str, address: str | None) -> ManagedProperty | None:
     rows = (
         db.query(ManagedProperty)
@@ -199,8 +284,20 @@ def _tenant_to_dict(row: TenantAccount) -> dict:
         "state_code": row.property.state_code if row.property else row.state_code,
         "postcode": row.property.postcode if row.property else row.postcode,
         "is_verified": row.is_verified,
+        "is_active": row.is_active,
         "last_login_at": row.last_login_at,
     }
+
+
+def _tenant_admin_to_dict(row: TenantAccount) -> dict:
+    data = _tenant_to_dict(row)
+    data.update(
+        {
+            "created_at": row.created_at,
+            "updated_at": row.updated_at,
+        }
+    )
+    return data
 
 
 def _order_to_tenant_dict(row: MaintenanceOrder) -> dict:
@@ -216,7 +313,16 @@ def _order_to_tenant_dict(row: MaintenanceOrder) -> dict:
         "created_at": row.created_at,
         "updated_at": row.updated_at,
         "completed_at": row.completed_at,
+        "attachment_count": len(row.attachments or []),
     }
+
+
+def _tenant_registration_query(db: Session, mailbox: str):
+    return (
+        db.query(TenantAccount)
+        .options(selectinload(TenantAccount.property))
+        .filter(TenantAccount.mailbox == mailbox)
+    )
 
 
 def get_current_tenant(request: Request, db: Session = Depends(get_db)) -> TenantAccount:
@@ -258,7 +364,7 @@ def register_tenant(payload: TenantRegisterIn, request: Request, db: Session = D
 
     now = datetime.utcnow()
     mailbox = _default_mailbox()
-    prop = _find_tenant_property(db, mailbox, email, address)
+    prop = _get_registered_property(db, mailbox, payload.property_id)
     tenant = TenantAccount(
         mailbox=mailbox,
         email=email,
@@ -271,7 +377,7 @@ def register_tenant(payload: TenantRegisterIn, request: Request, db: Session = D
         state_code=prop.state_code if prop else "VIC",
         postcode=prop.postcode if prop else _clean(payload.postcode, 20),
         is_active=True,
-        is_verified=bool(prop),
+        is_verified=email in _contact_emails(prop.tenants_json),
         created_at=now,
         updated_at=now,
     )
@@ -281,6 +387,32 @@ def register_tenant(payload: TenantRegisterIn, request: Request, db: Session = D
 
     token = create_access_token(subject=f"tenant:{tenant.email}", secret=settings.JWT_SECRET, expires_minutes=1440)
     return {"ok": True, "access_token": token, "token_type": "bearer", "tenant": _tenant_to_dict(tenant)}
+
+
+@router.get("/property-suggestions")
+def tenant_property_suggestions(q: str | None = None, db: Session = Depends(get_db)):
+    query = _clean(q, 120) or ""
+    if len(query) < 3:
+        return {"items": []}
+    mailbox = _default_mailbox()
+    like = f"%{query}%"
+    rows = (
+        db.query(ManagedProperty)
+        .filter(ManagedProperty.mailbox == mailbox)
+        .filter(ManagedProperty.is_active == True)
+        .filter(
+            or_(
+                ManagedProperty.property_address.ilike(like),
+                ManagedProperty.suburb.ilike(like),
+                ManagedProperty.postcode.ilike(like),
+                ManagedProperty.tenants_json.ilike(like),
+            )
+        )
+        .order_by(ManagedProperty.property_address.asc())
+        .limit(10)
+        .all()
+    )
+    return {"items": [_property_suggestion(row) for row in rows]}
 
 
 @router.post("/login")
@@ -324,7 +456,7 @@ def list_tenant_maintenance(
 ):
     rows = (
         db.query(MaintenanceOrder)
-        .options(selectinload(MaintenanceOrder.property))
+        .options(selectinload(MaintenanceOrder.property), selectinload(MaintenanceOrder.attachments))
         .filter(MaintenanceOrder.mailbox == tenant.mailbox)
         .filter(MaintenanceOrder.tenant_account_id == tenant.id)
         .order_by(MaintenanceOrder.created_at.desc())
@@ -399,3 +531,152 @@ def create_tenant_maintenance(
     db.commit()
     db.refresh(row)
     return {"ok": True, "request": _order_to_tenant_dict(row)}
+
+
+@router.post("/maintenance-requests/{order_id}/attachments")
+def upload_tenant_maintenance_attachments(
+    order_id: int,
+    files: list[UploadFile] = File(...),
+    db: Session = Depends(get_db),
+    tenant: TenantAccount = Depends(get_current_tenant),
+):
+    if not files:
+        raise HTTPException(status_code=400, detail="Choose at least one image or video.")
+    if len(files) > MAX_TENANT_UPLOAD_FILES:
+        raise HTTPException(status_code=400, detail=f"Upload up to {MAX_TENANT_UPLOAD_FILES} files at a time.")
+
+    order = (
+        db.query(MaintenanceOrder)
+        .filter(MaintenanceOrder.mailbox == tenant.mailbox)
+        .filter(MaintenanceOrder.id == order_id)
+        .filter(MaintenanceOrder.tenant_account_id == tenant.id)
+        .first()
+    )
+    if not order:
+        raise HTTPException(status_code=404, detail="Maintenance request not found.")
+
+    pending: list[tuple[UploadFile, bytes, str]] = []
+    for file in files:
+        raw = file.file.read(settings.TENANT_UPLOAD_MAX_BYTES + 1)
+        content_type = _validate_tenant_media(file, raw)
+        pending.append((file, raw, content_type))
+
+    now = datetime.utcnow()
+    saved: list[MaintenanceAttachment] = []
+    written_paths: list[Path] = []
+    try:
+        for file, raw, content_type in pending:
+            target, relative_path = _tenant_upload_path(tenant.id, order.id, file.filename or "tenant-upload")
+            target.write_bytes(raw)
+            written_paths.append(target)
+            attachment = MaintenanceAttachment(
+                mailbox=tenant.mailbox,
+                order_id=order.id,
+                kind=TENANT_UPLOAD_KIND,
+                filename=_safe_filename(file.filename),
+                content_type=content_type,
+                content_bytes=b"",
+                storage_path=relative_path,
+                file_size=len(raw),
+                notes="Uploaded by tenant portal.",
+                uploaded_by_user_id=None,
+                uploaded_by_tenant_id=tenant.id,
+                created_at=now,
+            )
+            db.add(attachment)
+            saved.append(attachment)
+    except OSError:
+        for path in written_paths:
+            try:
+                if path.exists() and path.is_file():
+                    path.unlink()
+            except OSError:
+                pass
+        raise HTTPException(status_code=503, detail="Upload storage is unavailable. Please try again later.")
+
+    order.updated_at = now
+    db.add(
+        MaintenanceEvent(
+            mailbox=order.mailbox,
+            order_id=order.id,
+            actor_user_id=None,
+            event_type="tenant_media_uploaded",
+            detail=f"Tenant uploaded {len(saved)} media file(s).",
+            created_at=now,
+        )
+    )
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        for path in written_paths:
+            try:
+                if path.exists() and path.is_file():
+                    path.unlink()
+            except OSError:
+                pass
+        raise
+    return {
+        "ok": True,
+        "items": [
+            {
+                "id": item.id,
+                "filename": item.filename,
+                "content_type": item.content_type,
+                "size": item.file_size,
+                "created_at": item.created_at,
+            }
+            for item in saved
+        ],
+    }
+
+
+@router.get("/admin/registrations")
+def list_tenant_registrations(
+    query: str | None = None,
+    active: str | None = None,
+    mailbox: str = Depends(get_current_mailbox),
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_page_access("maintenance")),
+):
+    q = _tenant_registration_query(db, mailbox)
+    if query and query.strip():
+        like = f"%{query.strip()}%"
+        q = q.filter(
+            or_(
+                TenantAccount.name.ilike(like),
+                TenantAccount.email.ilike(like),
+                TenantAccount.phone.ilike(like),
+                TenantAccount.property_address.ilike(like),
+            )
+        )
+    key = (active or "").strip().lower()
+    if key in {"active", "true", "1"}:
+        q = q.filter(TenantAccount.is_active == True)
+    elif key in {"inactive", "false", "0"}:
+        q = q.filter(TenantAccount.is_active == False)
+
+    rows = q.order_by(TenantAccount.created_at.desc()).limit(250).all()
+    return {"items": [_tenant_admin_to_dict(row) for row in rows]}
+
+
+@router.patch("/admin/registrations/{tenant_id}")
+def update_tenant_registration(
+    tenant_id: int,
+    payload: TenantRegistrationUpdateIn,
+    mailbox: str = Depends(get_current_mailbox),
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_page_access("maintenance")),
+):
+    row = _tenant_registration_query(db, mailbox).filter(TenantAccount.id == tenant_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Tenant registration not found.")
+    fields = set(getattr(payload, "model_fields_set", getattr(payload, "__fields_set__", set())))
+    if "is_active" in fields and payload.is_active is not None:
+        row.is_active = payload.is_active
+    if "is_verified" in fields and payload.is_verified is not None:
+        row.is_verified = payload.is_verified
+    row.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(row)
+    return _tenant_admin_to_dict(row)
