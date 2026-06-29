@@ -1,0 +1,522 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0b0f17" />
+    <title>Tenant Portal - Dons Premier</title>
+    <link rel="icon" href="/static/favicon.ico?v=1" sizes="any" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png?v=1" />
+    <style>
+      :root{
+        --ink:#0b0f17;
+        --muted:#667085;
+        --line:#dbe4ef;
+        --gold:#cda24a;
+        --soft:#f4f7f8;
+        --surface:#fff;
+      }
+      *{box-sizing:border-box}
+      html,body{min-height:100%;margin:0}
+      body{
+        font-family:"Segoe UI","Aptos",ui-sans-serif,system-ui,sans-serif;
+        color:var(--ink);
+        background:
+          radial-gradient(circle at 88% 0%, rgba(205,162,74,.24), transparent 28%),
+          linear-gradient(145deg, #f8fbfb, #eef3f4 55%, #f9f1dc);
+        overflow-x:hidden;
+        overflow-y:auto;
+        -webkit-overflow-scrolling:touch;
+      }
+      .page{
+        min-height:100svh;
+        padding:20px;
+      }
+      .shell{
+        width:min(1180px, 100%);
+        margin:0 auto;
+        display:grid;
+        gap:18px;
+      }
+      .hero{
+        position:relative;
+        overflow:hidden;
+        padding:34px;
+        border-radius:34px;
+        color:#fff;
+        background:
+          radial-gradient(circle at 90% 8%, rgba(205,162,74,.82), transparent 28%),
+          linear-gradient(135deg, #090d14, #171d29 58%, #8a691d);
+        box-shadow:0 22px 60px rgba(15,23,42,.18);
+      }
+      .hero::after{
+        content:"";
+        position:absolute;
+        width:320px;
+        height:320px;
+        right:-110px;
+        top:-120px;
+        border:1px solid rgba(255,255,255,.2);
+        border-radius:50%;
+      }
+      .brand{
+        position:relative;
+        z-index:1;
+        display:flex;
+        align-items:center;
+        justify-content:space-between;
+        gap:16px;
+      }
+      .brand-left{
+        display:flex;
+        align-items:center;
+        gap:14px;
+      }
+      .logo{
+        width:72px;
+        height:72px;
+        object-fit:contain;
+        border-radius:22px;
+        background:#050505;
+        border:1px solid rgba(255,255,255,.16);
+        padding:8px;
+      }
+      .brand strong{display:block;font-size:17px}
+      .brand span{display:block;color:rgba(255,255,255,.72);font-size:13px;margin-top:2px}
+      .logout{
+        min-height:42px;
+        border:1px solid rgba(255,255,255,.22);
+        border-radius:999px;
+        padding:0 16px;
+        color:#fff;
+        background:rgba(255,255,255,.08);
+        font:inherit;
+        font-weight:850;
+        cursor:pointer;
+      }
+      .hero-copy{
+        position:relative;
+        z-index:1;
+        margin-top:38px;
+        max-width:780px;
+      }
+      .kicker{
+        color:#ffe9a6;
+        font-size:12px;
+        font-weight:900;
+        letter-spacing:.16em;
+        text-transform:uppercase;
+      }
+      h1{
+        margin:12px 0;
+        font-size:clamp(38px, 6vw, 70px);
+        line-height:.95;
+        letter-spacing:-.065em;
+      }
+      .hero-copy p{
+        margin:0;
+        max-width:680px;
+        color:rgba(255,255,255,.78);
+        line-height:1.65;
+      }
+      .grid{
+        display:grid;
+        grid-template-columns:minmax(320px, .8fr) minmax(0, 1.2fr);
+        gap:18px;
+        align-items:start;
+      }
+      .card{
+        border:1px solid rgba(15,23,42,.08);
+        border-radius:28px;
+        background:rgba(255,255,255,.9);
+        box-shadow:0 14px 40px rgba(15,23,42,.08);
+        padding:24px;
+      }
+      .card h2,.card h3{margin:0;letter-spacing:-.035em}
+      .card p{color:var(--muted);line-height:1.55}
+      .profile-list{
+        display:grid;
+        gap:12px;
+        margin-top:16px;
+      }
+      .profile-item{
+        padding:14px;
+        border:1px solid var(--line);
+        border-radius:18px;
+        background:#fff;
+      }
+      .profile-item span{
+        display:block;
+        color:var(--muted);
+        font-size:12px;
+        font-weight:850;
+        text-transform:uppercase;
+        letter-spacing:.06em;
+      }
+      .profile-item strong{
+        display:block;
+        margin-top:5px;
+      }
+      .form-grid{
+        display:grid;
+        grid-template-columns:1fr 1fr;
+        gap:14px;
+      }
+      .field{display:grid;gap:8px}
+      .field.wide{grid-column:1 / -1}
+      label{
+        color:#344054;
+        font-size:13px;
+        font-weight:850;
+      }
+      input,select,textarea{
+        width:100%;
+        border:1px solid var(--line);
+        border-radius:16px;
+        padding:0 16px;
+        background:#fff;
+        color:var(--ink);
+        font:inherit;
+        outline:none;
+      }
+      input,select{min-height:52px}
+      textarea{
+        min-height:132px;
+        padding-top:14px;
+        resize:vertical;
+      }
+      input:focus,select:focus,textarea:focus{
+        border-color:var(--gold);
+        box-shadow:0 0 0 4px rgba(205,162,74,.16);
+      }
+      .btn{
+        min-height:54px;
+        border:1px solid #080b11;
+        border-radius:18px;
+        padding:0 20px;
+        color:#fff;
+        background:linear-gradient(135deg, #0b0f17, #9a7820);
+        font:inherit;
+        font-weight:900;
+        cursor:pointer;
+        transition:transform .2s ease, background-color .2s ease;
+      }
+      .btn:hover{transform:translateY(-1px);background:#050505}
+      .status{
+        display:none;
+        margin-top:16px;
+        padding:14px 16px;
+        border-radius:16px;
+        background:#eef4ff;
+        border:1px solid #c7d7fe;
+        color:#344054;
+      }
+      .status.show{display:block}
+      .status.error{background:#fff0f0;border-color:#ffd0d0;color:#842029}
+      .request-list{
+        display:grid;
+        gap:12px;
+        margin-top:16px;
+      }
+      .request{
+        padding:16px;
+        border:1px solid var(--line);
+        border-radius:20px;
+        background:#fff;
+      }
+      .request-head{
+        display:flex;
+        align-items:flex-start;
+        justify-content:space-between;
+        gap:12px;
+      }
+      .request h4{margin:0;font-size:16px}
+      .request p{margin:8px 0 0}
+      .pill{
+        white-space:nowrap;
+        display:inline-flex;
+        align-items:center;
+        min-height:30px;
+        padding:0 10px;
+        border-radius:999px;
+        border:1px solid #dbe4ef;
+        background:#f8fafc;
+        color:#344054;
+        font-size:12px;
+        font-weight:900;
+      }
+      .pill.done{background:#ecfdf3;border-color:#a7f3d0;color:#047857}
+      .pill.wait{background:#fffbeb;border-color:#fde68a;color:#92400e}
+      .empty{
+        padding:20px;
+        border:1px dashed #cbd5e1;
+        border-radius:20px;
+        color:var(--muted);
+        text-align:center;
+        background:#fff;
+      }
+      @media (max-width: 880px){
+        .page{padding:0}
+        .hero{border-radius:0 0 34px 34px}
+        .grid{grid-template-columns:1fr;padding:0 14px 18px}
+      }
+      @media (max-width: 560px){
+        .hero{padding:24px 18px}
+        .brand{align-items:flex-start}
+        .logout{padding:0 12px}
+        .card{padding:20px}
+        .form-grid{grid-template-columns:1fr}
+        .request-head{flex-direction:column}
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <div class="shell">
+        <section class="hero">
+          <div class="brand">
+            <div class="brand-left">
+              <img class="logo" src="/static/dons_premier_transparent_v2.png" alt="Dons Premier crest" />
+              <div>
+                <strong>Dons Premier Estate Agents</strong>
+                <span>Tenant Portal</span>
+              </div>
+            </div>
+            <button class="logout" type="button" onclick="tenantLogout()">Log out</button>
+          </div>
+          <div class="hero-copy">
+            <div class="kicker">Maintenance Requests</div>
+            <h1 id="tenantWelcome">Welcome.</h1>
+            <p>Submit a maintenance request and it will appear directly inside the Dons Premier maintenance queue for authorised staff to manage.</p>
+          </div>
+        </section>
+
+        <section class="grid">
+          <aside class="card">
+            <h2>Your tenancy</h2>
+            <p>These details help staff connect each request to the correct property.</p>
+            <div class="profile-list">
+              <div class="profile-item"><span>Name</span><strong id="tenantName">-</strong></div>
+              <div class="profile-item"><span>Email</span><strong id="tenantEmail">-</strong></div>
+              <div class="profile-item"><span>Property</span><strong id="tenantProperty">-</strong></div>
+              <div class="profile-item"><span>Verification</span><strong id="tenantVerified">-</strong></div>
+            </div>
+          </aside>
+
+          <section class="card">
+            <h2>Submit maintenance request</h2>
+            <p>Include the issue, urgency, access details, and the best way to contact you.</p>
+            <form id="maintenanceRequestForm" novalidate>
+              <div class="form-grid">
+                <div class="field wide">
+                  <label for="requestTitle">Issue title</label>
+                  <input id="requestTitle" placeholder="Example: Leaking kitchen tap" required />
+                </div>
+                <div class="field">
+                  <label for="requestCategory">Category</label>
+                  <select id="requestCategory">
+                    <option>General</option>
+                    <option>Plumbing</option>
+                    <option>Electrical</option>
+                    <option>Heating / Cooling</option>
+                    <option>Appliance</option>
+                    <option>Locks / Keys</option>
+                    <option>Garden / Exterior</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="requestPriority">Priority</label>
+                  <select id="requestPriority">
+                    <option value="normal">Normal</option>
+                    <option value="high">High</option>
+                    <option value="low">Low</option>
+                  </select>
+                </div>
+                <div class="field wide">
+                  <label for="requestDescription">Description</label>
+                  <textarea id="requestDescription" placeholder="Describe the problem, when it started, and anything already tried." required></textarea>
+                </div>
+                <div class="field wide">
+                  <label for="requestAccess">Access notes</label>
+                  <textarea id="requestAccess" placeholder="Pets, alarms, preferred days/times, parking, permission to enter, or tenant availability."></textarea>
+                </div>
+                <div class="field wide">
+                  <label for="requestContact">Preferred contact</label>
+                  <input id="requestContact" placeholder="Example: SMS after 3pm" />
+                </div>
+              </div>
+              <div style="margin-top:18px">
+                <button class="btn" type="submit">Send request to Dons Premier</button>
+              </div>
+              <div id="requestStatus" class="status" role="status" aria-live="polite"></div>
+            </form>
+          </section>
+        </section>
+
+        <section class="card">
+          <h3>Your recent maintenance requests</h3>
+          <div id="requestList" class="request-list">
+            <div class="empty">Loading requests...</div>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <script>
+      const tokenKey = "tenant_portal_token";
+      let currentTenant = null;
+
+      function authHeaders() {
+        const token = localStorage.getItem(tokenKey) || "";
+        return token ? { Authorization: `Bearer ${token}` } : {};
+      }
+
+      async function tenantApi(path, options = {}) {
+        const response = await fetch(path, {
+          ...options,
+          headers: {
+            "Content-Type": "application/json",
+            ...authHeaders(),
+            ...((options && options.headers) || {})
+          }
+        });
+        const text = await response.text();
+        let data = {};
+        try { data = text ? JSON.parse(text) : {}; } catch { data = { detail: text }; }
+        if (response.status === 401) {
+          localStorage.removeItem(tokenKey);
+          window.location.href = "/tenant/login";
+          return {};
+        }
+        if (!response.ok) throw new Error(data.detail || "Request failed.");
+        return data;
+      }
+
+      function setStatus(message, isError) {
+        const el = document.getElementById("requestStatus");
+        if (!el) return;
+        el.textContent = message || "";
+        el.classList.toggle("show", !!message);
+        el.classList.toggle("error", !!isError);
+      }
+
+      function statusLabel(value) {
+        const labels = {
+          NEW: "New",
+          WAITING_OWNER_APPROVAL: "Waiting Owner",
+          OWNER_APPROVED: "Owner Approved",
+          OWNER_DECLINED: "Owner Declined",
+          OWNER_ARRANGING: "Owner Arranging",
+          QUOTE_REQUESTED: "Quote Requested",
+          QUOTE_RECEIVED: "Quote Received",
+          TRADIE_ARRANGED: "Tradie Arranged",
+          TENANT_NOTIFIED: "Tenant Notified",
+          COMPLETED: "Completed",
+          CANCELLED: "Cancelled"
+        };
+        return labels[String(value || "NEW").toUpperCase()] || String(value || "New").replaceAll("_", " ");
+      }
+
+      function statusClass(value) {
+        const key = String(value || "").toUpperCase();
+        if (key === "COMPLETED") return "done";
+        if (key === "WAITING_OWNER_APPROVAL" || key === "QUOTE_REQUESTED") return "wait";
+        return "";
+      }
+
+      function escapeHtml(text) {
+        return String(text || "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#039;");
+      }
+
+      function formatDate(value) {
+        if (!value) return "-";
+        try { return new Date(value).toLocaleString(); } catch { return value; }
+      }
+
+      function tenantLogout() {
+        localStorage.removeItem(tokenKey);
+        window.location.href = "/tenant/login";
+      }
+
+      function renderTenant(tenant) {
+        currentTenant = tenant;
+        document.getElementById("tenantWelcome").textContent = `Welcome, ${tenant.name || "Tenant"}.`;
+        document.getElementById("tenantName").textContent = tenant.name || "-";
+        document.getElementById("tenantEmail").textContent = tenant.email || "-";
+        document.getElementById("tenantProperty").textContent = tenant.property_label || tenant.property_address || "-";
+        document.getElementById("tenantVerified").textContent = tenant.is_verified ? "Matched to property register" : "Pending staff verification";
+      }
+
+      function renderRequests(items) {
+        const list = document.getElementById("requestList");
+        if (!list) return;
+        if (!items.length) {
+          list.innerHTML = `<div class="empty">No maintenance requests submitted yet.</div>`;
+          return;
+        }
+        list.innerHTML = items.map((item) => `
+          <article class="request">
+            <div class="request-head">
+              <div>
+                <h4>#${Number(item.id)} ${escapeHtml(item.title || "Maintenance request")}</h4>
+                <p>${escapeHtml(item.property_label || "")}</p>
+              </div>
+              <span class="pill ${statusClass(item.status)}">${escapeHtml(statusLabel(item.status))}</span>
+            </div>
+            <p>${escapeHtml(item.description || "")}</p>
+            <p><strong>Submitted:</strong> ${escapeHtml(formatDate(item.created_at))}</p>
+          </article>
+        `).join("");
+      }
+
+      async function loadTenantPortal() {
+        if (!localStorage.getItem(tokenKey)) {
+          window.location.href = "/tenant/login";
+          return;
+        }
+        const me = await tenantApi("/tenant/api/me");
+        renderTenant(me.tenant || {});
+        const requests = await tenantApi("/tenant/api/maintenance-requests");
+        renderRequests(Array.isArray(requests.items) ? requests.items : []);
+      }
+
+      document.getElementById("maintenanceRequestForm").addEventListener("submit", async function (event) {
+        event.preventDefault();
+        const payload = {
+          title: (document.getElementById("requestTitle").value || "").trim(),
+          category: (document.getElementById("requestCategory").value || "").trim(),
+          priority: (document.getElementById("requestPriority").value || "normal").trim(),
+          description: (document.getElementById("requestDescription").value || "").trim(),
+          access_notes: (document.getElementById("requestAccess").value || "").trim(),
+          preferred_contact: (document.getElementById("requestContact").value || "").trim()
+        };
+        if (!payload.title || !payload.description) {
+          setStatus("Please enter an issue title and description.", true);
+          return;
+        }
+        try {
+          await tenantApi("/tenant/api/maintenance-requests", {
+            method: "POST",
+            body: JSON.stringify(payload)
+          });
+          document.getElementById("maintenanceRequestForm").reset();
+          setStatus("Request submitted. The Dons Premier team can now manage it from their Maintenance portal.", false);
+          const requests = await tenantApi("/tenant/api/maintenance-requests");
+          renderRequests(Array.isArray(requests.items) ? requests.items : []);
+        } catch (error) {
+          setStatus(error.message || "Could not submit the request.", true);
+        }
+      });
+
+      loadTenantPortal().catch(() => {
+        localStorage.removeItem(tokenKey);
+        window.location.href = "/tenant/login";
+      });
+    </script>
+  </body>
+</html>

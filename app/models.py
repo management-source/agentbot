@@ -186,6 +186,31 @@ class PasswordResetToken(Base):
     user = relationship("User")
 
 
+class TenantAccount(Base):
+    __tablename__ = "tenant_accounts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    mailbox: Mapped[str] = mapped_column(String, index=True)
+    email: Mapped[str] = mapped_column(String, unique=True, index=True)
+    name: Mapped[str] = mapped_column(String)
+    phone: Mapped[str | None] = mapped_column(String, nullable=True)
+    password_hash: Mapped[str] = mapped_column(String)
+    property_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("managed_properties.id"), nullable=True, index=True)
+    property_address: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    suburb: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    state_code: Mapped[str | None] = mapped_column(String, nullable=True)
+    postcode: Mapped[str | None] = mapped_column(String, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    is_verified: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    failed_login_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+    property = relationship("ManagedProperty")
+
+
 class ThreadTicketNote(Base):
     __tablename__ = "thread_ticket_notes"
 
@@ -477,11 +502,15 @@ class MaintenanceOrder(Base):
     tenant_notified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
     completion_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source: Mapped[str] = mapped_column(String, default="staff", index=True)
+    tenant_account_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("tenant_accounts.id"), nullable=True, index=True)
+    tenant_submitted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
     property = relationship("ManagedProperty")
+    tenant_account = relationship("TenantAccount")
     assignee = relationship("User", foreign_keys=[assignee_user_id])
     created_by = relationship("User", foreign_keys=[created_by_user_id])
     attachments = relationship("MaintenanceAttachment", back_populates="order", cascade="all, delete-orphan")

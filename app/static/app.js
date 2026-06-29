@@ -2230,6 +2230,12 @@ function maintenanceStatusChip(status) {
     return `<span class="maintenance-status ${maintenanceStatusClass(status)}">${escapeHtml(maintenanceStatusLabel(status))}</span>`;
 }
 
+function maintenanceSourceChip(source) {
+    return String(source || "").toLowerCase() === "tenant_portal"
+        ? `<span class="maintenance-source-chip">Tenant Portal</span>`
+        : "";
+}
+
 function maintenanceDateInputValue(value) {
     if (!value) return "";
     try {
@@ -2465,7 +2471,7 @@ function renderMaintenanceList(items) {
       <button class="maintenance-order-card ${Number(selectedMaintenanceOrderId) === Number(item.id) ? "active" : ""}" type="button" onclick="openMaintenanceOrder(${item.id})">
         <div class="row space">
           <h4>#${item.id} ${escapeHtml(item.title || "Maintenance order")}</h4>
-          ${maintenanceStatusChip(item.status)}
+          <div class="row" style="gap:6px;justify-content:flex-end">${maintenanceSourceChip(item.source)}${maintenanceStatusChip(item.status)}</div>
         </div>
         <p>${escapeHtml(item.property_label || item.property_address || "-")}</p>
         <p>${escapeHtml(item.category || "General")} - ${escapeHtml(item.priority || "normal")} - Updated ${escapeHtml(formatDateShort(item.updated_at))}</p>
@@ -2561,6 +2567,7 @@ function renderMaintenanceDetail(order) {
         <div class="maintenance-meta-grid">
           <div><span>Owner</span>${escapeHtml(order.owner_name || "-")}<br>${escapeHtml(order.owner_email || "")}</div>
           <div><span>Tenant</span>${escapeHtml(order.tenant_name || "-")}<br>${escapeHtml(order.tenant_email || "")}</div>
+          <div><span>Source</span>${order.source === "tenant_portal" ? "Tenant Portal" : "Staff Portal"}<br>${escapeHtml(order.tenant_submitted_at ? `Submitted ${formatDateShort(order.tenant_submitted_at)}` : "")}</div>
           <div><span>Tradie</span>${escapeHtml(order.tradie_company || order.tradie_name || "-")}<br>${escapeHtml(order.tradie_phone || order.tradie_email || "")}</div>
           <div><span>Quote</span>${escapeHtml(maintenanceMoney(order.quoted_amount))}<br>${escapeHtml(order.quote_received_at ? `Received ${formatDateShort(order.quote_received_at)}` : "No quote uploaded")}</div>
           <div><span>Due / Follow-up</span>${escapeHtml(formatDateShort(order.due_by))}</div>

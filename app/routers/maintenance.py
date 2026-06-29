@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, selectinload
 
-from app.authz import get_current_user
+from app.authz import require_page_access
 from app.db import get_db
 from app.deps import get_current_mailbox
 from app.models import (
@@ -316,6 +316,9 @@ def _order_to_dict(row: MaintenanceOrder, include_detail: bool = False) -> dict:
         "tenant_notified_at": row.tenant_notified_at,
         "completed_at": row.completed_at,
         "completion_notes": row.completion_notes,
+        "source": row.source or "staff",
+        "tenant_account_id": row.tenant_account_id,
+        "tenant_submitted_at": row.tenant_submitted_at,
         "created_at": row.created_at,
         "updated_at": row.updated_at,
         "attachment_count": len(attachments),
@@ -513,7 +516,7 @@ def _apply_update_fields(row: MaintenanceOrder, payload: MaintenanceOrderUpdateI
 def maintenance_summary(
     mailbox: str = Depends(get_current_mailbox),
     db: Session = Depends(get_db),
-    _user: User = Depends(get_current_user),
+    _user: User = Depends(require_page_access("maintenance")),
 ):
     base = db.query(MaintenanceOrder).filter(MaintenanceOrder.mailbox == mailbox)
     counts = {
@@ -543,7 +546,7 @@ def list_maintenance_orders(
     page_size: int = 25,
     mailbox: str = Depends(get_current_mailbox),
     db: Session = Depends(get_db),
-    _user: User = Depends(get_current_user),
+    _user: User = Depends(require_page_access("maintenance")),
 ):
     q = (
         db.query(MaintenanceOrder)
@@ -569,6 +572,7 @@ def list_maintenance_orders(
                 MaintenanceOrder.owner_name.ilike(like),
                 MaintenanceOrder.tenant_name.ilike(like),
                 MaintenanceOrder.tradie_company.ilike(like),
+                MaintenanceOrder.source.ilike(like),
             )
         )
     page = max(int(page or 1), 1)
@@ -594,7 +598,7 @@ def create_maintenance_order(
     payload: MaintenanceOrderCreateIn,
     mailbox: str = Depends(get_current_mailbox),
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_page_access("maintenance")),
 ):
     title = _clean(payload.title)
     description = _clean(payload.description)
@@ -637,6 +641,7 @@ def create_maintenance_order(
         tradie_scheduled_for=payload.tradie_scheduled_for,
         quoted_amount=payload.quoted_amount,
         quote_notes=_clean(payload.quote_notes),
+        source="staff",
         created_at=now,
         updated_at=now,
     )
@@ -653,7 +658,7 @@ def get_maintenance_order(
     order_id: int,
     mailbox: str = Depends(get_current_mailbox),
     db: Session = Depends(get_db),
-    _user: User = Depends(get_current_user),
+    _user: User = Depends(require_page_access("maintenance")),
 ):
     return _order_to_dict(_get_order(db, mailbox, order_id), include_detail=True)
 
@@ -664,7 +669,7 @@ def get_maintenance_email_draft(
     kind: str,
     mailbox: str = Depends(get_current_mailbox),
     db: Session = Depends(get_db),
-    _user: User = Depends(get_current_user),
+    _user: User = Depends(require_page_access("maintenance")),
 ):
     row = _get_order(db, mailbox, order_id)
     return _email_draft(row, kind)
@@ -676,7 +681,7 @@ def update_maintenance_order(
     payload: MaintenanceOrderUpdateIn,
     mailbox: str = Depends(get_current_mailbox),
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_page_access("maintenance")),
 ):
     row = _get_order(db, mailbox, order_id)
     prop = _get_property(db, mailbox, payload.property_id) if "property_id" in _fields_set(payload) else None
@@ -697,7 +702,7 @@ def delete_maintenance_order(
     order_id: int,
     mailbox: str = Depends(get_current_mailbox),
     db: Session = Depends(get_db),
-    _user: User = Depends(get_current_user),
+    _user: User = Depends(require_page_access("maintenance")),
 ):
     row = _get_order(db, mailbox, order_id)
     db.delete(row)
@@ -711,7 +716,7 @@ def update_maintenance_status(
     payload: MaintenanceStatusIn,
     mailbox: str = Depends(get_current_mailbox),
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_page_access("maintenance")),
 ):
     row = _get_order(db, mailbox, order_id)
     now = datetime.utcnow()
@@ -748,7 +753,7 @@ def send_owner_email(
     payload: MaintenanceEmailIn,
     mailbox: str = Depends(get_current_mailbox),
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_page_access("maintenance")),
 ):
     # Legacy route name kept for older clients. It intentionally returns a draft
     # only; Maintenance no longer sends emails directly.
@@ -766,7 +771,7 @@ def send_tenant_email(
     payload: MaintenanceEmailIn,
     mailbox: str = Depends(get_current_mailbox),
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_page_access("maintenance")),
 ):
     # Legacy route name kept for older clients. It intentionally returns a draft
     # only; Maintenance no longer sends emails directly.
@@ -784,7 +789,7 @@ def send_tradie_email(
     payload: MaintenanceEmailIn,
     mailbox: str = Depends(get_current_mailbox),
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_page_access("maintenance")),
 ):
     # Legacy route name kept for older clients. It intentionally returns a draft
     # only; Maintenance no longer sends emails directly.
@@ -806,7 +811,7 @@ def upload_maintenance_attachment(
     file: UploadFile = File(...),
     mailbox: str = Depends(get_current_mailbox),
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_page_access("maintenance")),
 ):
     row = _get_order(db, mailbox, order_id)
     raw = file.file.read(MAX_MAINTENANCE_ATTACHMENT_BYTES + 1)
@@ -846,7 +851,7 @@ def view_maintenance_attachment(
     attachment_id: int,
     mailbox: str = Depends(get_current_mailbox),
     db: Session = Depends(get_db),
-    _user: User = Depends(get_current_user),
+    _user: User = Depends(require_page_access("maintenance")),
 ):
     row = (
         db.query(MaintenanceAttachment)
@@ -869,7 +874,7 @@ def delete_maintenance_attachment(
     attachment_id: int,
     mailbox: str = Depends(get_current_mailbox),
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_page_access("maintenance")),
 ):
     row = (
         db.query(MaintenanceAttachment)
@@ -894,7 +899,7 @@ def add_maintenance_note(
     payload: MaintenanceNoteIn,
     mailbox: str = Depends(get_current_mailbox),
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_page_access("maintenance")),
 ):
     note = _clean(payload.note)
     if not note:

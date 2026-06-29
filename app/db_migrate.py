@@ -357,3 +357,47 @@ def migrate(engine: Engine) -> None:
                     conn.execute(text(stmt))
                 except Exception:
                     pass
+
+    # -------------------------------------------------------------------------
+    # 8) Tenant portal accounts + maintenance source fields (added 2026-06)
+    # -------------------------------------------------------------------------
+    tenants = "tenant_accounts"
+    if _table_exists(engine, tenants):
+        with engine.begin() as conn:
+            for stmt in (
+                f"CREATE INDEX IF NOT EXISTS ix_tenant_accounts_mailbox ON {tenants}(mailbox)",
+                f"CREATE UNIQUE INDEX IF NOT EXISTS ix_tenant_accounts_email ON {tenants}(email)",
+                f"CREATE INDEX IF NOT EXISTS ix_tenant_accounts_property_id ON {tenants}(property_id)",
+                f"CREATE INDEX IF NOT EXISTS ix_tenant_accounts_is_active ON {tenants}(is_active)",
+                f"CREATE INDEX IF NOT EXISTS ix_tenant_accounts_is_verified ON {tenants}(is_verified)",
+            ):
+                try:
+                    conn.execute(text(stmt))
+                except Exception:
+                    pass
+
+    mo = "maintenance_orders"
+    if _table_exists(engine, mo):
+        stmts = []
+        if not _column_exists(engine, mo, "source"):
+            stmts.append(f"ALTER TABLE {mo} ADD COLUMN source VARCHAR DEFAULT 'staff'")
+        if not _column_exists(engine, mo, "tenant_account_id"):
+            stmts.append(f"ALTER TABLE {mo} ADD COLUMN tenant_account_id INTEGER")
+        if not _column_exists(engine, mo, "tenant_submitted_at"):
+            stmts.append(f"ALTER TABLE {mo} ADD COLUMN tenant_submitted_at TIMESTAMP")
+        _exec_statements(engine, stmts)
+
+        with engine.begin() as conn:
+            try:
+                conn.execute(text(f"UPDATE {mo} SET source = COALESCE(NULLIF(source,''), 'staff')"))
+            except Exception:
+                pass
+            for stmt in (
+                f"CREATE INDEX IF NOT EXISTS ix_maintenance_orders_source ON {mo}(source)",
+                f"CREATE INDEX IF NOT EXISTS ix_maintenance_orders_tenant_account_id ON {mo}(tenant_account_id)",
+                f"CREATE INDEX IF NOT EXISTS ix_maintenance_orders_tenant_submitted_at ON {mo}(tenant_submitted_at)",
+            ):
+                try:
+                    conn.execute(text(stmt))
+                except Exception:
+                    pass

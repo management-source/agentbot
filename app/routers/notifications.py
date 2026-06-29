@@ -168,6 +168,25 @@ def notification_summary(
                     "due_at": _iso(row.due_by),
                 }
             )
+        tenant_new_base = (
+            db.query(MaintenanceOrder)
+            .filter(MaintenanceOrder.mailbox == mailbox)
+            .filter(MaintenanceOrder.source == "tenant_portal")
+            .filter(MaintenanceOrder.status == MaintenanceOrderStatus.NEW)
+        )
+        tenant_new_count = tenant_new_base.count()
+        maintenance_count += tenant_new_count
+        for row in tenant_new_base.order_by(MaintenanceOrder.created_at.desc()).limit(4).all():
+            items.append(
+                {
+                    "kind": "maintenance",
+                    "severity": "new",
+                    "page": "maintenance",
+                    "title": row.title or "Tenant maintenance request",
+                    "detail": f"{row.property_address} - Tenant Portal",
+                    "due_at": _iso(row.created_at),
+                }
+            )
 
     my_space_count = 0
     if "myspace" in allowed_pages:

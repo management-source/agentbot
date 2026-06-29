@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0b0f17" />
+    <title>Register - Dons Premier Tenant Portal</title>
+    <link rel="icon" href="/static/favicon.ico?v=1" sizes="any" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png?v=1" />
+    <style>
+      :root{
+        --ink:#0b0f17;
+        --muted:#667085;
+        --line:#dbe4ef;
+        --gold:#cda24a;
+        --surface:#fff;
+        --soft:#f4f7f8;
+      }
+      *{box-sizing:border-box}
+      html,body{min-height:100%;margin:0}
+      body{
+        font-family:"Segoe UI","Aptos",ui-sans-serif,system-ui,sans-serif;
+        color:var(--ink);
+        background:
+          radial-gradient(circle at 80% 0%, rgba(205,162,74,.24), transparent 30%),
+          linear-gradient(145deg, #f8fbfb, #edf3f4 58%, #faf2dc);
+        overflow-x:hidden;
+        overflow-y:auto;
+        -webkit-overflow-scrolling:touch;
+      }
+      .page{
+        min-height:100svh;
+        display:grid;
+        place-items:center;
+        padding:24px;
+      }
+      .shell{
+        width:min(1040px, 100%);
+        display:grid;
+        grid-template-columns:.8fr 1fr;
+        border:1px solid rgba(15,23,42,.08);
+        border-radius:34px;
+        background:rgba(255,255,255,.78);
+        box-shadow:0 24px 70px rgba(15,23,42,.16);
+        overflow:hidden;
+        backdrop-filter:blur(16px);
+      }
+      .intro{
+        padding:42px;
+        color:#fff;
+        background:
+          radial-gradient(circle at 88% 10%, rgba(205,162,74,.84), transparent 28%),
+          linear-gradient(135deg, #090d14, #171d29 58%, #8a691d);
+      }
+      .logo{
+        width:86px;
+        height:86px;
+        object-fit:contain;
+        border-radius:24px;
+        background:#050505;
+        border:1px solid rgba(255,255,255,.16);
+        padding:8px;
+      }
+      .kicker{
+        margin-top:46px;
+        color:#ffe9a6;
+        font-size:12px;
+        font-weight:900;
+        letter-spacing:.16em;
+        text-transform:uppercase;
+      }
+      h1{
+        margin:14px 0;
+        font-size:clamp(40px, 5vw, 66px);
+        line-height:.96;
+        letter-spacing:-.065em;
+      }
+      .intro p{
+        margin:0;
+        max-width:430px;
+        color:rgba(255,255,255,.78);
+        line-height:1.65;
+      }
+      .form-side{
+        padding:34px;
+        background:linear-gradient(180deg, rgba(255,255,255,.94), rgba(255,255,255,.82));
+      }
+      .form-card{
+        max-width:620px;
+        margin:auto;
+      }
+      .form-card h2{
+        margin:0;
+        font-size:30px;
+        letter-spacing:-.04em;
+      }
+      .form-card > p{
+        margin:10px 0 24px;
+        color:var(--muted);
+        line-height:1.55;
+      }
+      .grid{
+        display:grid;
+        grid-template-columns:1fr 1fr;
+        gap:14px;
+      }
+      .field{display:grid;gap:8px}
+      .field.wide{grid-column:1 / -1}
+      label{
+        color:#344054;
+        font-size:13px;
+        font-weight:850;
+      }
+      input{
+        width:100%;
+        min-height:52px;
+        border:1px solid var(--line);
+        border-radius:16px;
+        padding:0 16px;
+        background:#fff;
+        color:var(--ink);
+        font:inherit;
+        outline:none;
+        transition:border-color .18s ease, box-shadow .18s ease;
+      }
+      input:focus{
+        border-color:var(--gold);
+        box-shadow:0 0 0 4px rgba(205,162,74,.16);
+      }
+      .hint{
+        margin-top:10px;
+        color:var(--muted);
+        font-size:13px;
+        line-height:1.45;
+      }
+      .recaptcha{margin-top:16px;min-height:78px;display:flex;align-items:center}
+      .recaptcha.hidden{display:none}
+      .recaptcha-note{
+        width:100%;
+        padding:14px 16px;
+        border:1px dashed #d5b76f;
+        border-radius:16px;
+        color:#725414;
+        background:#fff8e7;
+        font-size:13px;
+      }
+      .actions{
+        display:flex;
+        gap:12px;
+        margin-top:18px;
+      }
+      .btn{
+        min-height:54px;
+        border:1px solid #080b11;
+        border-radius:18px;
+        padding:0 20px;
+        color:#fff;
+        background:linear-gradient(135deg, #0b0f17, #9a7820);
+        font:inherit;
+        font-weight:900;
+        cursor:pointer;
+        text-decoration:none;
+        display:inline-flex;
+        align-items:center;
+        justify-content:center;
+        transition:transform .2s ease, background-color .2s ease;
+      }
+      .btn:hover{transform:translateY(-1px);background:#050505}
+      .btn.secondary{background:#fff;color:#111827;border-color:#d8c28a}
+      .btn.secondary:hover{color:#fff;background:#050505;text-decoration:none}
+      .status{
+        display:none;
+        margin-top:16px;
+        padding:14px 16px;
+        border-radius:16px;
+        background:#eef4ff;
+        border:1px solid #c7d7fe;
+        color:#344054;
+        line-height:1.45;
+      }
+      .status.show{display:block}
+      .status.error{background:#fff0f0;border-color:#ffd0d0;color:#842029}
+      @media (max-width: 860px){
+        .page{display:block;padding:0}
+        .shell{grid-template-columns:1fr;border:0;border-radius:0;box-shadow:none}
+        .intro{padding:28px 22px;border-radius:0 0 34px 34px}
+        .kicker{margin-top:34px}
+        .form-side{padding:20px}
+      }
+      @media (max-width: 560px){
+        .grid{grid-template-columns:1fr}
+        .actions{flex-direction:column}
+        .btn{width:100%}
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <section class="shell">
+        <aside class="intro">
+          <img class="logo" src="/static/dons_premier_transparent_v2.png" alt="Dons Premier crest" />
+          <div class="kicker">Tenant Registration</div>
+          <h1>Join your property portal.</h1>
+          <p>Register with your tenancy email and property address so maintenance requests can flow directly to the Dons Premier team.</p>
+        </aside>
+
+        <section class="form-side">
+          <div class="form-card">
+            <h2>Create tenant access</h2>
+            <p>Use the same email address you use with Dons Premier for your tenancy.</p>
+            <form id="tenantRegisterForm" novalidate>
+              <div class="grid">
+                <div class="field">
+                  <label for="tenantName">Full name</label>
+                  <input id="tenantName" autocomplete="name" required />
+                </div>
+                <div class="field">
+                  <label for="tenantPhone">Mobile number</label>
+                  <input id="tenantPhone" type="tel" autocomplete="tel" />
+                </div>
+                <div class="field wide">
+                  <label for="tenantEmail">Email address</label>
+                  <input id="tenantEmail" type="email" inputmode="email" autocomplete="username" required />
+                </div>
+                <div class="field wide">
+                  <label for="tenantAddress">Property address</label>
+                  <input id="tenantAddress" autocomplete="street-address" placeholder="Example: 2/3 Fox St, Dandenong VIC 3175" required />
+                </div>
+                <div class="field">
+                  <label for="tenantSuburb">Suburb</label>
+                  <input id="tenantSuburb" autocomplete="address-level2" />
+                </div>
+                <div class="field">
+                  <label for="tenantPostcode">Postcode</label>
+                  <input id="tenantPostcode" inputmode="numeric" autocomplete="postal-code" />
+                </div>
+                <div class="field wide">
+                  <label for="tenantPassword">Password</label>
+                  <input id="tenantPassword" type="password" autocomplete="new-password" placeholder="12+ chars with uppercase, number, and symbol" required />
+                </div>
+              </div>
+              <div class="hint">After registering, you can log in and submit maintenance requests. If your property cannot be matched automatically, staff can still review the request.</div>
+
+              <div id="tenantRecaptchaWrap" class="recaptcha{% if not app_config.recaptcha_enabled %} hidden{% endif %}">
+                <div id="tenantRecaptcha"></div>
+              </div>
+              {% if not app_config.recaptcha_enabled %}
+              <div class="recaptcha"><div class="recaptcha-note">Security check will appear here once reCAPTCHA keys are configured for tenant access.</div></div>
+              {% endif %}
+
+              <div class="actions">
+                <button class="btn" type="submit">Create account</button>
+                <a class="btn secondary" href="/tenant/login">Back to login</a>
+              </div>
+              <div id="tenantRegisterStatus" class="status" role="status" aria-live="polite"></div>
+            </form>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <script>
+      window.TENANT_PORTAL_CONFIG = {{ app_config | tojson }};
+      let tenantRecaptchaWidgetId = null;
+
+      window.onTenantRecaptchaLoad = function () {
+        const config = window.TENANT_PORTAL_CONFIG || {};
+        const target = document.getElementById("tenantRecaptcha");
+        if (!config.recaptcha_enabled || !target || !window.grecaptcha) return;
+        tenantRecaptchaWidgetId = window.grecaptcha.render("tenantRecaptcha", {
+          sitekey: config.recaptcha_site_key
+        });
+      };
+
+      function setStatus(message, isError) {
+        const el = document.getElementById("tenantRegisterStatus");
+        if (!el) return;
+        el.textContent = message || "";
+        el.classList.toggle("show", !!message);
+        el.classList.toggle("error", !!isError);
+      }
+
+      async function tenantApi(path, options) {
+        const response = await fetch(path, {
+          ...options,
+          headers: {
+            "Content-Type": "application/json",
+            ...((options && options.headers) || {})
+          }
+        });
+        const text = await response.text();
+        let data = {};
+        try { data = text ? JSON.parse(text) : {}; } catch { data = { detail: text }; }
+        if (!response.ok) throw new Error(data.detail || "Request failed.");
+        return data;
+      }
+
+      document.getElementById("tenantRegisterForm").addEventListener("submit", async function (event) {
+        event.preventDefault();
+        const config = window.TENANT_PORTAL_CONFIG || {};
+        let recaptchaToken = "";
+        if (config.recaptcha_enabled && window.grecaptcha && tenantRecaptchaWidgetId !== null) {
+          recaptchaToken = String(window.grecaptcha.getResponse(tenantRecaptchaWidgetId) || "").trim();
+          if (!recaptchaToken) {
+            setStatus("Please complete the security check before registering.", true);
+            return;
+          }
+        }
+
+        const payload = {
+          name: (document.getElementById("tenantName").value || "").trim(),
+          phone: (document.getElementById("tenantPhone").value || "").trim(),
+          email: (document.getElementById("tenantEmail").value || "").trim(),
+          property_address: (document.getElementById("tenantAddress").value || "").trim(),
+          suburb: (document.getElementById("tenantSuburb").value || "").trim(),
+          postcode: (document.getElementById("tenantPostcode").value || "").trim(),
+          password: (document.getElementById("tenantPassword").value || "").trim(),
+          recaptcha_token: recaptchaToken
+        };
+
+        if (!payload.name || !payload.email || !payload.property_address || !payload.password) {
+          setStatus("Please complete name, email, property address, and password.", true);
+          return;
+        }
+
+        try {
+          const data = await tenantApi("/tenant/api/register", {
+            method: "POST",
+            body: JSON.stringify(payload)
+          });
+          localStorage.setItem("tenant_portal_token", data.access_token || "");
+          window.location.href = "/tenant/dashboard";
+        } catch (error) {
+          setStatus(error.message || "Registration failed. Please check the details.", true);
+          if (config.recaptcha_enabled && window.grecaptcha && tenantRecaptchaWidgetId !== null) {
+            window.grecaptcha.reset(tenantRecaptchaWidgetId);
+          }
+        }
+      });
+    </script>
+    {% if app_config.recaptcha_enabled %}
+    <script src="https://www.google.com/recaptcha/api.js?onload=onTenantRecaptchaLoad&render=explicit" async defer></script>
+    {% endif %}
+  </body>
+</html>

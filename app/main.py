@@ -35,6 +35,7 @@ from app.routers import settings as app_settings
 from app.routers import user_auth
 from app.routers import notifications
 from app.routers import maintenance
+from app.routers import tenant
 from app.models import User, UserRole
 from app.security import hash_password
 from app.services.gmail_sync import sync_inbox_threads
@@ -150,8 +151,8 @@ class BasicAuthMiddleware(BaseHTTPMiddleware):
         if not self.enabled:
             return await call_next(request)
 
-        # Allow health check without auth
-        if request.url.path in ('/health', '/auth/google/callback'):
+        # Allow public health/auth callbacks and tenant-facing pages without staff Basic Auth.
+        if request.url.path in ('/health', '/auth/google/callback') or request.url.path.startswith(('/static/', '/tenant/')):
             return await call_next(request)
 
         auth = request.headers.get('authorization') or ''
@@ -220,6 +221,7 @@ app.include_router(compliance.router, prefix="/compliance", tags=["compliance"])
 app.include_router(my_space.router)
 app.include_router(notifications.router)
 app.include_router(maintenance.router, prefix="/maintenance", tags=["maintenance"])
+app.include_router(tenant.router)
 
 @app.on_event("startup")
 def on_startup():
