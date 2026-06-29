@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
+import logging
 import mimetypes
 import re
+import secrets
 import uuid
 from datetime import datetime, timedelta
+from email.message import EmailMessage
 from pathlib import Path
 
 import httpx
@@ -24,16 +29,20 @@ from app.models import (
     MaintenanceOrderStatus,
     ManagedProperty,
     TenantAccount,
+    TenantPasswordResetToken,
     User,
 )
 from app.security import create_access_token, decode_access_token, hash_password, verify_password
 
 router = APIRouter(prefix="/tenant/api", tags=["tenant"])
+logger = logging.getLogger(__name__)
 
 MAX_LOGIN_ATTEMPTS = 5
 LOCKOUT_MINUTES = 15
 MAX_TENANT_UPLOAD_FILES = 8
 TENANT_UPLOAD_KIND = "TENANT_MEDIA"
+PASSWORD_RESET_EXPIRE_MINUTES = 30
+PASSWORD_RESET_COOLDOWN_MINUTES = 2
 
 
 class TenantRegisterIn(BaseModel):
@@ -52,6 +61,15 @@ class TenantLoginIn(BaseModel):
     email: EmailStr
     password: str
     recaptcha_token: str | None = None
+
+
+class TenantForgotPasswordIn(BaseModel):
+    email: EmailStr
+
+
+class TenantResetPasswordIn(BaseModel):
+    token: str
+    new_password: str
 
 
 class TenantMaintenanceIn(BaseModel):
@@ -146,6 +164,45 @@ def _validate_password_strength(password: str) -> None:
         raise HTTPException(status_code=400, detail="Password must include a number.")
     if not re.search(r"[^A-Za-z0-9]", p):
         raise HTTPException(status_code=400, detail="Password must include a symbol.")
+
+
+def _tenant_password_reset_hash(token: str) -> str:
+    return hashlib.sha256((token or "").encode("utf-8")).hexdigest()
+
+
+def _tenant_password_reset_url(request: Request, token: str) -> str:
+    base = str(request.base_url).rstrip("/")
+    return f"{base}/tenant/reset-password?token={token}"
+
+
+def _send_tenant_password_reset_email(db: Session, to_email: str, reset_url: str) -> bool:
+    try:
+        from app.services.gmail_client import get_gmail_service, gmail_user_id
+
+        service = get_gmail_service(db)
+        msg = EmailMessage()
+        msg["To"] = to_email
+        msg["Subject"] = "Reset your Dons Premier tenant portal password"
+        msg.set_content(
+            "A password reset was requested for your Dons Premier Tenant Portal account.\n\n"
+            f"Open this secure link within {PASSWORD_RESET_EXPIRE_MINUTES} minutes to set a new password:\n"
+            f"{reset_url}\n\n"
+            "If you did not request this, you can ignore this email. Your password will not change."
+        )
+        raw = base64.urlsafe_b64encode(msg.as_bytes()).decode("utf-8")
+        service.users().messages().send(userId=gmail_user_id(), body={"raw": raw}).execute()
+        return True
+    except Exception:
+        logger.exception("Tenant password reset email could not be sent")
+        return False
+
+
+def _cleanup_tenant_password_reset_tokens(db: Session, tenant_id: int | None = None) -> None:
+    now = datetime.utcnow()
+    q = db.query(TenantPasswordResetToken).filter(TenantPasswordResetToken.expires_at < now)
+    if tenant_id is not None:
+        q = q.filter(TenantPasswordResetToken.tenant_account_id == tenant_id)
+    q.delete(synchronize_session=False)
 
 
 def _verify_recaptcha(token: str | None, remote_ip: str | None) -> None:
@@ -476,6 +533,83 @@ def login_tenant(payload: TenantLoginIn, request: Request, db: Session = Depends
     db.refresh(tenant)
     token = create_access_token(subject=f"tenant:{tenant.email}", secret=settings.JWT_SECRET, expires_minutes=1440)
     return {"ok": True, "access_token": token, "token_type": "bearer", "tenant": _tenant_to_dict(tenant)}
+
+
+@router.post("/forgot-password")
+def forgot_tenant_password(payload: TenantForgotPasswordIn, request: Request, db: Session = Depends(get_db)):
+    now = datetime.utcnow()
+    email = payload.email.lower().strip()
+    response = {
+        "ok": True,
+        "message": "If that tenant email is registered, a secure password reset link has been sent.",
+    }
+    tenant = db.query(TenantAccount).filter(TenantAccount.email == email).first()
+    if not tenant or not tenant.is_active:
+        return response
+
+    _cleanup_tenant_password_reset_tokens(db, tenant.id)
+    recent = (
+        db.query(TenantPasswordResetToken)
+        .filter(TenantPasswordResetToken.tenant_account_id == tenant.id)
+        .filter(TenantPasswordResetToken.created_at > now - timedelta(minutes=PASSWORD_RESET_COOLDOWN_MINUTES))
+        .order_by(TenantPasswordResetToken.created_at.desc())
+        .first()
+    )
+    if recent:
+        db.commit()
+        return response
+
+    db.query(TenantPasswordResetToken).filter(TenantPasswordResetToken.tenant_account_id == tenant.id).filter(
+        TenantPasswordResetToken.used_at.is_(None)
+    ).update({TenantPasswordResetToken.used_at: now}, synchronize_session=False)
+
+    token = secrets.token_urlsafe(32)
+    reset = TenantPasswordResetToken(
+        tenant_account_id=tenant.id,
+        token_hash=_tenant_password_reset_hash(token),
+        expires_at=now + timedelta(minutes=PASSWORD_RESET_EXPIRE_MINUTES),
+        requested_ip=request.client.host if request.client else None,
+        created_at=now,
+    )
+    db.add(reset)
+    db.commit()
+
+    sent = _send_tenant_password_reset_email(db, tenant.email, _tenant_password_reset_url(request, token))
+    if not sent:
+        reset.used_at = datetime.utcnow()
+        db.commit()
+    return response
+
+
+@router.post("/reset-password")
+def reset_tenant_password(payload: TenantResetPasswordIn, db: Session = Depends(get_db)):
+    token = (payload.token or "").strip()
+    if not token:
+        raise HTTPException(status_code=400, detail="Reset token is required.")
+    _validate_password_strength(payload.new_password)
+
+    now = datetime.utcnow()
+    reset = (
+        db.query(TenantPasswordResetToken)
+        .filter(TenantPasswordResetToken.token_hash == _tenant_password_reset_hash(token))
+        .filter(TenantPasswordResetToken.used_at.is_(None))
+        .filter(TenantPasswordResetToken.expires_at >= now)
+        .first()
+    )
+    if not reset:
+        raise HTTPException(status_code=400, detail="This reset link is invalid or has expired.")
+
+    tenant = db.get(TenantAccount, reset.tenant_account_id)
+    if not tenant or not tenant.is_active:
+        raise HTTPException(status_code=400, detail="This reset link is invalid or has expired.")
+
+    tenant.password_hash = hash_password(payload.new_password)
+    tenant.failed_login_attempts = 0
+    tenant.locked_until = None
+    tenant.updated_at = now
+    reset.used_at = now
+    db.commit()
+    return {"ok": True, "message": "Password updated. You can now log in."}
 
 
 @router.get("/me")

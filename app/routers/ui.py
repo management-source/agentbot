@@ -50,6 +50,30 @@ def tenant_register(request: Request):
     )
 
 
+@router.get("/tenant/forgot-password", response_class=HTMLResponse)
+def tenant_forgot_password(request: Request):
+    return templates.TemplateResponse(
+        "tenant_password_reset.html",
+        {
+            "request": request,
+            "mode": "forgot",
+            "token": "",
+        },
+    )
+
+
+@router.get("/tenant/reset-password", response_class=HTMLResponse)
+def tenant_reset_password(request: Request, token: str = ""):
+    return templates.TemplateResponse(
+        "tenant_password_reset.html",
+        {
+            "request": request,
+            "mode": "reset",
+            "token": token,
+        },
+    )
+
+
 @router.get("/tenant/dashboard", response_class=HTMLResponse)
 def tenant_dashboard(request: Request):
     return templates.TemplateResponse(

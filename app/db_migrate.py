@@ -437,3 +437,18 @@ def migrate(engine: Engine) -> None:
                     conn.execute(text(stmt))
                 except Exception:
                     pass
+
+    tprt = "tenant_password_reset_tokens"
+    if _table_exists(engine, tprt):
+        with engine.begin() as conn:
+            for stmt in (
+                f"CREATE INDEX IF NOT EXISTS ix_tenant_password_reset_tokens_tenant_account_id ON {tprt}(tenant_account_id)",
+                f"CREATE UNIQUE INDEX IF NOT EXISTS ix_tenant_password_reset_tokens_token_hash ON {tprt}(token_hash)",
+                f"CREATE INDEX IF NOT EXISTS ix_tenant_password_reset_tokens_expires_at ON {tprt}(expires_at)",
+                f"CREATE INDEX IF NOT EXISTS ix_tenant_password_reset_tokens_used_at ON {tprt}(used_at)",
+                f"CREATE INDEX IF NOT EXISTS ix_tenant_password_reset_tokens_created_at ON {tprt}(created_at)",
+            ):
+                try:
+                    conn.execute(text(stmt))
+                except Exception:
+                    pass
