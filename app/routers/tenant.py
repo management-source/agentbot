@@ -395,24 +395,58 @@ def tenant_property_suggestions(q: str | None = None, db: Session = Depends(get_
     if len(query) < 3:
         return {"items": []}
     mailbox = _default_mailbox()
-    like = f"%{query}%"
+    query_key = _normalize_key(query)
+    tokens = [token for token in query_key.split() if len(token) > 1 or token.isdigit()]
+    if not tokens:
+        return {"items": []}
+    token_filters = []
+    for token in tokens[:8]:
+        like = f"%{token}%"
+        token_filters.extend(
+            [
+                ManagedProperty.property_address.ilike(like),
+                ManagedProperty.suburb.ilike(like),
+                ManagedProperty.state_code.ilike(like),
+                ManagedProperty.postcode.ilike(like),
+                ManagedProperty.tenants_json.ilike(like),
+            ]
+        )
     rows = (
         db.query(ManagedProperty)
         .filter(ManagedProperty.mailbox == mailbox)
         .filter(ManagedProperty.is_active == True)
-        .filter(
-            or_(
-                ManagedProperty.property_address.ilike(like),
-                ManagedProperty.suburb.ilike(like),
-                ManagedProperty.postcode.ilike(like),
-                ManagedProperty.tenants_json.ilike(like),
-            )
-        )
+        .filter(or_(*token_filters))
         .order_by(ManagedProperty.property_address.asc())
-        .limit(10)
+        .limit(80)
         .all()
     )
-    return {"items": [_property_suggestion(row) for row in rows]}
+    scored: list[tuple[int, ManagedProperty]] = []
+    for row in rows:
+        haystack = _normalize_key(
+            " ".join(
+                [
+                    row.property_address or "",
+                    row.suburb or "",
+                    row.state_code or "",
+                    row.postcode or "",
+                ]
+            )
+        )
+        if not all(token in haystack for token in tokens if token not in {"vic"}):
+            continue
+        street_key = _normalize_key(row.property_address)
+        label_key = _normalize_key(_property_label(row))
+        if query_key == street_key:
+            score = 0
+        elif query_key == label_key:
+            score = 1
+        elif street_key.startswith(query_key) or label_key.startswith(query_key):
+            score = 2
+        else:
+            score = 3
+        scored.append((score, row))
+    scored.sort(key=lambda item: (item[0], item[1].property_address or ""))
+    return {"items": [_property_suggestion(row) for _, row in scored[:10]]}
 
 
 @router.post("/login")

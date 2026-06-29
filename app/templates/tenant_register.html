@@ -308,18 +308,36 @@
           .replace(/'/g, "&#039;");
       }
 
+      function normalizePropertyText(text) {
+        return String(text || "")
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, " ")
+          .replace(/\s+/g, " ")
+          .trim();
+      }
+
+      function propertyMatchValues(item) {
+        const tail = [item.suburb, item.state_code, item.postcode].filter(Boolean).join(" ");
+        return [
+          item.label,
+          item.property_address,
+          [item.property_address, tail].filter(Boolean).join(", "),
+          [item.property_address, item.suburb, item.postcode].filter(Boolean).join(" ")
+        ].map(normalizePropertyText).filter(Boolean);
+      }
+
       function rememberPropertySelection(option) {
         document.getElementById("tenantPropertyId").value = option ? String(option.id || "") : "";
         if (option) {
-          document.getElementById("tenantAddress").value = option.label || option.property_address || "";
+          document.getElementById("tenantAddress").value = option.property_address || option.label || "";
           document.getElementById("tenantSuburb").value = option.suburb || "";
           document.getElementById("tenantPostcode").value = option.postcode || "";
         }
       }
 
       function resolveTypedProperty() {
-        const value = (document.getElementById("tenantAddress").value || "").trim().toLowerCase();
-        const match = tenantPropertySuggestions.find((item) => String(item.label || "").trim().toLowerCase() === value);
+        const value = normalizePropertyText(document.getElementById("tenantAddress").value || "");
+        const match = tenantPropertySuggestions.find((item) => propertyMatchValues(item).includes(value));
         rememberPropertySelection(match || null);
         return match || null;
       }
@@ -328,6 +346,7 @@
         const input = document.getElementById("tenantAddress");
         const list = document.getElementById("tenantPropertyOptions");
         const query = (input.value || "").trim();
+        if (resolveTypedProperty()) return;
         document.getElementById("tenantPropertyId").value = "";
         if (query.length < 3) {
           tenantPropertySuggestions = [];
@@ -349,6 +368,7 @@
 
       document.getElementById("tenantAddress").addEventListener("input", function () {
         if (propertySuggestionTimer) clearTimeout(propertySuggestionTimer);
+        if (resolveTypedProperty()) return;
         propertySuggestionTimer = setTimeout(loadPropertySuggestions, 260);
       });
       document.getElementById("tenantAddress").addEventListener("change", resolveTypedProperty);
