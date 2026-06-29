@@ -2561,7 +2561,7 @@ function renderMaintenanceList(items) {
     list.innerHTML = items.map((item) => `
       <button class="maintenance-order-card ${Number(selectedMaintenanceOrderId) === Number(item.id) ? "active" : ""}" type="button" onclick="openMaintenanceOrder(${item.id})">
         <div class="row space">
-          <h4>#${item.id} ${escapeHtml(item.title || "Maintenance order")}</h4>
+          <h4>${escapeHtml(item.reference || `#${item.id}`)} ${escapeHtml(item.title || "Maintenance order")}</h4>
           <div class="row" style="gap:6px;justify-content:flex-end">${maintenanceSourceChip(item.source)}${maintenanceStatusChip(item.status)}</div>
         </div>
         <p>${escapeHtml(item.property_label || item.property_address || "-")}</p>
@@ -2593,6 +2593,7 @@ function renderTenantRegistrations(items = []) {
           <div class="row" style="gap:8px;flex-wrap:wrap">${tenantRegistrationStatusChip(item)}</div>
           <h4 style="margin-top:10px">${escapeHtml(item.name || item.email || "Tenant")}</h4>
           <p>${escapeHtml(item.email || "-")} ${item.phone ? `- ${escapeHtml(item.phone)}` : ""}</p>
+          ${item.preferred_contact_method ? `<p><strong>Preferred contact:</strong> ${escapeHtml(item.preferred_contact_method)}</p>` : ""}
           <p><strong>Property:</strong> ${escapeHtml(item.property_label || item.property_address || "-")}</p>
           <p class="small muted">Registered ${escapeHtml(formatDateShort(item.created_at))}${item.last_login_at ? ` - Last login ${escapeHtml(formatDateShort(item.last_login_at))}` : ""}</p>
         </div>
@@ -2838,7 +2839,9 @@ function renderMaintenanceDetail(order) {
     const sub = document.getElementById("maintenanceDetailSub");
     const status = document.getElementById("maintenanceDetailStatus");
     const body = document.getElementById("maintenanceDetailBody");
-    if (title) title.textContent = `#${order.id} ${order.title || "Maintenance order"}`;
+    const reference = order.reference || `#${order.id}`;
+    const tenantVerificationWarning = order.source === "tenant_portal" && order.tenant_is_verified === false;
+    if (title) title.textContent = `${reference} ${order.title || "Maintenance order"}`;
     if (sub) sub.textContent = order.property_label || order.property_address || "";
     if (status) {
         status.className = `maintenance-status ${maintenanceStatusClass(order.status)}`;
@@ -2850,10 +2853,18 @@ function renderMaintenanceDetail(order) {
     body.innerHTML = `
       <div class="maintenance-detail-panel">
         <h4>Order Snapshot</h4>
+        ${tenantVerificationWarning ? `
+          <div class="maintenance-warning">
+            <strong>Tenant account pending verification</strong>
+            This request came through the tenant portal, but the account has not been verified against the property register yet. Continue the job if needed, but double-check tenant/property details before approving access or arranging attendance.
+          </div>
+        ` : ""}
         <div class="maintenance-meta-grid">
           <div><span>Owner</span>${escapeHtml(order.owner_name || "-")}<br>${escapeHtml(order.owner_email || "")}</div>
           <div><span>Tenant</span>${escapeHtml(order.tenant_name || "-")}<br>${escapeHtml(order.tenant_email || "")}</div>
           <div><span>Source</span>${order.source === "tenant_portal" ? "Tenant Portal" : "Staff Portal"}<br>${escapeHtml(order.tenant_submitted_at ? `Submitted ${formatDateShort(order.tenant_submitted_at)}` : "")}</div>
+          <div><span>Tenant Match</span>${order.tenant_account_id ? (order.tenant_is_verified ? "Verified tenant account" : "Pending staff verification") : "No tenant portal account"}<br>${escapeHtml(order.tenant_is_active === false ? "Tenant account inactive" : "")}</div>
+          <div><span>Preferred Contact</span>${escapeHtml(order.tenant_preferred_contact || "-")}<br>${escapeHtml(order.tenant_phone || "")}</div>
           <div><span>Tradie</span>${escapeHtml(order.tradie_company || order.tradie_name || "-")}<br>${escapeHtml(order.tradie_phone || order.tradie_email || "")}</div>
           <div><span>Quote</span>${escapeHtml(maintenanceMoney(order.quoted_amount))}<br>${escapeHtml(order.quote_received_at ? `Received ${formatDateShort(order.quote_received_at)}` : "No quote uploaded")}</div>
           <div><span>Due / Follow-up</span>${escapeHtml(formatDateShort(order.due_by))}</div>

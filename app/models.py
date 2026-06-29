@@ -194,6 +194,7 @@ class TenantAccount(Base):
     email: Mapped[str] = mapped_column(String, unique=True, index=True)
     name: Mapped[str] = mapped_column(String)
     phone: Mapped[str | None] = mapped_column(String, nullable=True)
+    preferred_contact_method: Mapped[str | None] = mapped_column(String, nullable=True)
     password_hash: Mapped[str] = mapped_column(String)
     property_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("managed_properties.id"), nullable=True, index=True)
     property_address: Mapped[str | None] = mapped_column(String, nullable=True, index=True)

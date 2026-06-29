@@ -174,6 +174,31 @@
         display:block;
         margin-top:5px;
       }
+      .profile-editor{
+        margin-top:18px;
+        padding-top:18px;
+        border-top:1px solid var(--line);
+      }
+      .profile-editor h3{
+        margin:0 0 10px;
+        font-size:16px;
+      }
+      .profile-editor .form-grid{
+        grid-template-columns:1fr;
+      }
+      .mini-status{
+        display:none;
+        margin-top:12px;
+        padding:11px 13px;
+        border-radius:14px;
+        color:#344054;
+        background:#eef4ff;
+        border:1px solid #c7d7fe;
+        font-size:13px;
+        line-height:1.45;
+      }
+      .mini-status.show{display:block}
+      .mini-status.error{background:#fff0f0;border-color:#ffd0d0;color:#842029}
       .form-grid{
         display:grid;
         grid-template-columns:1fr 1fr;
@@ -217,6 +242,19 @@
         font-size:12px;
         line-height:1.45;
       }
+      .notice{
+        margin:16px 0 18px;
+        padding:15px 16px;
+        border-radius:18px;
+        border:1px solid #fde68a;
+        background:#fffbeb;
+        color:#713f12;
+        line-height:1.55;
+      }
+      .notice strong{
+        display:block;
+        margin-bottom:4px;
+      }
       .btn{
         min-height:54px;
         border:1px solid #080b11;
@@ -230,6 +268,17 @@
         transition:transform .2s ease, background-color .2s ease;
       }
       .btn:hover{transform:translateY(-1px);background:#050505}
+      .btn.secondary{
+        width:100%;
+        color:var(--ink);
+        background:#fff;
+        border-color:var(--line);
+      }
+      .btn.secondary:hover{
+        color:#fff;
+        background:#050505;
+        border-color:#050505;
+      }
       .status{
         display:none;
         margin-top:16px;
@@ -260,6 +309,43 @@
       }
       .request h4{margin:0;font-size:16px}
       .request p{margin:8px 0 0}
+      .request-ref{
+        display:inline-flex;
+        margin-bottom:6px;
+        color:#8f6f1d;
+        font-size:12px;
+        font-weight:950;
+        letter-spacing:.06em;
+      }
+      .timeline{
+        display:grid;
+        gap:8px;
+        margin-top:14px;
+      }
+      .timeline-step{
+        display:grid;
+        grid-template-columns:18px 1fr;
+        gap:9px;
+        align-items:start;
+        color:var(--muted);
+        font-size:13px;
+      }
+      .timeline-dot{
+        width:13px;
+        height:13px;
+        border-radius:50%;
+        margin-top:3px;
+        border:2px solid #cbd5e1;
+        background:#fff;
+      }
+      .timeline-step.complete .timeline-dot{border-color:#047857;background:#047857}
+      .timeline-step.current .timeline-dot{border-color:var(--gold);background:var(--gold)}
+      .timeline-step.stopped .timeline-dot{border-color:#dc2626;background:#dc2626}
+      .timeline-step strong{
+        display:block;
+        color:var(--ink);
+        font-size:13px;
+      }
       .pill{
         white-space:nowrap;
         display:inline-flex;
@@ -329,11 +415,34 @@
               <div class="profile-item"><span>Property</span><strong id="tenantProperty">-</strong></div>
               <div class="profile-item"><span>Verification</span><strong id="tenantVerified">-</strong></div>
             </div>
+            <div class="profile-editor">
+              <h3>Contact preference</h3>
+              <form id="tenantProfileForm" novalidate>
+                <div class="form-grid">
+                  <div class="field">
+                    <label for="tenantPhone">Phone</label>
+                    <input id="tenantPhone" placeholder="Best contact number" />
+                  </div>
+                  <div class="field">
+                    <label for="tenantPreferredContact">Preferred contact method</label>
+                    <input id="tenantPreferredContact" placeholder="Example: SMS after 3pm" />
+                  </div>
+                </div>
+                <div style="margin-top:14px">
+                  <button class="btn secondary" type="submit">Save contact preference</button>
+                </div>
+                <div id="profileStatus" class="mini-status" role="status" aria-live="polite"></div>
+              </form>
+            </div>
           </aside>
 
           <section class="card">
             <h2>Submit maintenance request</h2>
             <p>Include the issue, urgency, access details, and the best way to contact you.</p>
+            <div class="notice">
+              <strong>Emergency or unsafe issue?</strong>
+              If there is immediate danger, loss of essential services, flooding, fire risk, or a security issue, call Dons Premier Estate Agents or emergency services first. The portal is for logging and tracking requests.
+            </div>
             <form id="maintenanceRequestForm" novalidate>
               <div class="form-grid">
                 <div class="field wide">
@@ -375,7 +484,7 @@
                 <div class="field wide">
                   <label for="requestFiles">Photos or videos</label>
                   <input id="requestFiles" type="file" accept="image/*,video/*" multiple />
-                  <div class="upload-note">Optional. Upload images or videos only, up to 25MB per file.</div>
+                  <div class="upload-note">Optional but recommended. Clear photos/videos help staff and tradies understand the issue faster. Images and videos only, up to 25MB per file.</div>
                 </div>
               </div>
               <div style="margin-top:18px">
@@ -398,6 +507,7 @@
     <script>
       const tokenKey = "tenant_portal_token";
       let currentTenant = null;
+      let tenantRequestsCache = [];
 
       function authHeaders() {
         const token = localStorage.getItem(tokenKey) || "";
@@ -428,6 +538,14 @@
 
       function setStatus(message, isError) {
         const el = document.getElementById("requestStatus");
+        if (!el) return;
+        el.textContent = message || "";
+        el.classList.toggle("show", !!message);
+        el.classList.toggle("error", !!isError);
+      }
+
+      function setProfileStatus(message, isError) {
+        const el = document.getElementById("profileStatus");
         if (!el) return;
         el.textContent = message || "";
         el.classList.toggle("show", !!message);
@@ -472,6 +590,55 @@
         try { return new Date(value).toLocaleString(); } catch { return value; }
       }
 
+      function normalizeCompare(value) {
+        return String(value || "")
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, " ")
+          .replace(/\s+/g, " ")
+          .trim();
+      }
+
+      function meaningfulWords(value) {
+        return normalizeCompare(value)
+          .split(" ")
+          .filter((word) => word.length > 2 && !["the", "and", "for", "with", "from"].includes(word));
+      }
+
+      function findDuplicateRequest(payload) {
+        const titleKey = normalizeCompare(payload.title);
+        const descriptionWords = new Set(meaningfulWords(payload.description));
+        const cutoff = Date.now() - (14 * 24 * 60 * 60 * 1000);
+        return tenantRequestsCache.find((item) => {
+          const status = String(item.status || "").toUpperCase();
+          if (["COMPLETED", "CANCELLED"].includes(status)) return false;
+          const created = item.created_at ? new Date(item.created_at).getTime() : 0;
+          if (Number.isFinite(created) && created && created < cutoff) return false;
+          const existingTitle = normalizeCompare(item.title);
+          if (titleKey && existingTitle && titleKey === existingTitle) return true;
+          const existingWords = meaningfulWords(`${item.title || ""} ${item.description || ""}`);
+          const overlap = existingWords.filter((word) => descriptionWords.has(word)).length;
+          return titleKey && existingTitle && (titleKey.includes(existingTitle) || existingTitle.includes(titleKey) || overlap >= 3);
+        }) || null;
+      }
+
+      function requestTimelineHtml(item) {
+        const timeline = Array.isArray(item.timeline) ? item.timeline : [];
+        if (!timeline.length) return "";
+        return `
+          <div class="timeline" aria-label="Request timeline">
+            ${timeline.map((step) => `
+              <div class="timeline-step ${escapeHtml(step.state || "pending")}">
+                <span class="timeline-dot" aria-hidden="true"></span>
+                <span>
+                  <strong>${escapeHtml(step.label || "")}</strong>
+                  ${step.at ? `<span>${escapeHtml(formatDate(step.at))}</span>` : `<span>${escapeHtml(step.state === "pending" ? "Pending" : "")}</span>`}
+                </span>
+              </div>
+            `).join("")}
+          </div>
+        `;
+      }
+
       function tenantLogout() {
         localStorage.removeItem(tokenKey);
         window.location.href = "/tenant/login";
@@ -484,11 +651,16 @@
         document.getElementById("tenantEmail").textContent = tenant.email || "-";
         document.getElementById("tenantProperty").textContent = tenant.property_label || tenant.property_address || "-";
         document.getElementById("tenantVerified").textContent = tenant.is_verified ? "Matched to property register" : "Pending staff verification";
+        const phone = document.getElementById("tenantPhone");
+        const preferred = document.getElementById("tenantPreferredContact");
+        if (phone) phone.value = tenant.phone || "";
+        if (preferred) preferred.value = tenant.preferred_contact_method || "";
       }
 
       function renderRequests(items) {
         const list = document.getElementById("requestList");
         if (!list) return;
+        tenantRequestsCache = Array.isArray(items) ? items : [];
         if (!items.length) {
           list.innerHTML = `<div class="empty">No maintenance requests submitted yet.</div>`;
           return;
@@ -497,15 +669,24 @@
           <article class="request">
             <div class="request-head">
               <div>
-                <h4>#${Number(item.id)} ${escapeHtml(item.title || "Maintenance request")}</h4>
+                <span class="request-ref">${escapeHtml(item.reference || `DP-MNT-${String(Number(item.id) || 0).padStart(5, "0")}`)}</span>
+                <h4>${escapeHtml(item.title || "Maintenance request")}</h4>
                 <p>${escapeHtml(item.property_label || "")}</p>
               </div>
               <span class="pill ${statusClass(item.status)}">${escapeHtml(statusLabel(item.status))}</span>
             </div>
             <p>${escapeHtml(item.description || "")}</p>
-            <p><strong>Submitted:</strong> ${escapeHtml(formatDate(item.created_at))}</p>
+            <p><strong>Submitted:</strong> ${escapeHtml(formatDate(item.created_at))}${Number(item.attachment_count || 0) ? ` - ${Number(item.attachment_count)} file(s) attached` : ""}</p>
+            ${requestTimelineHtml(item)}
           </article>
         `).join("");
+      }
+
+      async function refreshTenantRequests() {
+        const requests = await tenantApi("/tenant/api/maintenance-requests");
+        const items = Array.isArray(requests.items) ? requests.items : [];
+        renderRequests(items);
+        return items;
       }
 
       async function loadTenantPortal() {
@@ -515,9 +696,25 @@
         }
         const me = await tenantApi("/tenant/api/me");
         renderTenant(me.tenant || {});
-        const requests = await tenantApi("/tenant/api/maintenance-requests");
-        renderRequests(Array.isArray(requests.items) ? requests.items : []);
+        await refreshTenantRequests();
       }
+
+      document.getElementById("tenantProfileForm").addEventListener("submit", async function (event) {
+        event.preventDefault();
+        try {
+          const saved = await tenantApi("/tenant/api/me", {
+            method: "PATCH",
+            body: JSON.stringify({
+              phone: (document.getElementById("tenantPhone").value || "").trim(),
+              preferred_contact_method: (document.getElementById("tenantPreferredContact").value || "").trim()
+            })
+          });
+          renderTenant(saved.tenant || {});
+          setProfileStatus("Contact preference saved.", false);
+        } catch (error) {
+          setProfileStatus(error.message || "Could not save contact preference.", true);
+        }
+      });
 
       document.getElementById("maintenanceRequestForm").addEventListener("submit", async function (event) {
         event.preventDefault();
@@ -544,6 +741,15 @@
           setStatus("Please enter an issue title and description.", true);
           return;
         }
+        const duplicate = findDuplicateRequest(payload);
+        if (duplicate) {
+          const duplicateRef = duplicate.reference || `DP-MNT-${String(Number(duplicate.id) || 0).padStart(5, "0")}`;
+          const proceed = confirm(`This looks similar to active request ${duplicateRef}: "${duplicate.title || "Maintenance request"}". Submit another request anyway?`);
+          if (!proceed) {
+            setStatus(`No new request was submitted. You can keep tracking ${duplicateRef} below.`, false);
+            return;
+          }
+        }
         try {
           const created = await tenantApi("/tenant/api/maintenance-requests", {
             method: "POST",
@@ -559,9 +765,10 @@
             });
           }
           document.getElementById("maintenanceRequestForm").reset();
-          setStatus(files.length ? "Request submitted with media. The Dons Premier team can now manage it from their Maintenance portal." : "Request submitted. The Dons Premier team can now manage it from their Maintenance portal.", false);
-          const requests = await tenantApi("/tenant/api/maintenance-requests");
-          renderRequests(Array.isArray(requests.items) ? requests.items : []);
+          const reference = created && created.request ? created.request.reference : "";
+          const emailNote = created && created.confirmation_email_sent === false ? " Confirmation email could not be sent automatically, but your request is safely lodged." : " A confirmation email has been sent to you.";
+          setStatus(`${reference ? `${reference} - ` : ""}Request submitted${files.length ? " with media" : ""}. The Dons Premier team can now manage it from their Maintenance portal.${emailNote}`, false);
+          await refreshTenantRequests();
         } catch (error) {
           setStatus(error.message || "Could not submit the request.", true);
         }

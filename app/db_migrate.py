@@ -363,6 +363,11 @@ def migrate(engine: Engine) -> None:
     # -------------------------------------------------------------------------
     tenants = "tenant_accounts"
     if _table_exists(engine, tenants):
+        stmts = []
+        if not _column_exists(engine, tenants, "preferred_contact_method"):
+            stmts.append(f"ALTER TABLE {tenants} ADD COLUMN preferred_contact_method VARCHAR")
+        _exec_statements(engine, stmts)
+
         with engine.begin() as conn:
             for stmt in (
                 f"CREATE INDEX IF NOT EXISTS ix_tenant_accounts_mailbox ON {tenants}(mailbox)",

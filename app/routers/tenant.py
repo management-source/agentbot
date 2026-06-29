@@ -73,6 +73,11 @@ class TenantResetPasswordIn(BaseModel):
     new_password: str
 
 
+class TenantProfileUpdateIn(BaseModel):
+    phone: str | None = None
+    preferred_contact_method: str | None = None
+
+
 class TenantMaintenanceIn(BaseModel):
     title: str
     category: str | None = None
@@ -198,6 +203,35 @@ def _send_tenant_password_reset_email(db: Session, to_email: str, reset_url: str
         return False
 
 
+def _send_tenant_request_confirmation_email(db: Session, tenant: TenantAccount, row: MaintenanceOrder) -> bool:
+    try:
+        from app.services.gmail_client import get_gmail_service, gmail_user_id
+
+        service = get_gmail_service(db)
+        reference = _maintenance_reference(row.id)
+        msg = EmailMessage()
+        msg["To"] = tenant.email
+        msg["Subject"] = f"We received your maintenance request {reference}"
+        msg.set_content(
+            f"Hi {tenant.name or 'there'},\n\n"
+            "Thank you. We have received your maintenance request and it has been added to the Dons Premier maintenance queue.\n\n"
+            f"Reference: {reference}\n"
+            f"Property: {_property_label(row.property, row.property_address)}\n"
+            f"Issue: {row.title}\n"
+            f"Status: {row.status.value if hasattr(row.status, 'value') else row.status}\n\n"
+            "Our team will review the details and contact you if we need more information.\n\n"
+            "If this is urgent or unsafe, please call Dons Premier Estate Agents directly instead of waiting for a portal update.\n\n"
+            "Kind regards,\n"
+            "Dons Premier Estate Agents"
+        )
+        raw = base64.urlsafe_b64encode(msg.as_bytes()).decode("utf-8")
+        service.users().messages().send(userId=gmail_user_id(), body={"raw": raw}).execute()
+        return True
+    except Exception:
+        logger.exception("Tenant maintenance confirmation email could not be sent")
+        return False
+
+
 def _cleanup_tenant_password_reset_tokens(db: Session, tenant_id: int | None = None) -> None:
     now = datetime.utcnow()
     q = db.query(TenantPasswordResetToken).filter(TenantPasswordResetToken.expires_at < now)
@@ -287,6 +321,58 @@ def _property_suggestion(row: ManagedProperty) -> dict[str, object]:
     }
 
 
+def _status_value(value: MaintenanceOrderStatus | str | None) -> str:
+    if hasattr(value, "value"):
+        return str(value.value)
+    return str(value or MaintenanceOrderStatus.NEW.value)
+
+
+def _maintenance_reference(order_id: int | None) -> str:
+    return f"DP-MNT-{int(order_id or 0):05d}"
+
+
+def _tenant_timeline(row: MaintenanceOrder) -> list[dict[str, object]]:
+    status = _status_value(row.status).upper()
+    stages = [
+        ("submitted", "Submitted", row.tenant_submitted_at or row.created_at),
+        ("review", "Staff review", row.updated_at),
+        ("approval", "Owner approval / quote", row.owner_sent_at or row.owner_decided_at or row.quote_received_at),
+        ("arranged", "Tradie arranged", row.tradie_arranged_at or row.tenant_notified_at),
+        ("completed", "Completed", row.completed_at),
+    ]
+    progress_map = {
+        MaintenanceOrderStatus.NEW.value: 1,
+        MaintenanceOrderStatus.WAITING_OWNER_APPROVAL.value: 2,
+        MaintenanceOrderStatus.OWNER_APPROVED.value: 2,
+        MaintenanceOrderStatus.OWNER_DECLINED.value: 2,
+        MaintenanceOrderStatus.OWNER_ARRANGING.value: 2,
+        MaintenanceOrderStatus.QUOTE_REQUESTED.value: 2,
+        MaintenanceOrderStatus.QUOTE_RECEIVED.value: 2,
+        MaintenanceOrderStatus.TRADIE_ARRANGED.value: 3,
+        MaintenanceOrderStatus.TENANT_NOTIFIED.value: 3,
+        MaintenanceOrderStatus.COMPLETED.value: 4,
+        MaintenanceOrderStatus.CANCELLED.value: 2,
+    }
+    progress = progress_map.get(status, 1)
+    result: list[dict[str, object]] = []
+    for index, (key, label, at) in enumerate(stages):
+        if status == MaintenanceOrderStatus.CANCELLED.value and key == "completed":
+            state = "stopped"
+            label = "Cancelled"
+        elif status == MaintenanceOrderStatus.COMPLETED.value:
+            state = "complete"
+        elif index == 0:
+            state = "complete"
+        elif progress > index:
+            state = "complete"
+        elif progress == index:
+            state = "current"
+        else:
+            state = "pending"
+        result.append({"key": key, "label": label, "state": state, "at": at})
+    return result
+
+
 def _get_registered_property(db: Session, mailbox: str, property_id: int | None) -> ManagedProperty:
     if not property_id:
         raise HTTPException(status_code=400, detail="Please select your property from the portal property list.")
@@ -335,6 +421,7 @@ def _tenant_to_dict(row: TenantAccount) -> dict:
         "email": row.email,
         "name": row.name,
         "phone": row.phone,
+        "preferred_contact_method": row.preferred_contact_method,
         "property_id": row.property_id,
         "property_label": _property_label(row.property, row.property_address),
         "property_address": row.property.property_address if row.property else row.property_address,
@@ -361,17 +448,19 @@ def _tenant_admin_to_dict(row: TenantAccount) -> dict:
 def _order_to_tenant_dict(row: MaintenanceOrder) -> dict:
     return {
         "id": row.id,
+        "reference": _maintenance_reference(row.id),
         "title": row.title,
         "category": row.category,
         "priority": row.priority,
         "description": row.description,
         "access_notes": row.access_notes,
-        "status": row.status.value if hasattr(row.status, "value") else str(row.status),
+        "status": _status_value(row.status),
         "property_label": _property_label(row.property, row.property_address),
         "created_at": row.created_at,
         "updated_at": row.updated_at,
         "completed_at": row.completed_at,
         "attachment_count": len(row.attachments or []),
+        "timeline": _tenant_timeline(row),
     }
 
 
@@ -618,6 +707,23 @@ def tenant_me(tenant: TenantAccount = Depends(get_current_tenant)):
     return {"tenant": _tenant_to_dict(tenant)}
 
 
+@router.patch("/me")
+def update_tenant_profile(
+    payload: TenantProfileUpdateIn,
+    db: Session = Depends(get_db),
+    tenant: TenantAccount = Depends(get_current_tenant),
+):
+    fields = getattr(payload, "model_fields_set", getattr(payload, "__fields_set__", set()))
+    if "phone" in fields:
+        tenant.phone = _clean(payload.phone, 80)
+    if "preferred_contact_method" in fields:
+        tenant.preferred_contact_method = _clean(payload.preferred_contact_method, 120)
+    tenant.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(tenant)
+    return {"tenant": _tenant_to_dict(tenant)}
+
+
 @router.get("/maintenance-requests")
 def list_tenant_maintenance(
     db: Session = Depends(get_db),
@@ -656,7 +762,7 @@ def create_tenant_maintenance(
         raise HTTPException(status_code=400, detail="Your tenant profile is missing a property address.")
 
     access_notes = _clean(payload.access_notes)
-    preferred_contact = _clean(payload.preferred_contact, 120)
+    preferred_contact = _clean(payload.preferred_contact, 120) or _clean(tenant.preferred_contact_method, 120)
     if preferred_contact:
         access_notes = "\n".join([x for x in [access_notes, f"Preferred tenant contact: {preferred_contact}"] if x])
 
@@ -699,7 +805,20 @@ def create_tenant_maintenance(
     )
     db.commit()
     db.refresh(row)
-    return {"ok": True, "request": _order_to_tenant_dict(row)}
+    confirmation_sent = _send_tenant_request_confirmation_email(db, tenant, row)
+    db.add(
+        MaintenanceEvent(
+            mailbox=row.mailbox,
+            order_id=row.id,
+            actor_user_id=None,
+            event_type="tenant_confirmation_email",
+            detail="Tenant confirmation email sent." if confirmation_sent else "Tenant confirmation email could not be sent automatically.",
+            created_at=datetime.utcnow(),
+        )
+    )
+    db.commit()
+    db.refresh(row)
+    return {"ok": True, "request": _order_to_tenant_dict(row), "confirmation_email_sent": confirmation_sent}
 
 
 @router.post("/maintenance-requests/{order_id}/attachments")

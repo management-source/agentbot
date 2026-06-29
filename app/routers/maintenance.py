@@ -226,6 +226,10 @@ def _status_label(value: MaintenanceOrderStatus | str | None) -> str:
     return _status_value(value).replace("_", " ").title()
 
 
+def _maintenance_reference(order_id: int | None) -> str:
+    return f"DP-MNT-{int(order_id or 0):05d}"
+
+
 def _property_label(row: MaintenanceOrder) -> str:
     tail = " ".join([x for x in [row.suburb, row.state_code, row.postcode] if x])
     return ", ".join([x for x in [row.property_address, tail] if x])
@@ -310,6 +314,7 @@ def _get_order(db: Session, mailbox: str, order_id: int) -> MaintenanceOrder:
             selectinload(MaintenanceOrder.attachments),
             selectinload(MaintenanceOrder.events).selectinload(MaintenanceEvent.actor),
             selectinload(MaintenanceOrder.assignee),
+            selectinload(MaintenanceOrder.tenant_account),
         )
         .filter(MaintenanceOrder.mailbox == mailbox)
         .filter(MaintenanceOrder.id == order_id)
@@ -386,8 +391,10 @@ def _order_to_dict(row: MaintenanceOrder, include_detail: bool = False) -> dict:
     attachments = sorted(row.attachments or [], key=lambda x: x.created_at, reverse=True)
     events = sorted(row.events or [], key=lambda x: x.created_at, reverse=True)
     status = _status_value(row.status)
+    tenant_account = row.tenant_account
     return {
         "id": row.id,
+        "reference": _maintenance_reference(row.id),
         "mailbox": row.mailbox,
         "property_id": row.property_id,
         "property_address": row.property_address,
@@ -428,6 +435,9 @@ def _order_to_dict(row: MaintenanceOrder, include_detail: bool = False) -> dict:
         "completion_notes": row.completion_notes,
         "source": row.source or "staff",
         "tenant_account_id": row.tenant_account_id,
+        "tenant_is_verified": tenant_account.is_verified if tenant_account else None,
+        "tenant_is_active": tenant_account.is_active if tenant_account else None,
+        "tenant_preferred_contact": tenant_account.preferred_contact_method if tenant_account else None,
         "tenant_submitted_at": row.tenant_submitted_at,
         "created_at": row.created_at,
         "updated_at": row.updated_at,
@@ -444,6 +454,7 @@ def _owner_email_body(row: MaintenanceOrder) -> str:
         "",
         "We are writing regarding a maintenance request for your property.",
         "",
+        f"Reference: {_maintenance_reference(row.id)}",
         f"Property: {_property_label(row)}",
         f"Issue: {row.title}",
         f"Category: {row.category or '-'}",
@@ -484,6 +495,7 @@ def _tenant_email_body(row: MaintenanceOrder) -> str:
         "",
         "We are writing about your maintenance request.",
         "",
+        f"Reference: {_maintenance_reference(row.id)}",
         f"Property: {_property_label(row)}",
         f"Issue: {row.title}",
         f"Tradesperson: {tradie}",
@@ -512,6 +524,7 @@ def _tradie_email_body(row: MaintenanceOrder) -> str:
         "",
         "Please see the maintenance work order details below.",
         "",
+        f"Reference: {_maintenance_reference(row.id)}",
         f"Property: {_property_label(row)}",
         f"Issue: {row.title}",
         f"Category: {row.category or '-'}",
@@ -549,19 +562,19 @@ def _email_draft(row: MaintenanceOrder, kind: str, body_text: str | None = None)
     draft_kind = (kind or "").strip().lower()
     if draft_kind in {"owner", "landlord", "owner_approval"}:
         recipient = row.owner_email
-        subject = f"Maintenance request approval - {row.title} - {row.property_address}"
+        subject = f"{_maintenance_reference(row.id)} - Maintenance request approval - {row.title} - {row.property_address}"
         body = _clean(body_text) or _owner_email_body(row)
         next_status = MaintenanceOrderStatus.WAITING_OWNER_APPROVAL
         label = "Owner Approval"
     elif draft_kind in {"tenant", "tenant_arrangement"}:
         recipient = row.tenant_email
-        subject = f"Maintenance update - {row.title} - {row.property_address}"
+        subject = f"{_maintenance_reference(row.id)} - Maintenance update - {row.title} - {row.property_address}"
         body = _clean(body_text) or _tenant_email_body(row)
         next_status = MaintenanceOrderStatus.TENANT_NOTIFIED
         label = "Tenant Arrangement"
     elif draft_kind in {"tradie", "tradesperson", "work_order"}:
         recipient = row.tradie_email
-        subject = f"Maintenance work order - {row.title} - {row.property_address}"
+        subject = f"{_maintenance_reference(row.id)} - Maintenance work order - {row.title} - {row.property_address}"
         body = _clean(body_text) or _tradie_email_body(row)
         next_status = MaintenanceOrderStatus.TRADIE_ARRANGED
         label = "Tradie Work Order"
@@ -751,7 +764,11 @@ def list_maintenance_orders(
 ):
     q = (
         db.query(MaintenanceOrder)
-        .options(selectinload(MaintenanceOrder.assignee), selectinload(MaintenanceOrder.attachments))
+        .options(
+            selectinload(MaintenanceOrder.assignee),
+            selectinload(MaintenanceOrder.attachments),
+            selectinload(MaintenanceOrder.tenant_account),
+        )
         .filter(MaintenanceOrder.mailbox == mailbox)
     )
     if status and status.upper() not in {"ALL", ""}:
