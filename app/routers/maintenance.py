@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from datetime import datetime
 import json
+import mimetypes
 from pathlib import Path
 import re
+import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
@@ -27,7 +29,7 @@ from app.models import (
 
 
 router = APIRouter()
-MAX_MAINTENANCE_ATTACHMENT_BYTES = 20 * 1024 * 1024
+MAX_MAINTENANCE_ATTACHMENT_BYTES = settings.TENANT_UPLOAD_MAX_BYTES
 OPEN_STATUSES = {
     MaintenanceOrderStatus.NEW,
     MaintenanceOrderStatus.WAITING_OWNER_APPROVAL,
@@ -149,6 +151,29 @@ def _tenant_upload_root() -> Path:
     root = Path(settings.TENANT_UPLOAD_DIR).resolve()
     root.mkdir(parents=True, exist_ok=True)
     return root
+
+
+def _maintenance_upload_path(order_id: int, filename: str) -> tuple[Path, str]:
+    safe_name = _safe_filename(filename)
+    relative = Path("staff_uploads") / f"order_{order_id}" / f"{uuid.uuid4().hex}_{safe_name}"
+    root = _tenant_upload_root()
+    target = (root / relative).resolve()
+    if root != target and root not in target.parents:
+        raise HTTPException(status_code=400, detail="Invalid upload path.")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    return target, relative.as_posix()
+
+
+def _upload_content_type(file: UploadFile) -> str:
+    content_type = (file.content_type or "").split(";", 1)[0].strip().lower()
+    if not content_type or content_type == "application/octet-stream":
+        guessed, _ = mimetypes.guess_type(file.filename or "")
+        content_type = (guessed or content_type or "application/octet-stream").lower()
+    return content_type
+
+
+def _is_media_upload(content_type: str) -> bool:
+    return content_type.startswith("image/") or content_type.startswith("video/")
 
 
 def _attachment_disk_path(row: MaintenanceAttachment) -> Path | None:
@@ -996,15 +1021,28 @@ def upload_maintenance_attachment(
     if not raw:
         raise HTTPException(status_code=400, detail="Uploaded file is empty.")
     if len(raw) > MAX_MAINTENANCE_ATTACHMENT_BYTES:
-        raise HTTPException(status_code=413, detail="Maintenance attachment exceeds 20MB.")
+        raise HTTPException(status_code=413, detail="Maintenance attachment exceeds 25MB.")
     clean_kind = (_clean(kind) or "GENERAL").upper()
+    content_type = _upload_content_type(file)
+    store_on_disk = clean_kind == "MEDIA"
+    if store_on_disk and not _is_media_upload(content_type):
+        raise HTTPException(status_code=400, detail="Only image and video files are allowed in the media upload section.")
+    storage_path = None
+    if store_on_disk:
+        target, storage_path = _maintenance_upload_path(row.id, file.filename or "maintenance-media")
+        try:
+            target.write_bytes(raw)
+        except OSError:
+            raise HTTPException(status_code=503, detail="Upload storage is unavailable. Please try again later.")
     attachment = MaintenanceAttachment(
         mailbox=mailbox,
         order_id=row.id,
         kind=clean_kind,
         filename=_safe_filename(file.filename),
-        content_type=file.content_type or "application/octet-stream",
-        content_bytes=raw,
+        content_type=content_type,
+        content_bytes=b"" if store_on_disk else raw,
+        storage_path=storage_path,
+        file_size=len(raw),
         notes=_clean(notes),
         uploaded_by_user_id=user.id,
         created_at=datetime.utcnow(),
@@ -1020,7 +1058,16 @@ def upload_maintenance_attachment(
             row.quote_notes = _clean(quote_notes)
     row.updated_at = now
     _add_event(db, row, "attachment_uploaded", user, f"{clean_kind.title()} uploaded: {attachment.filename}")
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        if storage_path:
+            try:
+                _delete_attachment_file(attachment)
+            except HTTPException:
+                pass
+        raise
     return _order_to_dict(_get_order(db, mailbox, order_id), include_detail=True)
 
 

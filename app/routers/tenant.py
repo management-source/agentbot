@@ -43,6 +43,7 @@ MAX_TENANT_UPLOAD_FILES = 8
 TENANT_UPLOAD_KIND = "TENANT_MEDIA"
 PASSWORD_RESET_EXPIRE_MINUTES = 30
 PASSWORD_RESET_COOLDOWN_MINUTES = 2
+TENANT_PASSWORD_MIN_LENGTH = 8
 
 
 class TenantRegisterIn(BaseModel):
@@ -154,8 +155,8 @@ def _default_mailbox() -> str:
 
 def _validate_password_strength(password: str) -> None:
     p = (password or "").strip()
-    if len(p) < 12:
-        raise HTTPException(status_code=400, detail="Password must be at least 12 characters.")
+    if len(p) < TENANT_PASSWORD_MIN_LENGTH:
+        raise HTTPException(status_code=400, detail=f"Password must be at least {TENANT_PASSWORD_MIN_LENGTH} characters.")
     if not re.search(r"[a-z]", p):
         raise HTTPException(status_code=400, detail="Password must include a lowercase letter.")
     if not re.search(r"[A-Z]", p):
@@ -848,3 +849,32 @@ def update_tenant_registration(
     db.commit()
     db.refresh(row)
     return _tenant_admin_to_dict(row)
+
+
+@router.delete("/admin/registrations/{tenant_id}")
+def delete_tenant_registration(
+    tenant_id: int,
+    mailbox: str = Depends(get_current_mailbox),
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_page_access("maintenance")),
+):
+    row = _tenant_registration_query(db, mailbox).filter(TenantAccount.id == tenant_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Tenant registration not found.")
+
+    now = datetime.utcnow()
+    db.query(MaintenanceOrder).filter(MaintenanceOrder.tenant_account_id == row.id).update(
+        {MaintenanceOrder.tenant_account_id: None, MaintenanceOrder.updated_at: now},
+        synchronize_session=False,
+    )
+    db.query(MaintenanceAttachment).filter(MaintenanceAttachment.uploaded_by_tenant_id == row.id).update(
+        {MaintenanceAttachment.uploaded_by_tenant_id: None},
+        synchronize_session=False,
+    )
+    db.query(TenantPasswordResetToken).filter(TenantPasswordResetToken.tenant_account_id == row.id).delete(
+        synchronize_session=False
+    )
+    deleted_email = row.email
+    db.delete(row)
+    db.commit()
+    return {"ok": True, "deleted_id": tenant_id, "deleted_email": deleted_email}

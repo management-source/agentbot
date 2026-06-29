@@ -2599,6 +2599,7 @@ function renderTenantRegistrations(items = []) {
         <div class="row" style="justify-content:flex-end">
           <button class="btn" onclick="updateTenantRegistration(${item.id}, { is_verified: ${item.is_verified ? "false" : "true"} })">${item.is_verified ? "Unverify" : "Verify"}</button>
           <button class="btn ${item.is_active ? "danger" : "primary"}" onclick="updateTenantRegistration(${item.id}, { is_active: ${item.is_active ? "false" : "true"} })">${item.is_active ? "Deactivate" : "Activate"}</button>
+          <button class="btn danger" onclick="deleteTenantRegistration(${item.id})">Delete</button>
         </div>
       </article>
     `).join("");
@@ -2629,6 +2630,18 @@ async function updateTenantRegistration(tenantId, payload) {
     });
     if (!r.ok) {
         alert(`Failed to update tenant registration: ${await extractErrorMessage(r)}`);
+        return;
+    }
+    await loadTenantRegistrations();
+}
+
+async function deleteTenantRegistration(tenantId, email = "") {
+    const tenant = tenantRegistrationsCache.find((item) => Number(item.id) === Number(tenantId));
+    const label = email || tenant?.email || "this tenant account";
+    if (!confirm(`Delete tenant portal account for ${label}? Maintenance history will stay, but this tenant will no longer be able to log in.`)) return;
+    const r = await apiFetch(`/tenant/api/admin/registrations/${tenantId}`, { method: "DELETE" });
+    if (!r.ok) {
+        alert(`Failed to delete tenant registration: ${await extractErrorMessage(r)}`);
         return;
     }
     await loadTenantRegistrations();
@@ -2867,17 +2880,23 @@ function renderMaintenanceDetail(order) {
       </div>
 
       <div class="maintenance-detail-panel">
-        <h4>Upload Quote / Attachment</h4>
+        <h4>Upload Quote / Media</h4>
         <div class="maintenance-action-strip">
           <input class="wide" type="file" id="maintenanceQuoteFile" />
           <input type="number" min="0" step="0.01" id="maintenanceUploadAmount" placeholder="Quoted amount" value="${order.quoted_amount || ""}" />
           <input type="text" id="maintenanceUploadNotes" placeholder="Quote notes" value="${escapeHtml(order.quote_notes || "")}" />
           <button class="btn primary" onclick="uploadMaintenanceQuote(${order.id})">Upload Quote</button>
         </div>
+        <div class="maintenance-action-strip" style="margin-top:14px">
+          <input class="wide" type="file" id="maintenanceMediaFiles" accept="image/*,video/*" multiple />
+          <input class="wide" type="text" id="maintenanceMediaNotes" placeholder="Photo/video notes, e.g. tenant sent by SMS, before/after repair..." />
+          <button class="btn primary" onclick="uploadMaintenanceMedia(${order.id})">Upload Photos / Videos</button>
+          <div class="small muted" style="align-self:center">Images and videos only, up to 25MB each.</div>
+        </div>
         <div style="margin-top:10px">
           ${attachments.length ? attachments.map((a) => `
             <div class="maintenance-attachment">
-              <div><strong>${escapeHtml(a.filename || "Attachment")}</strong><div class="small muted">${escapeHtml(a.kind || "GENERAL")} - ${escapeHtml(formatDateShort(a.created_at))}</div></div>
+              <div><strong>${escapeHtml(a.filename || "Attachment")}</strong><div class="small muted">${escapeHtml(a.kind || "GENERAL")} - ${escapeHtml(a.source === "tenant" ? "Tenant" : "Staff")} - ${escapeHtml(formatDateShort(a.created_at))}</div></div>
               <div class="row">
                 <button class="btn" onclick="openMaintenanceAttachment(${a.id})">Open</button>
                 <button class="btn danger" onclick="deleteMaintenanceAttachment(${a.id})">Delete</button>
@@ -3090,6 +3109,47 @@ async function uploadMaintenanceQuote(orderId) {
     renderMaintenanceDetail(order);
     await loadMaintenanceDashboard(currentMaintenancePage || 1);
     await loadNotifications();
+}
+
+async function uploadMaintenanceMedia(orderId) {
+    const fileInput = document.getElementById("maintenanceMediaFiles");
+    const files = Array.from((fileInput && fileInput.files) || []);
+    if (!files.length) {
+        alert("Choose one or more photos/videos first.");
+        return;
+    }
+    const maxFileBytes = 25 * 1024 * 1024;
+    const invalid = files.find((file) => {
+        const type = String(file.type || "");
+        return file.size > maxFileBytes || (type && !(type.startsWith("image/") || type.startsWith("video/")));
+    });
+    if (invalid) {
+        alert("Photos/videos must be image or video files and 25MB or smaller each.");
+        return;
+    }
+    const notes = document.getElementById("maintenanceMediaNotes")?.value || "";
+    let latestOrder = null;
+    for (const file of files) {
+        const form = new FormData();
+        form.append("kind", "MEDIA");
+        form.append("file", file, file.name);
+        if (notes) form.append("notes", notes);
+        const r = await apiFetch(`/maintenance/orders/${orderId}/attachments`, { method: "POST", body: form });
+        if (!r.ok) {
+            alert(`Media upload failed for ${file.name}: ${await extractErrorMessage(r)}`);
+            break;
+        }
+        latestOrder = await r.json();
+    }
+    if (fileInput) fileInput.value = "";
+    const notesEl = document.getElementById("maintenanceMediaNotes");
+    if (notesEl) notesEl.value = "";
+    if (latestOrder) {
+        fillMaintenanceForm(latestOrder);
+        renderMaintenanceDetail(latestOrder);
+        await loadMaintenanceDashboard(currentMaintenancePage || 1);
+        await loadNotifications();
+    }
 }
 
 async function openMaintenanceAttachment(attachmentId) {
