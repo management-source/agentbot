@@ -12,6 +12,7 @@ from app.authz import get_current_user
 from app.db import get_db
 from app.deps import get_current_mailbox
 from app.models import (
+    ComplianceProvider,
     ComplianceRecord,
     ComplianceRecordStatus,
     ComplianceType,
@@ -28,6 +29,7 @@ MAIN_CHECK_TYPES = (
     ComplianceType.ELECTRICAL,
 )
 CYCLE_YEARS = {
+    ComplianceType.MRS: 2,
     ComplianceType.GAS: 2,
     ComplianceType.ELECTRICAL: 2,
     ComplianceType.SMOKE: 1,
@@ -52,6 +54,15 @@ class ComplianceRecordUpdateIn(BaseModel):
     provider_name: str | None = None
     result_text: str | None = None
     notes: str | None = None
+
+
+class ComplianceProviderIn(BaseModel):
+    name: str
+    contact_name: str | None = None
+    email: str | None = None
+    phone: str | None = None
+    notes: str | None = None
+    is_active: bool = True
 
 
 def _record_state(row: ComplianceRecord) -> str:
@@ -124,6 +135,20 @@ def _record_to_dict(row: ComplianceRecord) -> dict[str, Any]:
     }
 
 
+def _provider_to_dict(row: ComplianceProvider) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "name": row.name,
+        "contact_name": row.contact_name,
+        "email": row.email,
+        "phone": row.phone,
+        "notes": row.notes,
+        "is_active": row.is_active,
+        "created_at": row.created_at,
+        "updated_at": row.updated_at,
+    }
+
+
 def _coverage_record_to_dict(row: ComplianceRecord | None, compliance_type: ComplianceType) -> dict[str, Any]:
     if not row:
         return {
@@ -159,6 +184,131 @@ def _get_property(db: Session, mailbox: str, property_id: int) -> ManagedPropert
     if not prop:
         raise HTTPException(status_code=404, detail="Property not found.")
     return prop
+
+
+def _clean_provider_payload(payload: ComplianceProviderIn) -> dict[str, Any]:
+    name = (payload.name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Provider name is required.")
+    return {
+        "name": name,
+        "contact_name": (payload.contact_name or "").strip() or None,
+        "email": (payload.email or "").strip() or None,
+        "phone": (payload.phone or "").strip() or None,
+        "notes": (payload.notes or "").strip() or None,
+        "is_active": bool(payload.is_active),
+    }
+
+
+@router.get("/providers")
+def list_providers(
+    query: str | None = None,
+    include_inactive: bool = False,
+    mailbox: str = Depends(get_current_mailbox),
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    q = db.query(ComplianceProvider).filter(ComplianceProvider.mailbox == mailbox)
+    if not include_inactive:
+        q = q.filter(ComplianceProvider.is_active == True)
+    if query and query.strip():
+        like = f"%{query.strip()}%"
+        q = q.filter(
+            or_(
+                ComplianceProvider.name.ilike(like),
+                ComplianceProvider.contact_name.ilike(like),
+                ComplianceProvider.email.ilike(like),
+                ComplianceProvider.phone.ilike(like),
+                ComplianceProvider.notes.ilike(like),
+            )
+        )
+    rows = q.order_by(ComplianceProvider.is_active.desc(), ComplianceProvider.name.asc()).all()
+    return {"items": [_provider_to_dict(row) for row in rows], "total": len(rows)}
+
+
+@router.post("/providers")
+def create_provider(
+    payload: ComplianceProviderIn,
+    mailbox: str = Depends(get_current_mailbox),
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    data = _clean_provider_payload(payload)
+    existing = (
+        db.query(ComplianceProvider)
+        .filter(ComplianceProvider.mailbox == mailbox)
+        .filter(func.lower(ComplianceProvider.name) == data["name"].lower())
+        .first()
+    )
+    now = datetime.utcnow()
+    if existing:
+        for field, value in data.items():
+            setattr(existing, field, value)
+        existing.updated_at = now
+        db.commit()
+        db.refresh(existing)
+        return _provider_to_dict(existing)
+
+    row = ComplianceProvider(mailbox=mailbox, created_at=now, updated_at=now, **data)
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return _provider_to_dict(row)
+
+
+@router.put("/providers/{provider_id}")
+def update_provider(
+    provider_id: int,
+    payload: ComplianceProviderIn,
+    mailbox: str = Depends(get_current_mailbox),
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    row = (
+        db.query(ComplianceProvider)
+        .filter(ComplianceProvider.mailbox == mailbox)
+        .filter(ComplianceProvider.id == provider_id)
+        .first()
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Compliance provider not found.")
+    data = _clean_provider_payload(payload)
+    duplicate = (
+        db.query(ComplianceProvider)
+        .filter(ComplianceProvider.mailbox == mailbox)
+        .filter(ComplianceProvider.id != provider_id)
+        .filter(func.lower(ComplianceProvider.name) == data["name"].lower())
+        .first()
+    )
+    if duplicate:
+        raise HTTPException(status_code=409, detail="Another provider already uses this name.")
+    for field, value in data.items():
+        setattr(row, field, value)
+    row.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(row)
+    return _provider_to_dict(row)
+
+
+@router.delete("/providers/{provider_id}")
+def delete_provider(
+    provider_id: int,
+    mailbox: str = Depends(get_current_mailbox),
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    row = (
+        db.query(ComplianceProvider)
+        .filter(ComplianceProvider.mailbox == mailbox)
+        .filter(ComplianceProvider.id == provider_id)
+        .first()
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Compliance provider not found.")
+    row.is_active = False
+    row.updated_at = datetime.utcnow()
+    db.commit()
+    return {"ok": True}
 
 
 @router.post("/records")

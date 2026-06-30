@@ -87,6 +87,12 @@ PAGE_REGISTRY = [
         "section": "Compliance",
     },
     {
+        "id": "compliance_providers",
+        "label": "Compliance Providers",
+        "description": "Manage reusable provider contacts for compliance records.",
+        "section": "Compliance",
+    },
+    {
         "id": "properties",
         "label": "Properties",
         "description": "Import, add, search, and manage the property register.",
@@ -115,10 +121,10 @@ PAGE_REGISTRY = [
 
 
 DEFAULT_ROLE_PAGE_ACCESS = {
-    UserRole.ADMIN.value: ["portal", "notifications", "myspace", "inbox", "maintenance", "rent", "compliance", "coverage", "properties", "team", "activity", "system"],
-    UserRole.PM.value: ["portal", "notifications", "myspace", "inbox", "maintenance", "rent", "compliance", "coverage", "properties", "team", "activity", "system"],
+    UserRole.ADMIN.value: ["portal", "notifications", "myspace", "inbox", "maintenance", "rent", "compliance", "coverage", "compliance_providers", "properties", "team", "activity", "system"],
+    UserRole.PM.value: ["portal", "notifications", "myspace", "inbox", "maintenance", "rent", "compliance", "coverage", "compliance_providers", "properties", "team", "activity", "system"],
     UserRole.LEASING.value: ["portal", "notifications", "myspace", "inbox", "properties", "team"],
-    UserRole.SALES.value: ["portal", "notifications", "myspace", "inbox", "maintenance", "rent", "compliance", "coverage", "properties", "team", "activity", "system"],
+    UserRole.SALES.value: ["portal", "notifications", "myspace", "inbox", "maintenance", "rent", "compliance", "coverage", "compliance_providers", "properties", "team", "activity", "system"],
     UserRole.ACCOUNTS.value: ["portal", "notifications", "myspace", "inbox", "rent", "team"],
     UserRole.READONLY.value: ["portal", "notifications", "myspace", "team"],
 }
@@ -306,7 +312,7 @@ def _normalize_role_page_access(raw: dict | None) -> dict[str, list[str]]:
         default_selected = set(DEFAULT_ROLE_PAGE_ACCESS.get(key, ["portal"]))
         locked_pages = {str(page["id"]) for page in PAGE_REGISTRY if page.get("locked")}
         missing_default_pages = {
-            page_id for page_id in ("maintenance", "team", "activity", *locked_pages)
+            page_id for page_id in ("maintenance", "team", "activity", "compliance_providers", *locked_pages)
             if page_id in default_selected and page_id not in selected
         }
         if missing_default_pages and selected == (default_selected - missing_default_pages):

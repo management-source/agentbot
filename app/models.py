@@ -613,6 +613,21 @@ class MaintenanceTradie(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
 
+class ComplianceProvider(Base):
+    __tablename__ = "compliance_providers"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    mailbox: Mapped[str] = mapped_column(String, index=True)
+    name: Mapped[str] = mapped_column(String, index=True)
+    contact_name: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    email: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    phone: Mapped[str | None] = mapped_column(String, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
 class ComplianceRecord(Base):
     __tablename__ = "compliance_records"
 

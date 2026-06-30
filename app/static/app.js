@@ -211,6 +211,9 @@ let addressSuggestionsByLabel = {};
 let addressSuggestionTimer = null;
 let complianceRecordsCache = {};
 let editingComplianceRecordId = null;
+let complianceProvidersLoadedOnce = false;
+let complianceProvidersCache = [];
+let editingComplianceProviderId = null;
 
 function isAllEmailsTab() {
     return String(currentTab || "").toLowerCase() === "all";
@@ -258,6 +261,11 @@ function updateSyncContextUI() {
     if (currentDashboardTab === "coverage") {
         if (viewBadge) viewBadge.textContent = "Compliance Report";
         if (info) info.textContent = "Inbox sync controls are hidden while you are on the compliance report tab.";
+        return;
+    }
+    if (currentDashboardTab === "compliance_providers") {
+        if (viewBadge) viewBadge.textContent = "Compliance Providers";
+        if (info) info.textContent = "Inbox sync controls are hidden while you are managing compliance providers.";
         return;
     }
     if (currentDashboardTab === "properties") {
@@ -629,6 +637,7 @@ async function initMailboxes() {
             propertiesLoadedOnce = false;
             complianceLoadedOnce = false;
             coverageLoadedOnce = false;
+            complianceProvidersLoadedOnce = false;
             activityLoadedOnce = false;
             updateSyncContextUI();
             loadTickets();
@@ -651,6 +660,9 @@ async function initMailboxes() {
             if (currentDashboardTab === "coverage") {
                 currentCoveragePage = 1;
                 loadComplianceCoverage();
+            }
+            if (currentDashboardTab === "compliance_providers") {
+                loadComplianceProviders(true);
             }
             refreshPropertyOptions();
             refreshGoogleStatus();
@@ -1477,14 +1489,14 @@ const USER_ROLE_ACCESS = {
         optionLabel: "Administrator",
         defaultAdminAccess: true,
         summary: "Full control over the portal, system users, settings, and all operational workspaces.",
-        access: ["Portal Hub", "My Space", "Email Manager", "Maintenance", "Rent Tracker", "Compliance", "Compliance Report", "Properties", "Our Team", "Activity Log", "System"],
+        access: ["Portal Hub", "My Space", "Email Manager", "Maintenance", "Rent Tracker", "Compliance", "Compliance Report", "Compliance Providers", "Properties", "Our Team", "Activity Log", "System"],
     },
     PM: {
         label: "Property Manager",
         optionLabel: "Property Manager",
         defaultAdminAccess: true,
         summary: "Property management access for inbox triage, maintenance, compliance, rent, and property work.",
-        access: ["Portal Hub", "My Space", "Email Manager", "Maintenance", "Rent Tracker", "Compliance", "Compliance Report", "Properties", "Our Team", "Activity Log", "System"],
+        access: ["Portal Hub", "My Space", "Email Manager", "Maintenance", "Rent Tracker", "Compliance", "Compliance Report", "Compliance Providers", "Properties", "Our Team", "Activity Log", "System"],
     },
     LEASING: {
         label: "Marketing Advisor",
@@ -1497,7 +1509,7 @@ const USER_ROLE_ACCESS = {
         optionLabel: "Director",
         defaultAdminAccess: true,
         summary: "Director-level access across the core portal workspaces.",
-        access: ["Portal Hub", "My Space", "Email Manager", "Maintenance", "Rent Tracker", "Compliance", "Compliance Report", "Properties", "Our Team", "Activity Log", "System"],
+        access: ["Portal Hub", "My Space", "Email Manager", "Maintenance", "Rent Tracker", "Compliance", "Compliance Report", "Compliance Providers", "Properties", "Our Team", "Activity Log", "System"],
     },
     ACCOUNTS: {
         label: "Administrative Assistant",
@@ -1525,6 +1537,7 @@ const FALLBACK_PAGE_REGISTRY = [
     { id: "rent", label: "Rent Tracker", description: "Rent tracking and reports.", section: "Operations" },
     { id: "compliance", label: "Compliance", description: "Compliance records and due dates.", section: "Compliance" },
     { id: "coverage", label: "Compliance Report", description: "Missing and incomplete compliance checks.", section: "Compliance" },
+    { id: "compliance_providers", label: "Compliance Providers", description: "Reusable provider contacts for compliance records.", section: "Compliance" },
     { id: "properties", label: "Properties", description: "Managed property register.", section: "Setup" },
     { id: "team", label: "Our Team", description: "Registered staff profiles and contact details.", section: "Setup" },
     { id: "activity", label: "Activity Log", description: "Staff actions, platform changes, and audit trail.", section: "Setup" },
@@ -1591,6 +1604,44 @@ function firstAccessiblePage() {
     return pages.find((pageId) => canAccessPage(pageId)) || "portal";
 }
 
+function sideSubnavStorageKey(group) {
+    return `agent_side_subnav_${group}_collapsed`;
+}
+
+function isSideSubnavCollapsed(group) {
+    const stored = localStorage.getItem(sideSubnavStorageKey(group));
+    return stored === null ? true : stored === "1";
+}
+
+function applySideSubnavState() {
+    ["maintenance", "compliance"].forEach((group) => {
+        const navGroup = document.querySelector(`[data-side-subnav-group="${group}"]`);
+        const toggle = document.getElementById(`${group}SubnavToggle`);
+        if (!navGroup) return;
+        const collapsed = isSideSubnavCollapsed(group);
+        navGroup.classList.toggle("subnav-collapsed", collapsed);
+        if (toggle) toggle.setAttribute("aria-expanded", String(!collapsed));
+    });
+}
+
+function toggleSideSubnav(group) {
+    const collapsed = !isSideSubnavCollapsed(group);
+    localStorage.setItem(sideSubnavStorageKey(group), collapsed ? "1" : "0");
+    applySideSubnavState();
+}
+
+function openCompliancePrimary() {
+    if (canAccessPage("compliance")) {
+        switchDashboardTab("compliance");
+    } else if (canAccessPage("coverage")) {
+        switchDashboardTab("coverage");
+    } else if (canAccessPage("compliance_providers")) {
+        switchDashboardTab("compliance_providers");
+    } else {
+        alert("This page is not assigned to your role.");
+    }
+}
+
 function applyPageVisibility() {
     const navMap = {
         portal: "navPortal",
@@ -1600,6 +1651,7 @@ function applyPageVisibility() {
         rent: "navRentTracker",
         compliance: "navCompliance",
         coverage: "navComplianceCoverage",
+        compliance_providers: "navComplianceProviders",
         properties: "navProperties",
         team: "navTeam",
         activity: "navActivity",
@@ -1616,6 +1668,16 @@ function applyPageVisibility() {
     }
     const maintenanceSideSubnav = document.getElementById("maintenanceSideSubnav");
     if (maintenanceSideSubnav) maintenanceSideSubnav.classList.toggle("hidden", !canAccessPage("maintenance"));
+    const maintenanceNavGroup = document.getElementById("maintenanceNavGroup");
+    if (maintenanceNavGroup) maintenanceNavGroup.classList.toggle("hidden", !canAccessPage("maintenance"));
+    const complianceMenuVisible = canAccessPage("compliance") || canAccessPage("coverage") || canAccessPage("compliance_providers");
+    const complianceNavGroup = document.getElementById("complianceNavGroup");
+    if (complianceNavGroup) complianceNavGroup.classList.toggle("hidden", !complianceMenuVisible);
+    const complianceSideSubnav = document.getElementById("complianceSideSubnav");
+    if (complianceSideSubnav) complianceSideSubnav.classList.toggle("hidden", !complianceMenuVisible);
+    const navCompliance = document.getElementById("navCompliance");
+    if (navCompliance) navCompliance.classList.toggle("hidden", !complianceMenuVisible);
+    applySideSubnavState();
 
     document.querySelectorAll("[data-page-tile]").forEach((tile) => {
         const pageId = tile.getAttribute("data-page-tile") || "";
@@ -2478,7 +2540,7 @@ function formatDateShort(dt) {
 }
 
 function switchDashboardTab(tab) {
-    const requestedTab = ["portal", "notifications", "myspace", "maintenance", "rent", "compliance", "coverage", "properties", "team", "activity", "system", "inbox"].includes(tab) ? tab : "portal";
+    const requestedTab = ["portal", "notifications", "myspace", "maintenance", "rent", "compliance", "coverage", "compliance_providers", "properties", "team", "activity", "system", "inbox"].includes(tab) ? tab : "portal";
     if (!canAccessPage(requestedTab)) {
         alert("This page is not assigned to your role.");
         currentDashboardTab = firstAccessiblePage();
@@ -2494,6 +2556,7 @@ function switchDashboardTab(tab) {
         rent: ["Rent Tracker", "Track rental due dates, payments, arrears, and yearly rent reporting."],
         compliance: ["Compliance", "Create and update compliance records with calculated due dates."],
         coverage: ["Compliance Report", "Review missing and incomplete MRS, Smoke, Gas, and Electrical checks."],
+        compliance_providers: ["Compliance Providers", "Manage reusable provider contacts for compliance records."],
         properties: ["Properties", "Maintain the active Victorian managed property register."],
         team: ["Our Team", "Browse registered staff profiles, roles, contact details, and profile photos."],
         activity: ["Activity Log", "Audit staff actions, platform changes, imports, uploads, and security events."],
@@ -2515,6 +2578,7 @@ function switchDashboardTab(tab) {
     const activityPanel = document.getElementById("activityPanel");
     const compliancePanel = document.getElementById("compliancePanel");
     const coveragePanel = document.getElementById("coveragePanel");
+    const complianceProvidersPanel = document.getElementById("complianceProvidersPanel");
     const systemPanel = document.getElementById("systemPanel");
     const navInbox = document.getElementById("navInbox");
     const navMaintenance = document.getElementById("navMaintenance");
@@ -2527,6 +2591,7 @@ function switchDashboardTab(tab) {
     const navSystem = document.getElementById("btnSystemUsers");
     const navCompliance = document.getElementById("navCompliance");
     const navCoverage = document.getElementById("navComplianceCoverage");
+    const navComplianceProviders = document.getElementById("navComplianceProviders");
     const shell = document.getElementById("dashboardShell");
 
     if (portalPanel) portalPanel.classList.toggle("hidden", currentDashboardTab !== "portal");
@@ -2540,6 +2605,7 @@ function switchDashboardTab(tab) {
     if (activityPanel) activityPanel.classList.toggle("hidden", currentDashboardTab !== "activity");
     if (compliancePanel) compliancePanel.classList.toggle("hidden", currentDashboardTab !== "compliance");
     if (coveragePanel) coveragePanel.classList.toggle("hidden", currentDashboardTab !== "coverage");
+    if (complianceProvidersPanel) complianceProvidersPanel.classList.toggle("hidden", currentDashboardTab !== "compliance_providers");
     if (systemPanel) systemPanel.classList.toggle("hidden", currentDashboardTab !== "system");
     if (navPortal) navPortal.classList.toggle("active", currentDashboardTab === "portal");
     if (navMySpace) navMySpace.classList.toggle("active", currentDashboardTab === "myspace");
@@ -2550,8 +2616,16 @@ function switchDashboardTab(tab) {
     if (navTeam) navTeam.classList.toggle("active", currentDashboardTab === "team");
     if (navActivity) navActivity.classList.toggle("active", currentDashboardTab === "activity");
     if (navSystem) navSystem.classList.toggle("active", currentDashboardTab === "system");
-    if (navCompliance) navCompliance.classList.toggle("active", currentDashboardTab === "compliance");
+    if (navCompliance) navCompliance.classList.toggle("active", ["compliance", "coverage", "compliance_providers"].includes(currentDashboardTab));
     if (navCoverage) navCoverage.classList.toggle("active", currentDashboardTab === "coverage");
+    if (navComplianceProviders) navComplianceProviders.classList.toggle("active", currentDashboardTab === "compliance_providers");
+    document.querySelectorAll("[data-compliance-view]").forEach((btn) => {
+        const view = btn.getAttribute("data-compliance-view");
+        const isActive = (view === "checks" && currentDashboardTab === "compliance")
+            || (view === "coverage" && currentDashboardTab === "coverage")
+            || (view === "providers" && currentDashboardTab === "compliance_providers");
+        btn.classList.toggle("active", isActive);
+    });
     if (shell) {
         shell.classList.toggle("inbox-mode", currentDashboardTab === "inbox");
         shell.classList.toggle("maintenance-mode", currentDashboardTab === "maintenance");
@@ -2561,6 +2635,7 @@ function switchDashboardTab(tab) {
         shell.classList.toggle("rent-mode", currentDashboardTab === "rent");
         shell.classList.toggle("compliance-mode", currentDashboardTab === "compliance");
         shell.classList.toggle("coverage-mode", currentDashboardTab === "coverage");
+        shell.classList.toggle("compliance-providers-mode", currentDashboardTab === "compliance_providers");
         shell.classList.toggle("properties-mode", currentDashboardTab === "properties");
         shell.classList.toggle("team-mode", currentDashboardTab === "team");
         shell.classList.toggle("activity-mode", currentDashboardTab === "activity");
@@ -2595,10 +2670,14 @@ function switchDashboardTab(tab) {
     }
     if (currentDashboardTab === "compliance" && !complianceLoadedOnce) {
         refreshPropertyOptions();
+        loadComplianceProviders();
         loadComplianceDashboard();
     }
     if (currentDashboardTab === "coverage" && !coverageLoadedOnce) {
         loadComplianceCoverage();
+    }
+    if (currentDashboardTab === "compliance_providers" && !complianceProvidersLoadedOnce) {
+        loadComplianceProviders(true);
     }
     if (currentDashboardTab === "system" && !usersLoadedOnce) {
         renderUsersList();
@@ -4043,7 +4122,7 @@ function complianceTypeLabel(type) {
 function complianceCycleHint(type) {
     const key = String(type || "").toUpperCase();
     if (key === "SMOKE") return "12 months";
-    if (key === "GAS" || key === "ELECTRICAL") return "2 years";
+    if (key === "GAS" || key === "ELECTRICAL" || key === "MRS") return "2 years";
     return "Tracked manually";
 }
 
@@ -4073,7 +4152,7 @@ function addYearsToDateInput(dateValue, years) {
 function calculatedNextDueInput(type, doneDate) {
     const key = String(type || "").toUpperCase();
     if (key === "SMOKE") return addYearsToDateInput(doneDate, 1);
-    if (key === "GAS" || key === "ELECTRICAL") return addYearsToDateInput(doneDate, 2);
+    if (key === "GAS" || key === "ELECTRICAL" || key === "MRS") return addYearsToDateInput(doneDate, 2);
     return "";
 }
 
@@ -4793,6 +4872,149 @@ function updateCompliancePropertySelection() {
     return match;
 }
 
+function renderComplianceProviderOptions() {
+    const list = document.getElementById("complianceProviderOptions");
+    if (!list) return;
+    list.innerHTML = complianceProvidersCache
+        .filter((provider) => provider && provider.is_active !== false)
+        .map((provider) => `<option value="${escapeHtml(provider.name || "")}"></option>`)
+        .join("");
+}
+
+function renderComplianceProviders() {
+    const body = document.getElementById("complianceProvidersTableBody");
+    const meta = document.getElementById("complianceProvidersMeta");
+    if (!body) return;
+    const query = String(document.getElementById("complianceProvidersSearch")?.value || "").trim().toLowerCase();
+    const items = complianceProvidersCache.filter((provider) => {
+        if (!query) return true;
+        return [provider.name, provider.contact_name, provider.email, provider.phone, provider.notes]
+            .some((value) => String(value || "").toLowerCase().includes(query));
+    });
+    if (meta) {
+        const activeCount = complianceProvidersCache.filter((provider) => provider.is_active !== false).length;
+        meta.textContent = `${activeCount} active provider${activeCount === 1 ? "" : "s"} - ${complianceProvidersCache.length} total saved`;
+    }
+    if (!items.length) {
+        body.innerHTML = `<tr><td colspan="6" class="muted">No compliance providers found.</td></tr>`;
+        return;
+    }
+    body.innerHTML = items.map((provider) => `
+        <tr>
+          <td>
+            <div style="font-weight:800">${escapeHtml(provider.name || "-")}</div>
+            <div class="small muted">${provider.is_active === false ? "Inactive" : "Active provider"}</div>
+          </td>
+          <td>${escapeHtml(provider.contact_name || "-")}</td>
+          <td>${escapeHtml(provider.email || "-")}</td>
+          <td>${escapeHtml(provider.phone || "-")}</td>
+          <td class="small">${escapeHtml(provider.notes || "-")}</td>
+          <td>
+            <div class="row">
+              <button class="btn" onclick="editComplianceProvider(${provider.id})">Edit</button>
+              <button class="btn danger" onclick="deleteComplianceProvider(${provider.id})">Deactivate</button>
+            </div>
+          </td>
+        </tr>
+    `).join("");
+}
+
+async function loadComplianceProviders(force = false) {
+    if (complianceProvidersLoadedOnce && !force) {
+        renderComplianceProviderOptions();
+        renderComplianceProviders();
+        return;
+    }
+    const r = await apiFetch("/compliance/providers?include_inactive=true");
+    if (!r.ok) {
+        const body = document.getElementById("complianceProvidersTableBody");
+        if (body) body.innerHTML = `<tr><td colspan="6" class="muted">Failed to load providers: ${escapeHtml(await extractErrorMessage(r))}</td></tr>`;
+        return;
+    }
+    const data = await r.json();
+    complianceProvidersCache = Array.isArray(data.items) ? data.items : [];
+    complianceProvidersLoadedOnce = true;
+    renderComplianceProviderOptions();
+    renderComplianceProviders();
+}
+
+function resetComplianceProviderForm() {
+    editingComplianceProviderId = null;
+    const title = document.getElementById("complianceProviderFormTitle");
+    if (title) title.textContent = "Add Provider";
+    ["complianceProviderName", "complianceProviderContact", "complianceProviderEmail", "complianceProviderPhone", "complianceProviderNotes"].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.value = "";
+    });
+    const active = document.getElementById("complianceProviderActive");
+    if (active) active.checked = true;
+}
+
+function complianceProviderPayload() {
+    return {
+        name: String(document.getElementById("complianceProviderName")?.value || "").trim(),
+        contact_name: String(document.getElementById("complianceProviderContact")?.value || "").trim() || null,
+        email: String(document.getElementById("complianceProviderEmail")?.value || "").trim() || null,
+        phone: String(document.getElementById("complianceProviderPhone")?.value || "").trim() || null,
+        notes: String(document.getElementById("complianceProviderNotes")?.value || "").trim() || null,
+        is_active: Boolean(document.getElementById("complianceProviderActive")?.checked),
+    };
+}
+
+function editComplianceProvider(providerId) {
+    const provider = complianceProvidersCache.find((item) => Number(item.id) === Number(providerId));
+    if (!provider) return;
+    editingComplianceProviderId = provider.id;
+    const title = document.getElementById("complianceProviderFormTitle");
+    if (title) title.textContent = "Edit Provider";
+    const set = (id, value) => {
+        const el = document.getElementById(id);
+        if (el) el.value = value || "";
+    };
+    set("complianceProviderName", provider.name);
+    set("complianceProviderContact", provider.contact_name);
+    set("complianceProviderEmail", provider.email);
+    set("complianceProviderPhone", provider.phone);
+    set("complianceProviderNotes", provider.notes);
+    const active = document.getElementById("complianceProviderActive");
+    if (active) active.checked = provider.is_active !== false;
+    document.getElementById("complianceProviderName")?.focus();
+}
+
+async function saveComplianceProvider() {
+    const payload = complianceProviderPayload();
+    if (!payload.name) {
+        alert("Provider name is required.");
+        return;
+    }
+    const url = editingComplianceProviderId
+        ? `/compliance/providers/${editingComplianceProviderId}`
+        : "/compliance/providers";
+    const r = await apiFetch(url, {
+        method: editingComplianceProviderId ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+    });
+    if (!r.ok) {
+        alert(`Failed to save provider: ${await extractErrorMessage(r)}`);
+        return;
+    }
+    resetComplianceProviderForm();
+    await loadComplianceProviders(true);
+}
+
+async function deleteComplianceProvider(providerId) {
+    const provider = complianceProvidersCache.find((item) => Number(item.id) === Number(providerId));
+    if (!confirm(`Deactivate ${provider?.name || "this provider"}? Existing compliance records will keep their provider text.`)) return;
+    const r = await apiFetch(`/compliance/providers/${providerId}`, { method: "DELETE" });
+    if (!r.ok) {
+        alert(`Failed to deactivate provider: ${await extractErrorMessage(r)}`);
+        return;
+    }
+    if (Number(editingComplianceProviderId) === Number(providerId)) resetComplianceProviderForm();
+    await loadComplianceProviders(true);
+}
+
 function getComplianceFilters() {
     return {
         state: (document.getElementById("complianceStateFilter")?.value || "").trim(),
@@ -4981,6 +5203,7 @@ function updateComplianceEditNextDuePreview() {
 }
 
 function openComplianceEditModal(recordId) {
+    loadComplianceProviders();
     const record = complianceRecordsCache[recordId];
     if (!record) {
         alert("This record is not loaded anymore. Please refresh the compliance dashboard.");
@@ -7121,6 +7344,10 @@ window.addEventListener("load", async () => {
                 }
             }, 250);
         });
+    }
+    const complianceProvidersSearch = document.getElementById("complianceProvidersSearch");
+    if (complianceProvidersSearch) {
+        complianceProvidersSearch.addEventListener("input", renderComplianceProviders);
     }
     const coverageSearch = document.getElementById("coverageSearchBox");
     if (coverageSearch) {

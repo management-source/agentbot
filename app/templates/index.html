@@ -196,6 +196,53 @@
       background:rgba(255,255,255,.07);
       border-color:rgba(255,255,255,.1);
     }
+    .side-nav-group{
+      display:grid;
+      gap:4px;
+    }
+    .side-nav-row{
+      display:grid;
+      grid-template-columns:minmax(0, 1fr) 34px;
+      gap:6px;
+      align-items:center;
+    }
+    .side-nav-row > a{
+      min-width:0;
+    }
+    .side-subnav-toggle{
+      width:34px;
+      height:34px;
+      border:1px solid rgba(255,255,255,.10);
+      border-radius:10px;
+      background:rgba(255,255,255,.04);
+      color:#cdd8e7;
+      cursor:pointer;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      transition:background .18s ease, border-color .18s ease, color .18s ease;
+    }
+    .side-subnav-toggle:hover{
+      background:rgba(255,255,255,.09);
+      border-color:rgba(201,162,70,.28);
+      color:#fff7df;
+    }
+    .side-subnav-toggle svg{
+      width:18px;
+      height:18px;
+      stroke:currentColor;
+      stroke-width:2;
+      fill:none;
+      stroke-linecap:round;
+      stroke-linejoin:round;
+      transition:transform .18s ease;
+    }
+    .side-nav-group:not(.subnav-collapsed) .side-subnav-toggle svg{
+      transform:rotate(180deg);
+    }
+    .side-nav-group.subnav-collapsed .side-subnav{
+      display:none !important;
+    }
     .side-subnav{
       display:grid;
       gap:4px;
@@ -283,10 +330,18 @@
     .app-shell.sidebar-collapsed .nav-label{
       display:none;
     }
+    .app-shell.sidebar-collapsed .side-nav-row{
+      display:block;
+    }
+    .app-shell.sidebar-collapsed .side-subnav-toggle{
+      display:none;
+    }
     .app-shell.sidebar-collapsed .side-subnav{
       display:none;
     }
     @media (max-width: 1040px){
+      .app-shell.sidebar-collapsed .side-nav-row{display:grid}
+      .app-shell.sidebar-collapsed .side-subnav-toggle{display:inline-flex}
       .app-shell.sidebar-collapsed .side-nav a{justify-content:flex-start}
       .app-shell.sidebar-collapsed .nav-label{display:inline}
       .app-shell.sidebar-collapsed .side-subnav{display:grid}
@@ -3853,28 +3908,39 @@
                   x="4" y="6" width="16" height="12" rx="2"></rect><path
                   d="m4 8 8 6 8-6"></path></svg></span><span
               class="nav-label">Email Manager</span></a>
-          <a id="navMaintenance" href="javascript:void(0)"
-            onclick="switchDashboardTab('maintenance'); switchMaintenanceView('dashboard')"
-            title="Maintenance"><span
-              class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path
-                  d="M14.7 6.3a4 4 0 0 0-5 5L4 17v3h3l5.7-5.7a4 4 0 0 0 5-5l-2.8 2.8-2-2z"></path><path
-                  d="M15 19h5"></path></svg></span><span
-              class="nav-label">Maintenance</span></a>
-          <div class="side-subnav" id="maintenanceSideSubnav">
-            <button type="button" data-maintenance-view="new"
-              onclick="switchDashboardTab('maintenance'); switchMaintenanceView('new')">New
-              Request</button>
-            <button type="button" data-maintenance-view="active"
-              onclick="switchDashboardTab('maintenance'); switchMaintenanceView('active')">Active
-              Jobs</button>
-            <button type="button" data-maintenance-view="complete"
-              onclick="switchDashboardTab('maintenance'); switchMaintenanceView('complete')">Complete
-              Jobs</button>
-            <button type="button" data-maintenance-view="tenants"
-              onclick="switchDashboardTab('maintenance'); switchMaintenanceView('tenants')">Tenant
-              Registrations</button>
-            <button type="button" data-maintenance-view="tradies"
-              onclick="switchDashboardTab('maintenance'); switchMaintenanceView('tradies')">Tradies</button>
+          <div class="side-nav-group subnav-collapsed" id="maintenanceNavGroup"
+            data-side-subnav-group="maintenance">
+            <div class="side-nav-row">
+              <a id="navMaintenance" href="javascript:void(0)"
+                onclick="switchDashboardTab('maintenance'); switchMaintenanceView('dashboard')"
+                title="Maintenance"><span
+                  class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path
+                      d="M14.7 6.3a4 4 0 0 0-5 5L4 17v3h3l5.7-5.7a4 4 0 0 0 5-5l-2.8 2.8-2-2z"></path><path
+                      d="M15 19h5"></path></svg></span><span
+                  class="nav-label">Maintenance</span></a>
+              <button class="side-subnav-toggle" id="maintenanceSubnavToggle"
+                type="button" onclick="toggleSideSubnav('maintenance')"
+                aria-label="Toggle maintenance menu" aria-expanded="false">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path
+                    d="m6 9 6 6 6-6"></path></svg>
+              </button>
+            </div>
+            <div class="side-subnav" id="maintenanceSideSubnav">
+              <button type="button" data-maintenance-view="new"
+                onclick="switchDashboardTab('maintenance'); switchMaintenanceView('new')">New
+                Request</button>
+              <button type="button" data-maintenance-view="active"
+                onclick="switchDashboardTab('maintenance'); switchMaintenanceView('active')">Active
+                Jobs</button>
+              <button type="button" data-maintenance-view="complete"
+                onclick="switchDashboardTab('maintenance'); switchMaintenanceView('complete')">Complete
+                Jobs</button>
+              <button type="button" data-maintenance-view="tenants"
+                onclick="switchDashboardTab('maintenance'); switchMaintenanceView('tenants')">Tenant
+                Registrations</button>
+              <button type="button" data-maintenance-view="tradies"
+                onclick="switchDashboardTab('maintenance'); switchMaintenanceView('tradies')">Tradies</button>
+            </div>
           </div>
           <a id="navRentTracker" href="javascript:void(0)"
             onclick="switchDashboardTab('rent')" title="Rent Tracker"><span
@@ -3883,20 +3949,34 @@
                   d="M6 10v10h12V10"></path><path
                   d="M10 20v-5h4v5"></path></svg></span><span
               class="nav-label">Rent Tracker</span></a>
-          <a id="navCompliance" href="javascript:void(0)"
-            onclick="switchDashboardTab('compliance')" title="Compliance"><span
-              class="nav-icon"><svg viewBox="0 0 24 24"
-                aria-hidden="true"><circle cx="12" cy="12" r="8"></circle><path
-                  d="m8.5 12.5 2.2 2.2 4.8-5.2"></path></svg></span><span
-              class="nav-label">Compliance</span></a>
-          <a id="navComplianceCoverage" href="javascript:void(0)"
-            onclick="switchDashboardTab('coverage')"
-            title="Compliance Report"><span class="nav-icon"><svg
-                viewBox="0 0 24 24" aria-hidden="true"><path
-                  d="M5 20V4h14v16"></path><path d="M8 16v-4"></path><path
-                  d="M12 16V8"></path><path
-                  d="M16 16v-6"></path></svg></span><span
-              class="nav-label">Compliance Report</span></a>
+          <div class="side-nav-group subnav-collapsed" id="complianceNavGroup"
+            data-side-subnav-group="compliance">
+            <div class="side-nav-row">
+              <a id="navCompliance" href="javascript:void(0)"
+                onclick="openCompliancePrimary()"
+                title="Compliance"><span
+                  class="nav-icon"><svg viewBox="0 0 24 24"
+                    aria-hidden="true"><circle cx="12" cy="12" r="8"></circle><path
+                      d="m8.5 12.5 2.2 2.2 4.8-5.2"></path></svg></span><span
+                  class="nav-label">Compliance</span></a>
+              <button class="side-subnav-toggle" id="complianceSubnavToggle"
+                type="button" onclick="toggleSideSubnav('compliance')"
+                aria-label="Toggle compliance menu" aria-expanded="false">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path
+                    d="m6 9 6 6 6-6"></path></svg>
+              </button>
+            </div>
+            <div class="side-subnav" id="complianceSideSubnav">
+              <button type="button" data-compliance-view="checks"
+                onclick="switchDashboardTab('compliance')">Checks</button>
+              <button id="navComplianceCoverage" type="button"
+                data-compliance-view="coverage"
+                onclick="switchDashboardTab('coverage')">Compliance Report</button>
+              <button id="navComplianceProviders" type="button"
+                data-compliance-view="providers"
+                onclick="switchDashboardTab('compliance_providers')">Providers</button>
+            </div>
+          </div>
         </nav>
         <div class="side-bottom">
           <div class="side-section-label">Setup</div>
@@ -5411,7 +5491,10 @@
                     </div>
                     <div class="field" style="min-width:180px">
                       <div class="label">Provider</div>
-                      <input type="text" id="complianceProviderInput" />
+                      <input type="text" id="complianceProviderInput"
+                        list="complianceProviderOptions"
+                        placeholder="Start typing provider..." />
+                      <datalist id="complianceProviderOptions"></datalist>
                     </div>
                     <button class="btn primary"
                       onclick="createComplianceRecord()">Add Record</button>
@@ -5419,7 +5502,7 @@
                   <div class="small muted" style="margin-top:8px">If Date Done
                     is entered, the record is marked completed and the next due
                     date is calculated automatically. Smoke: 12 months.
-                    Gas/Electrical: 2 years.</div>
+                    MRS/Gas/Electrical: 2 years.</div>
                   <div class="field" style="margin-top:10px">
                     <div class="label">Notes</div>
                     <input type="text" id="complianceNotesInput"
@@ -5584,6 +5667,107 @@
                     onclick="prevCoveragePage()">Prev</button>
                   <button class="btn" id="coverageBtnNext"
                     onclick="nextCoveragePage()">Next</button>
+                </div>
+              </div>
+
+              <div id="complianceProvidersPanel" class="hidden">
+                <div class="page-banner">
+                  <div class="page-banner-kicker">Compliance Providers</div>
+                  <h2>Providers</h2>
+                  <p>Keep a clean provider register so compliance records can be
+                    completed faster with consistent names and contact details.</p>
+                  <div class="page-banner-actions">
+                    <span class="chip">Reusable contacts</span>
+                    <span class="chip">Autocomplete ready</span>
+                    <span class="chip">Active provider list</span>
+                  </div>
+                </div>
+
+                <div class="dashboard-grid" style="align-items:start">
+                  <section class="card">
+                    <div class="row space">
+                      <div>
+                        <p class="panel-title" id="complianceProviderFormTitle">Add Provider</p>
+                        <p class="panel-sub">Save compliance companies once,
+                          then reuse them in the provider field.</p>
+                      </div>
+                      <button class="btn" type="button"
+                        onclick="resetComplianceProviderForm()">Clear</button>
+                    </div>
+                    <div class="form-grid" style="margin-top:12px">
+                      <div class="field">
+                        <div class="label">Provider Name</div>
+                        <input id="complianceProviderName"
+                          placeholder="Example: Detector Inspector" />
+                      </div>
+                      <div class="field">
+                        <div class="label">Contact Person</div>
+                        <input id="complianceProviderContact"
+                          placeholder="Contact name" />
+                      </div>
+                      <div class="field">
+                        <div class="label">Email</div>
+                        <input id="complianceProviderEmail" type="email"
+                          placeholder="provider@example.com" />
+                      </div>
+                      <div class="field">
+                        <div class="label">Phone</div>
+                        <input id="complianceProviderPhone"
+                          placeholder="Phone number" />
+                      </div>
+                    </div>
+                    <div class="field" style="margin-top:12px">
+                      <div class="label">Notes</div>
+                      <textarea id="complianceProviderNotes"
+                        placeholder="Coverage area, preferred booking process, account notes..."></textarea>
+                    </div>
+                    <div class="row space" style="margin-top:12px">
+                      <label class="checkbox">
+                        <input type="checkbox" id="complianceProviderActive"
+                          checked />
+                        Active provider
+                      </label>
+                      <button class="btn primary" type="button"
+                        onclick="saveComplianceProvider()">Save Provider</button>
+                    </div>
+                  </section>
+
+                  <section class="card">
+                    <div class="row space">
+                      <div>
+                        <p class="panel-title">Provider Register</p>
+                        <p class="panel-sub" id="complianceProvidersMeta">No
+                          providers loaded yet.</p>
+                      </div>
+                      <button class="btn" type="button"
+                        onclick="loadComplianceProviders(true)">Refresh</button>
+                    </div>
+                    <div class="filters-row" style="margin-top:12px">
+                      <div class="field" style="min-width:280px;flex:1">
+                        <div class="label">Search Providers</div>
+                        <input id="complianceProvidersSearch"
+                          placeholder="Provider, contact, email, phone..." />
+                      </div>
+                    </div>
+                    <div class="rent-table-wrap">
+                      <table class="rent-table" style="min-width:900px">
+                        <thead>
+                          <tr>
+                            <th>Provider</th>
+                            <th>Contact</th>
+                            <th>Email</th>
+                            <th>Phone</th>
+                            <th>Notes</th>
+                            <th>Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody id="complianceProvidersTableBody">
+                          <tr><td colspan="6" class="muted">Open this page to
+                              load providers.</td></tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </section>
                 </div>
               </div>
 
@@ -5919,7 +6103,8 @@
           <div class="row" style="align-items:flex-end;margin-top:10px">
             <div class="field" style="min-width:220px;flex:1">
               <div class="label">Provider</div>
-              <input type="text" id="editComplianceProvider" />
+              <input type="text" id="editComplianceProvider"
+                list="complianceProviderOptions" />
             </div>
             <div class="field" style="min-width:220px;flex:1">
               <div class="label">Result / Finding</div>

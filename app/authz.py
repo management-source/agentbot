@@ -14,10 +14,10 @@ from app.security import decode_access_token
 ROLE_PAGE_ACCESS_KEY = "system:role_page_access"
 DEFAULT_ADMIN_ACCESS_ROLES = {UserRole.ADMIN.value, UserRole.PM.value, UserRole.SALES.value}
 DEFAULT_PAGE_ACCESS = {
-    UserRole.ADMIN.value: {"portal", "notifications", "myspace", "inbox", "maintenance", "rent", "compliance", "coverage", "properties", "team", "activity", "system"},
-    UserRole.PM.value: {"portal", "notifications", "myspace", "inbox", "maintenance", "rent", "compliance", "coverage", "properties", "team", "activity", "system"},
+    UserRole.ADMIN.value: {"portal", "notifications", "myspace", "inbox", "maintenance", "rent", "compliance", "coverage", "compliance_providers", "properties", "team", "activity", "system"},
+    UserRole.PM.value: {"portal", "notifications", "myspace", "inbox", "maintenance", "rent", "compliance", "coverage", "compliance_providers", "properties", "team", "activity", "system"},
     UserRole.LEASING.value: {"portal", "notifications", "myspace", "inbox", "properties", "team"},
-    UserRole.SALES.value: {"portal", "notifications", "myspace", "inbox", "maintenance", "rent", "compliance", "coverage", "properties", "team", "activity", "system"},
+    UserRole.SALES.value: {"portal", "notifications", "myspace", "inbox", "maintenance", "rent", "compliance", "coverage", "compliance_providers", "properties", "team", "activity", "system"},
     UserRole.ACCOUNTS.value: {"portal", "notifications", "myspace", "inbox", "rent", "team"},
     UserRole.READONLY.value: {"portal", "notifications", "myspace", "team"},
 }
@@ -62,7 +62,10 @@ def has_page_access(role: UserRole | str | None, page_id: str, db: Session | Non
                 parsed = None
             pages = parsed.get(key) if isinstance(parsed, dict) else None
             if isinstance(pages, list):
-                return page in {str(page_id).strip() for page_id in pages}
+                selected = {str(page_id).strip() for page_id in pages}
+                if "compliance" in selected:
+                    selected.add("compliance_providers")
+                return page in selected
     return page in DEFAULT_PAGE_ACCESS.get(key, {"portal"})
 
 
