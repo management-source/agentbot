@@ -25,12 +25,45 @@ NS = {"a": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
 VICMAP_ADDRESS_QUERY_URL = "https://services-ap1.arcgis.com/P744lA0wf4LlBZ84/ArcGIS/rest/services/Vicmap_Address/FeatureServer/0/query"
 
 
+class PropertyContactIn(BaseModel):
+    name: str | None = None
+    email: str | None = None
+    mobile: str | None = None
+    phone: str | None = None
+    phones: list[str] | None = None
+    is_company: bool = False
+
+
 class PropertyCreateIn(BaseModel):
     property_address: str
     address_line_2: str | None = None
     suburb: str | None = None
     state_code: str | None = None
     postcode: str | None = None
+    crm_property_id: str | None = None
+    property_type: str | None = None
+    rental_type: str | None = None
+    key_number: str | None = None
+    owner_is_company: bool = False
+    tenancy_status: str | None = None
+    owners: list[PropertyContactIn] | None = None
+    tenants: list[PropertyContactIn] | None = None
+
+
+class PropertyUpdateIn(BaseModel):
+    property_address: str | None = None
+    address_line_2: str | None = None
+    suburb: str | None = None
+    state_code: str | None = None
+    postcode: str | None = None
+    crm_property_id: str | None = None
+    property_type: str | None = None
+    rental_type: str | None = None
+    key_number: str | None = None
+    owner_is_company: bool | None = None
+    tenancy_status: str | None = None
+    owners: list[PropertyContactIn] | None = None
+    tenants: list[PropertyContactIn] | None = None
 
 
 def _normalize_text(value: str | None) -> str:
@@ -112,6 +145,56 @@ def _contact_book(
     }
 
 
+def _contact_book_from_contacts(
+    contacts_raw: list[PropertyContactIn] | None,
+    *,
+    default_label: str,
+    is_company_default: bool = False,
+) -> dict[str, object]:
+    contacts: list[dict[str, object]] = []
+    raw_names: list[str] = []
+    raw_emails: list[str] = []
+    raw_mobiles: list[str] = []
+    raw_phones: list[str] = []
+    for idx, item in enumerate(contacts_raw or []):
+        name = _normalize_text(item.name) or f"{default_label} {idx + 1}"
+        email = _normalize_text(item.email)
+        mobile = _normalize_text(item.mobile)
+        phone = _normalize_text(item.phone)
+        extra_phones = [_normalize_text(value) for value in (item.phones or []) if _normalize_text(value)]
+        phones = _dedupe([mobile, phone, *extra_phones])
+        if not name and not email and not phones:
+            continue
+        raw_names.append(name)
+        if email:
+            raw_emails.append(email)
+        if mobile:
+            raw_mobiles.append(mobile)
+        if phone:
+            raw_phones.append(phone)
+        contacts.append(
+            {
+                "name": name,
+                "email": email,
+                "mobile": mobile,
+                "phone": phone,
+                "phones": phones,
+                "is_company": bool(item.is_company or is_company_default),
+            }
+        )
+    return {
+        "contacts": contacts,
+        "extra_mobiles": [],
+        "extra_phones": [],
+        "raw": {
+            "names": raw_names,
+            "emails": raw_emails,
+            "mobiles": raw_mobiles,
+            "phones": raw_phones,
+        },
+    }
+
+
 def _json_dumps(value: object) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
@@ -124,6 +207,28 @@ def _json_loads(value: str | None) -> dict[str, object]:
         return parsed if isinstance(parsed, dict) else {"contacts": [], "extra_mobiles": [], "extra_phones": [], "raw": {}}
     except Exception:
         return {"contacts": [], "extra_mobiles": [], "extra_phones": [], "raw": {}}
+
+
+def _contacts_from_book(book: dict[str, object]) -> list[PropertyContactIn]:
+    contacts = book.get("contacts") if isinstance(book, dict) else []
+    if not isinstance(contacts, list):
+        return []
+    out: list[PropertyContactIn] = []
+    for item in contacts:
+        if not isinstance(item, dict):
+            continue
+        phones = item.get("phones") if isinstance(item.get("phones"), list) else []
+        out.append(
+            PropertyContactIn(
+                name=str(item.get("name") or ""),
+                email=str(item.get("email") or ""),
+                mobile=str(item.get("mobile") or ""),
+                phone=str(item.get("phone") or ""),
+                phones=[str(value) for value in phones if value],
+                is_company=bool(item.get("is_company")),
+            )
+        )
+    return out
 
 
 def _primary_contact(book: dict[str, object]) -> dict[str, str]:
@@ -256,6 +361,40 @@ def _apply_imported_property(
     row.tenants_json = item.get("tenants_json")
     row.is_active = True
     row.source = "crm_import"
+    row.updated_at = now
+
+
+def _apply_manual_property_payload(
+    row: ManagedProperty,
+    payload: PropertyCreateIn | PropertyUpdateIn,
+    *,
+    address: str,
+    suburb: str | None,
+    state_code: str,
+    postcode: str | None,
+    now: datetime,
+) -> None:
+    row.property_address = address
+    row.address_line_2 = _normalize_text(payload.address_line_2) or None
+    row.suburb = _normalize_text(suburb) or None
+    row.state_code = state_code
+    row.postcode = _normalize_text(postcode) or None
+    row.crm_property_id = _normalize_text(payload.crm_property_id) or None
+    row.property_type = _normalize_text(payload.property_type) or None
+    row.rental_type = _normalize_text(payload.rental_type) or None
+    row.key_number = _normalize_text(payload.key_number) or None
+    row.owner_is_company = bool(payload.owner_is_company)
+    row.tenancy_status = _normalize_text(payload.tenancy_status) or None
+    row.owners_json = _json_dumps(
+        _contact_book_from_contacts(
+            payload.owners,
+            default_label="Landlord",
+            is_company_default=bool(payload.owner_is_company),
+        )
+    )
+    row.tenants_json = _json_dumps(_contact_book_from_contacts(payload.tenants, default_label="Tenant"))
+    row.is_active = True
+    row.source = row.source or "manual"
     row.updated_at = now
 
 
@@ -678,14 +817,17 @@ def create_property(
         if target_keys.intersection(row_keys):
             if row.is_active:
                 raise HTTPException(status_code=400, detail="This property already exists.")
-            row.property_address = address
-            row.address_line_2 = _normalize_text(payload.address_line_2) or None
-            row.suburb = suburb
-            row.state_code = state_code
-            row.postcode = postcode
-            row.is_active = True
+            now = datetime.utcnow()
+            _apply_manual_property_payload(
+                row,
+                payload,
+                address=address,
+                suburb=suburb,
+                state_code=state_code,
+                postcode=postcode,
+                now=now,
+            )
             row.source = "manual"
-            row.updated_at = datetime.utcnow()
             db.commit()
             db.refresh(row)
             return _property_to_dict(row)
@@ -693,17 +835,87 @@ def create_property(
     now = datetime.utcnow()
     row = ManagedProperty(
         mailbox=mailbox,
-        property_address=address,
-        address_line_2=_normalize_text(payload.address_line_2) or None,
-        suburb=suburb,
-        state_code=state_code,
-        postcode=postcode,
         is_active=True,
         source="manual",
         created_at=now,
         updated_at=now,
     )
+    _apply_manual_property_payload(
+        row,
+        payload,
+        address=address,
+        suburb=suburb,
+        state_code=state_code,
+        postcode=postcode,
+        now=now,
+    )
+    row.source = "manual"
     db.add(row)
+    db.commit()
+    db.refresh(row)
+    return _property_to_dict(row)
+
+
+@router.put("/{property_id}")
+def update_property(
+    property_id: int,
+    payload: PropertyUpdateIn,
+    mailbox: str = Depends(get_current_mailbox),
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    row = (
+        db.query(ManagedProperty)
+        .filter(ManagedProperty.mailbox == mailbox)
+        .filter(ManagedProperty.id == property_id)
+        .filter(ManagedProperty.is_active == True)
+        .first()
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Property not found.")
+
+    raw_address = _normalize_text(payload.property_address) or row.property_address
+    parsed_address = _split_full_address(raw_address)
+    address = parsed_address["property_address"] if parsed_address.get("state_code") else raw_address
+    suburb = _normalize_text(payload.suburb) or parsed_address.get("suburb") or row.suburb
+    state_code = _vic_state_code(parsed_address.get("state_code") or payload.state_code or row.state_code)
+    postcode = _normalize_text(payload.postcode) or parsed_address.get("postcode") or row.postcode
+
+    target_keys = set(_property_match_keys(address, suburb, state_code, postcode))
+    if target_keys:
+        existing = db.query(ManagedProperty).filter(ManagedProperty.mailbox == mailbox).filter(ManagedProperty.id != row.id).all()
+        for other in existing:
+            if not other.is_active:
+                continue
+            other_keys = set(_property_match_keys(other.property_address, other.suburb, other.state_code, other.postcode))
+            if target_keys.intersection(other_keys):
+                raise HTTPException(status_code=400, detail="Another active property already uses this address.")
+
+    merged = PropertyCreateIn(
+        property_address=address,
+        address_line_2=payload.address_line_2 if payload.address_line_2 is not None else row.address_line_2,
+        suburb=suburb,
+        state_code=state_code,
+        postcode=postcode,
+        crm_property_id=payload.crm_property_id if payload.crm_property_id is not None else row.crm_property_id,
+        property_type=payload.property_type if payload.property_type is not None else row.property_type,
+        rental_type=payload.rental_type if payload.rental_type is not None else row.rental_type,
+        key_number=payload.key_number if payload.key_number is not None else row.key_number,
+        owner_is_company=bool(row.owner_is_company if payload.owner_is_company is None else payload.owner_is_company),
+        tenancy_status=payload.tenancy_status if payload.tenancy_status is not None else row.tenancy_status,
+        owners=payload.owners if payload.owners is not None else _contacts_from_book(_json_loads(row.owners_json)),
+        tenants=payload.tenants if payload.tenants is not None else _contacts_from_book(_json_loads(row.tenants_json)),
+    )
+    _apply_manual_property_payload(
+        row,
+        merged,
+        address=address,
+        suburb=suburb,
+        state_code=state_code,
+        postcode=postcode,
+        now=datetime.utcnow(),
+    )
+    row.source = row.source or "manual"
     db.commit()
     db.refresh(row)
     return _property_to_dict(row)

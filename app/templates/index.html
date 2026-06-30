@@ -40,6 +40,7 @@
     #resetPasswordModal:not(.hidden){display:flex}
     #complianceEditModal:not(.hidden){display:flex}
     #maintenanceEmailDraftModal:not(.hidden){display:flex}
+    #propertyEditorModal:not(.hidden){display:flex}
     html,body{height:100%}
     body{
       margin:0;
@@ -1137,6 +1138,66 @@
       flex-wrap:wrap;
       margin-top:auto;
     }
+    .property-manual-grid{
+      display:grid;
+      grid-template-columns:repeat(4, minmax(0, 1fr));
+      gap:12px;
+      margin-top:14px;
+      padding:14px;
+      border:1px solid #dbe4ef;
+      border-radius:18px;
+      background:#f8fafc;
+    }
+    .property-editor-modal{
+      width:min(1180px, 100%);
+    }
+    .property-editor-grid{
+      display:grid;
+      grid-template-columns:repeat(4, minmax(0, 1fr));
+      gap:12px;
+    }
+    .property-editor-grid .wide{
+      grid-column:span 2;
+    }
+    .property-contact-editor-grid{
+      display:grid;
+      grid-template-columns:repeat(2, minmax(0, 1fr));
+      gap:14px;
+      margin-top:18px;
+    }
+    .property-contact-editor{
+      padding:14px;
+      border:1px solid #dbe4ef;
+      border-radius:18px;
+      background:#fbfcfe;
+    }
+    .property-contact-editor h4{
+      margin:0;
+      color:#101828;
+      font-size:15px;
+    }
+    .property-contact-editor p{
+      margin:4px 0 0;
+      color:#667085;
+      font-size:12px;
+    }
+    .property-contact-edit-row{
+      display:grid;
+      grid-template-columns:repeat(2, minmax(0, 1fr));
+      gap:10px;
+      margin-top:12px;
+      padding:12px;
+      border:1px solid #e5eaf1;
+      border-radius:16px;
+      background:#fff;
+    }
+    .property-contact-edit-row .btn{
+      align-self:end;
+    }
+    .property-company-toggle{
+      align-self:end;
+      min-height:42px;
+    }
     .property-extra-note{
       padding:9px 10px;
       border:1px dashed #d6ddea;
@@ -1149,6 +1210,16 @@
     @media (max-width: 1180px){
       .property-profile-row{grid-template-columns:1fr}
       .property-crm-toolbar{grid-template-columns:1fr}
+      .property-manual-grid,
+      .property-editor-grid,
+      .property-contact-editor-grid{grid-template-columns:1fr 1fr}
+      .property-editor-grid .wide{grid-column:1 / -1}
+    }
+    @media (max-width: 720px){
+      .property-manual-grid,
+      .property-editor-grid,
+      .property-contact-editor-grid,
+      .property-contact-edit-row{grid-template-columns:1fr}
     }
 
     .top-grid{
@@ -5088,10 +5159,54 @@
                     <button class="btn primary"
                       onclick="createPropertyFromForm()">Add Property</button>
                   </div>
+                  <div class="property-manual-grid">
+                    <div class="field">
+                      <div class="label">Key Number</div>
+                      <input type="text" id="newPropertyKeyNumber"
+                        placeholder="Example: DP034" />
+                    </div>
+                    <div class="field">
+                      <div class="label">Tenancy Status</div>
+                      <input type="text" id="newPropertyTenancyStatus"
+                        placeholder="Current, vacant, pending..." />
+                    </div>
+                    <div class="field">
+                      <div class="label">Landlord Name</div>
+                      <input type="text" id="newPropertyOwnerName"
+                        placeholder="Primary landlord" />
+                    </div>
+                    <div class="field">
+                      <div class="label">Landlord Email</div>
+                      <input type="email" id="newPropertyOwnerEmail"
+                        placeholder="owner@example.com" />
+                    </div>
+                    <div class="field">
+                      <div class="label">Landlord Phone</div>
+                      <input type="text" id="newPropertyOwnerPhone"
+                        placeholder="Owner phone" />
+                    </div>
+                    <div class="field">
+                      <div class="label">Tenant Name</div>
+                      <input type="text" id="newPropertyTenantName"
+                        placeholder="Primary tenant" />
+                    </div>
+                    <div class="field">
+                      <div class="label">Tenant Email</div>
+                      <input type="email" id="newPropertyTenantEmail"
+                        placeholder="tenant@example.com" />
+                    </div>
+                    <div class="field">
+                      <div class="label">Tenant Phone</div>
+                      <input type="text" id="newPropertyTenantPhone"
+                        placeholder="Tenant phone" />
+                    </div>
+                  </div>
                   <div class="small muted" style="margin-top:8px">Victorian
                     properties only. You can paste a full address like
                     "12 Smith Street, Cranbourne, VIC, 3977" and the
-                    suburb/postcode will be filled where possible.</div>
+                    suburb/postcode will be filled where possible. Add the
+                    first landlord and tenant here, then use Edit Profile on
+                    the card to add more contacts.</div>
                 </div>
 
                 <div class="card">
@@ -5121,6 +5236,99 @@
                     onclick="prevPropertiesPage()">Prev</button>
                   <button class="btn" id="propertiesBtnNext"
                     onclick="nextPropertiesPage()">Next</button>
+                </div>
+              </div>
+
+              <div class="modal-backdrop hidden" id="propertyEditorModal">
+                <div class="modal property-editor-modal">
+                  <div class="modal-head">
+                    <h3>Edit Property Profile</h3>
+                    <button class="btn ghost"
+                      onclick="closePropertyEditor()">Close</button>
+                  </div>
+                  <div class="modal-body">
+                    <div class="property-editor-grid">
+                      <div class="field wide">
+                        <div class="label">Property Address</div>
+                        <input id="propertyEditAddress"
+                          placeholder="Street address" />
+                      </div>
+                      <div class="field">
+                        <div class="label">Suburb</div>
+                        <input id="propertyEditSuburb" />
+                      </div>
+                      <div class="field">
+                        <div class="label">State</div>
+                        <input value="VIC" readonly />
+                      </div>
+                      <div class="field">
+                        <div class="label">Postcode</div>
+                        <input id="propertyEditPostcode" />
+                      </div>
+                      <div class="field">
+                        <div class="label">CRM Property ID</div>
+                        <input id="propertyEditCrmId" />
+                      </div>
+                      <div class="field">
+                        <div class="label">Key Number</div>
+                        <input id="propertyEditKeyNumber" />
+                      </div>
+                      <div class="field">
+                        <div class="label">Property Type</div>
+                        <input id="propertyEditType"
+                          placeholder="House, apartment..." />
+                      </div>
+                      <div class="field">
+                        <div class="label">Rental Type</div>
+                        <input id="propertyEditRentalType"
+                          placeholder="Residential..." />
+                      </div>
+                      <div class="field">
+                        <div class="label">Tenancy Status</div>
+                        <input id="propertyEditTenancyStatus" />
+                      </div>
+                      <label class="checkbox compact">
+                        <input type="checkbox" id="propertyEditOwnerCompany" />
+                        Owner is company
+                      </label>
+                    </div>
+
+                    <div class="property-contact-editor-grid">
+                      <section class="property-contact-editor">
+                        <div class="row space">
+                          <div>
+                            <h4>Landlords</h4>
+                            <p>Add, edit, or remove owner contact details.</p>
+                          </div>
+                          <button class="btn" type="button"
+                            onclick="addPropertyEditorContact('owners')">Add
+                            Landlord</button>
+                        </div>
+                        <div id="propertyEditOwnersList"></div>
+                      </section>
+
+                      <section class="property-contact-editor">
+                        <div class="row space">
+                          <div>
+                            <h4>Tenants</h4>
+                            <p>Add, edit, or remove current tenant details.</p>
+                          </div>
+                          <button class="btn" type="button"
+                            onclick="addPropertyEditorContact('tenants')">Add
+                            Tenant</button>
+                        </div>
+                        <div id="propertyEditTenantsList"></div>
+                      </section>
+                    </div>
+                    <div class="error" id="propertyEditStatus"
+                      style="display:none"></div>
+                  </div>
+                  <div class="modal-foot">
+                    <button class="btn"
+                      onclick="closePropertyEditor()">Cancel</button>
+                    <button class="btn primary" id="propertyEditSaveBtn"
+                      onclick="savePropertyEditor()">Save Property</button>
+                  </div>
                 </div>
               </div>
 

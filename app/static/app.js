@@ -206,6 +206,7 @@ let allowedPages = new Set(["portal"]);
 let propertyOptionsCache = [];
 let propertyOptionsByLabel = {};
 let propertyResultsCache = {};
+let editingPropertyId = null;
 let addressSuggestionsByLabel = {};
 let addressSuggestionTimer = null;
 let complianceRecordsCache = {};
@@ -4152,6 +4153,166 @@ function renderPropertyContactBook(book, emptyText) {
     return contactHtml + extraHtml;
 }
 
+function propertyContactInputRow(type, contact = {}) {
+    const checked = contact.is_company ? "checked" : "";
+    return `
+      <div class="property-contact-edit-row" data-contact-type="${escapeHtml(type)}">
+        <div class="field">
+          <div class="label">Name</div>
+          <input data-contact-field="name" value="${escapeHtml(String(contact.name || ""))}" placeholder="${type === "owners" ? "Landlord name" : "Tenant name"}" />
+        </div>
+        <div class="field">
+          <div class="label">Email</div>
+          <input data-contact-field="email" type="email" value="${escapeHtml(String(contact.email || ""))}" placeholder="email@example.com" />
+        </div>
+        <div class="field">
+          <div class="label">Mobile</div>
+          <input data-contact-field="mobile" value="${escapeHtml(String(contact.mobile || ""))}" placeholder="Mobile number" />
+        </div>
+        <div class="field">
+          <div class="label">Phone</div>
+          <input data-contact-field="phone" value="${escapeHtml(String(contact.phone || ""))}" placeholder="Other phone" />
+        </div>
+        <label class="checkbox compact property-company-toggle ${type === "owners" ? "" : "hidden"}">
+          <input data-contact-field="is_company" type="checkbox" ${checked} />
+          Company
+        </label>
+        <button class="btn danger" type="button" onclick="this.closest('.property-contact-edit-row')?.remove()">Remove</button>
+      </div>
+    `;
+}
+
+function renderPropertyEditorContacts(type, contacts) {
+    const target = document.getElementById(type === "owners" ? "propertyEditOwnersList" : "propertyEditTenantsList");
+    if (!target) return;
+    const rows = Array.isArray(contacts) && contacts.length ? contacts : [{}];
+    target.innerHTML = rows.map((contact) => propertyContactInputRow(type, contact)).join("");
+}
+
+function addPropertyEditorContact(type) {
+    const target = document.getElementById(type === "owners" ? "propertyEditOwnersList" : "propertyEditTenantsList");
+    if (!target) return;
+    target.insertAdjacentHTML("beforeend", propertyContactInputRow(type, {}));
+}
+
+function collectPropertyEditorContacts(type) {
+    const target = document.getElementById(type === "owners" ? "propertyEditOwnersList" : "propertyEditTenantsList");
+    if (!target) return [];
+    return Array.from(target.querySelectorAll(".property-contact-edit-row")).map((row) => {
+        const field = (name) => row.querySelector(`[data-contact-field="${name}"]`);
+        const contact = {
+            name: String(field("name")?.value || "").trim(),
+            email: String(field("email")?.value || "").trim(),
+            mobile: String(field("mobile")?.value || "").trim(),
+            phone: String(field("phone")?.value || "").trim(),
+            is_company: !!field("is_company")?.checked,
+        };
+        return contact;
+    }).filter((contact) => contact.name || contact.email || contact.mobile || contact.phone);
+}
+
+function propertyContactsForPayload(book) {
+    return propertyContactList(book).map((contact) => ({
+        name: String(contact.name || "").trim(),
+        email: String(contact.email || "").trim(),
+        mobile: String(contact.mobile || "").trim(),
+        phone: String(contact.phone || "").trim(),
+        phones: propertyContactPhones(contact),
+        is_company: !!contact.is_company,
+    }));
+}
+
+function getPropertyEditorPayload() {
+    return {
+        property_address: String(document.getElementById("propertyEditAddress")?.value || "").trim(),
+        suburb: String(document.getElementById("propertyEditSuburb")?.value || "").trim(),
+        state_code: "VIC",
+        postcode: String(document.getElementById("propertyEditPostcode")?.value || "").trim(),
+        crm_property_id: String(document.getElementById("propertyEditCrmId")?.value || "").trim(),
+        property_type: String(document.getElementById("propertyEditType")?.value || "").trim(),
+        rental_type: String(document.getElementById("propertyEditRentalType")?.value || "").trim(),
+        key_number: String(document.getElementById("propertyEditKeyNumber")?.value || "").trim(),
+        tenancy_status: String(document.getElementById("propertyEditTenancyStatus")?.value || "").trim(),
+        owner_is_company: !!document.getElementById("propertyEditOwnerCompany")?.checked,
+        owners: collectPropertyEditorContacts("owners"),
+        tenants: collectPropertyEditorContacts("tenants"),
+    };
+}
+
+function setPropertyEditorValue(id, value) {
+    const el = document.getElementById(id);
+    if (el) el.value = value || "";
+}
+
+function openPropertyEditor(propertyId) {
+    const row = propertyResultsCache[propertyId];
+    if (!row) {
+        alert("Property details are not loaded. Refresh the property list and try again.");
+        return;
+    }
+    editingPropertyId = Number(propertyId);
+    setPropertyEditorValue("propertyEditAddress", row.property_address);
+    setPropertyEditorValue("propertyEditSuburb", row.suburb);
+    setPropertyEditorValue("propertyEditPostcode", row.postcode);
+    setPropertyEditorValue("propertyEditCrmId", row.crm_property_id);
+    setPropertyEditorValue("propertyEditKeyNumber", row.key_number);
+    setPropertyEditorValue("propertyEditType", row.property_type);
+    setPropertyEditorValue("propertyEditRentalType", row.rental_type);
+    setPropertyEditorValue("propertyEditTenancyStatus", row.tenancy_status);
+    const ownerCompany = document.getElementById("propertyEditOwnerCompany");
+    if (ownerCompany) ownerCompany.checked = !!row.owner_is_company;
+    renderPropertyEditorContacts("owners", propertyContactsForPayload(row.owners));
+    renderPropertyEditorContacts("tenants", propertyContactsForPayload(row.tenants));
+    const status = document.getElementById("propertyEditStatus");
+    if (status) {
+        status.style.display = "none";
+        status.textContent = "";
+    }
+    const modal = document.getElementById("propertyEditorModal");
+    if (modal) modal.classList.remove("hidden");
+}
+
+function closePropertyEditor() {
+    const modal = document.getElementById("propertyEditorModal");
+    if (modal) modal.classList.add("hidden");
+    editingPropertyId = null;
+}
+
+async function savePropertyEditor() {
+    if (!editingPropertyId) return;
+    const payload = getPropertyEditorPayload();
+    if (!payload.property_address) {
+        alert("Property address is required.");
+        return;
+    }
+    const btn = document.getElementById("propertyEditSaveBtn");
+    const oldText = btn ? btn.textContent : "";
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = "Saving...";
+    }
+    try {
+        const r = await apiFetch(`/properties/${editingPropertyId}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+        });
+        if (!r.ok) {
+            alert(`Failed to save property: ${await extractErrorMessage(r)}`);
+            return;
+        }
+        closePropertyEditor();
+        propertiesLoadedOnce = false;
+        await loadProperties(currentPropertiesPage || 1);
+        await refreshPropertyOptions();
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = oldText || "Save Property";
+        }
+    }
+}
+
 function renderPropertyProfileRow(row) {
     const address = propertyFullAddress(row);
     const ownerCount = propertyContactList(row.owners).length;
@@ -4185,6 +4346,7 @@ function renderPropertyProfileRow(row) {
             <div class="property-extra-note">This connected profile feeds Maintenance owner and tenant details when the property is selected.</div>
             <div class="property-card-actions">
               <button class="btn primary" onclick="openMaintenanceForProperty(${Number(row.id)})">Use in Maintenance</button>
+              <button class="btn" onclick="openPropertyEditor(${Number(row.id)})">Edit Profile</button>
               <button class="btn danger" onclick="deleteProperty(${Number(row.id)})">Delete</button>
             </div>
           </div>
@@ -4411,12 +4573,31 @@ function nextPropertiesPage() {
     loadProperties();
 }
 
+function manualPropertyContact(prefix) {
+    const name = String(document.getElementById(`${prefix}Name`)?.value || "").trim();
+    const email = String(document.getElementById(`${prefix}Email`)?.value || "").trim();
+    const phone = String(document.getElementById(`${prefix}Phone`)?.value || "").trim();
+    if (!name && !email && !phone) return null;
+    return {
+        name,
+        email,
+        mobile: phone,
+        phone: "",
+        phones: phone ? [phone] : [],
+        is_company: false,
+    };
+}
+
 async function createPropertyFromForm() {
     if (autocompleteNewPropertyFields() === false) return;
     const property_address = (document.getElementById("newPropertyAddress")?.value || "").trim();
     const suburb = (document.getElementById("newPropertySuburb")?.value || "").trim();
     const state_code = "VIC";
     const postcode = (document.getElementById("newPropertyPostcode")?.value || "").trim();
+    const key_number = (document.getElementById("newPropertyKeyNumber")?.value || "").trim();
+    const tenancy_status = (document.getElementById("newPropertyTenancyStatus")?.value || "").trim();
+    const owner = manualPropertyContact("newPropertyOwner");
+    const tenant = manualPropertyContact("newPropertyTenant");
     if (!property_address) {
         alert("Property address is required.");
         return;
@@ -4424,14 +4605,35 @@ async function createPropertyFromForm() {
     const r = await apiFetch("/properties", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ property_address, suburb, state_code, postcode }),
+        body: JSON.stringify({
+            property_address,
+            suburb,
+            state_code,
+            postcode,
+            key_number,
+            tenancy_status,
+            owners: owner ? [owner] : [],
+            tenants: tenant ? [tenant] : [],
+        }),
     });
     const t = await r.text();
     if (!r.ok) {
         alert(`Failed to add property (${r.status}):\n\n${t}`);
         return;
     }
-    ["newPropertyAddress", "newPropertySuburb", "newPropertyPostcode"].forEach((id) => {
+    [
+        "newPropertyAddress",
+        "newPropertySuburb",
+        "newPropertyPostcode",
+        "newPropertyKeyNumber",
+        "newPropertyTenancyStatus",
+        "newPropertyOwnerName",
+        "newPropertyOwnerEmail",
+        "newPropertyOwnerPhone",
+        "newPropertyTenantName",
+        "newPropertyTenantEmail",
+        "newPropertyTenantPhone",
+    ].forEach((id) => {
         const el = document.getElementById(id);
         if (el) el.value = "";
     });
