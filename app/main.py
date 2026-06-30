@@ -34,10 +34,12 @@ from app.routers import my_space
 from app.routers import settings as app_settings
 from app.routers import user_auth
 from app.routers import notifications
+from app.routers import activity_log
 from app.routers import maintenance
 from app.routers import tenant
 from app.models import User, UserRole
-from app.security import hash_password
+from app.security import decode_access_token, hash_password
+from app.services.activity_log import infer_activity, record_activity, should_record_request
 from app.services.gmail_sync import sync_inbox_threads
 from app.services.reminders import run_reminders
 from app.services.escalation import run_sla_escalations
@@ -183,9 +185,74 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return resp
 
 
+class ActivityLogMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        path = request.url.path
+        method = request.method.upper()
+        should_log = should_record_request(method, path)
+        response = None
+        error: Exception | None = None
+
+        try:
+            response = await call_next(request)
+            return response
+        except Exception as exc:
+            error = exc
+            raise
+        finally:
+            if should_log:
+                status_code = response.status_code if response is not None else 500
+                self._record(request, method, path, status_code, error)
+
+    def _record(self, request: Request, method: str, path: str, status_code: int, error: Exception | None) -> None:
+        auth = request.headers.get("Authorization") or ""
+        if not auth.lower().startswith("bearer "):
+            return
+        subject = decode_access_token(auth.split(" ", 1)[1].strip(), settings.JWT_SECRET)
+        if not subject:
+            return
+
+        db = SessionLocal()
+        try:
+            actor = db.query(User).filter(User.email == subject).first()
+            if not actor:
+                return
+            inferred = infer_activity(method, path)
+            mailbox = (request.headers.get("X-Mailbox") or request.query_params.get("mailbox") or "").strip().lower()
+            detail = {
+                "query": dict(request.query_params),
+                "result": "failed" if status_code >= 400 else "success",
+            }
+            if error:
+                detail["error"] = error.__class__.__name__
+            record_activity(
+                db,
+                actor=actor,
+                mailbox=mailbox or None,
+                action=str(inferred.get("action") or "Changed"),
+                area=str(inferred.get("area") or "Portal"),
+                entity_type=inferred.get("entity_type"),
+                entity_id=inferred.get("entity_id"),
+                method=method,
+                path=path,
+                status_code=status_code,
+                request_id=getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID"),
+                ip_address=request.client.host if request.client else None,
+                user_agent=request.headers.get("User-Agent"),
+                detail=detail,
+                commit=True,
+            )
+        except Exception:
+            logging.getLogger("activity_log").exception("Failed to record activity log")
+            db.rollback()
+        finally:
+            db.close()
+
+
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(BasicAuthMiddleware)
+app.add_middleware(ActivityLogMiddleware)
 app.add_middleware(RequestIdMiddleware)
 app.add_middleware(MetricsMiddleware)
 
@@ -220,6 +287,7 @@ app.include_router(properties.router, prefix="/properties", tags=["properties"])
 app.include_router(compliance.router, prefix="/compliance", tags=["compliance"])
 app.include_router(my_space.router)
 app.include_router(notifications.router)
+app.include_router(activity_log.router)
 app.include_router(maintenance.router, prefix="/maintenance", tags=["maintenance"])
 app.include_router(tenant.router)
 

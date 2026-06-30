@@ -192,6 +192,9 @@ let currentCoveragePage = 1;
 let coverageLoadedOnce = false;
 let usersLoadedOnce = false;
 let teamLoadedOnce = false;
+let activityLoadedOnce = false;
+let currentActivityPage = 1;
+let activityAreasCache = [];
 let mySpaceLoadedOnce = false;
 let mySpaceSaveTimer = null;
 let mySpaceQuickLinksCache = [];
@@ -229,6 +232,11 @@ function updateSyncContextUI() {
     if (currentDashboardTab === "team") {
         if (viewBadge) viewBadge.textContent = "Our Team";
         if (info) info.textContent = "Inbox sync controls are hidden while you are viewing the staff directory.";
+        return;
+    }
+    if (currentDashboardTab === "activity") {
+        if (viewBadge) viewBadge.textContent = "Activity Log";
+        if (info) info.textContent = "Inbox sync controls are hidden while you are reviewing platform activity.";
         return;
     }
     if (currentDashboardTab === "rent") {
@@ -620,6 +628,7 @@ async function initMailboxes() {
             propertiesLoadedOnce = false;
             complianceLoadedOnce = false;
             coverageLoadedOnce = false;
+            activityLoadedOnce = false;
             updateSyncContextUI();
             loadTickets();
             if (currentDashboardTab === "rent") {
@@ -1467,14 +1476,14 @@ const USER_ROLE_ACCESS = {
         optionLabel: "Administrator",
         defaultAdminAccess: true,
         summary: "Full control over the portal, system users, settings, and all operational workspaces.",
-        access: ["Portal Hub", "My Space", "Email Manager", "Maintenance", "Rent Tracker", "Compliance", "Compliance Report", "Properties", "Our Team", "System"],
+        access: ["Portal Hub", "My Space", "Email Manager", "Maintenance", "Rent Tracker", "Compliance", "Compliance Report", "Properties", "Our Team", "Activity Log", "System"],
     },
     PM: {
         label: "Property Manager",
         optionLabel: "Property Manager",
         defaultAdminAccess: true,
         summary: "Property management access for inbox triage, maintenance, compliance, rent, and property work.",
-        access: ["Portal Hub", "My Space", "Email Manager", "Maintenance", "Rent Tracker", "Compliance", "Compliance Report", "Properties", "Our Team", "System"],
+        access: ["Portal Hub", "My Space", "Email Manager", "Maintenance", "Rent Tracker", "Compliance", "Compliance Report", "Properties", "Our Team", "Activity Log", "System"],
     },
     LEASING: {
         label: "Marketing Advisor",
@@ -1487,7 +1496,7 @@ const USER_ROLE_ACCESS = {
         optionLabel: "Director",
         defaultAdminAccess: true,
         summary: "Director-level access across the core portal workspaces.",
-        access: ["Portal Hub", "My Space", "Email Manager", "Maintenance", "Rent Tracker", "Compliance", "Compliance Report", "Properties", "Our Team", "System"],
+        access: ["Portal Hub", "My Space", "Email Manager", "Maintenance", "Rent Tracker", "Compliance", "Compliance Report", "Properties", "Our Team", "Activity Log", "System"],
     },
     ACCOUNTS: {
         label: "Administrative Assistant",
@@ -1517,6 +1526,7 @@ const FALLBACK_PAGE_REGISTRY = [
     { id: "coverage", label: "Compliance Report", description: "Missing and incomplete compliance checks.", section: "Compliance" },
     { id: "properties", label: "Properties", description: "Managed property register.", section: "Setup" },
     { id: "team", label: "Our Team", description: "Registered staff profiles and contact details.", section: "Setup" },
+    { id: "activity", label: "Activity Log", description: "Staff actions, platform changes, and audit trail.", section: "Setup" },
     { id: "system", label: "System", description: "Admin user and access controls.", section: "Setup", admin_only: true },
 ];
 
@@ -1591,6 +1601,7 @@ function applyPageVisibility() {
         coverage: "navComplianceCoverage",
         properties: "navProperties",
         team: "navTeam",
+        activity: "navActivity",
         system: "btnSystemUsers",
     };
     for (const [pageId, elementId] of Object.entries(navMap)) {
@@ -2074,6 +2085,203 @@ async function loadTeamDirectory(force = false) {
     }
 }
 
+function activityStatusMeta(statusCode) {
+    const code = Number(statusCode || 0);
+    if (code >= 500) return { label: `Failed ${code}`, cls: "danger" };
+    if (code >= 400) return { label: `Blocked ${code}`, cls: "warning" };
+    if (code >= 200 && code < 300) return { label: "Successful", cls: "success" };
+    return { label: code ? `Status ${code}` : "Recorded", cls: "neutral" };
+}
+
+function activityActorLabel(item) {
+    const name = item?.actor_name || "Unknown staff";
+    const role = item?.actor_role ? roleTitle(item.actor_role) : "";
+    return role ? `${name} (${role})` : name;
+}
+
+function renderActivityStats(summary = {}) {
+    const target = document.getElementById("activityStats");
+    if (!target) return;
+    const cards = [
+        ["Today", summary.today || 0, "Actions recorded today"],
+        ["Last 24h", summary.last_24h || 0, "Recent platform actions"],
+        ["Staff Active", summary.staff_24h || 0, "Staff with logged actions"],
+        ["Failed", summary.failed_24h || 0, "Blocked or failed actions"],
+    ];
+    target.innerHTML = cards.map(([label, value, hint]) => `
+      <div class="activity-stat">
+        <span>${escapeHtml(label)}</span>
+        <strong>${Number(value || 0)}</strong>
+        <small>${escapeHtml(hint)}</small>
+      </div>
+    `).join("");
+}
+
+function renderActivityAreaChart(summary = {}) {
+    const target = document.getElementById("activityAreaChart");
+    if (!target) return;
+    const rows = Array.isArray(summary.areas_24h) ? summary.areas_24h : [];
+    if (!rows.length) {
+        target.innerHTML = `<div class="small muted">No activity recorded in the last 24 hours yet.</div>`;
+        return;
+    }
+    const max = Math.max(...rows.map((row) => Number(row.count || 0)), 1);
+    target.innerHTML = rows.map((row) => {
+        const count = Number(row.count || 0);
+        const width = Math.round((count / max) * 100);
+        return `
+          <div class="activity-bar-row">
+            <span>${escapeHtml(row.area || "Portal")}</span>
+            <div class="activity-bar-track"><div class="activity-bar-fill" style="width:${width}%"></div></div>
+            <strong>${count}</strong>
+          </div>
+        `;
+    }).join("");
+}
+
+function renderActivityActorOptions() {
+    const select = document.getElementById("activityActorFilter");
+    if (!select) return;
+    const current = select.value || "";
+    const options = (Array.isArray(usersCache) ? usersCache : [])
+        .filter((u) => u && u.id)
+        .sort((a, b) => String(a.name || a.email || "").localeCompare(String(b.name || b.email || "")));
+    select.innerHTML = `<option value="">All staff</option>` + options.map((u) => (
+        `<option value="${Number(u.id)}">${escapeHtml(staffOptionLabel(u))}</option>`
+    )).join("");
+    select.value = current;
+}
+
+function renderActivityAreaOptions() {
+    const select = document.getElementById("activityAreaFilter");
+    if (!select) return;
+    const current = select.value || "";
+    const defaults = ["Email Manager", "Maintenance", "Compliance", "Properties", "Rent Tracker", "My Space", "System Access", "Tenant Portal"];
+    const areas = Array.from(new Set([...defaults, ...(Array.isArray(activityAreasCache) ? activityAreasCache : [])])).filter(Boolean).sort();
+    select.innerHTML = `<option value="">All areas</option>` + areas.map((area) => (
+        `<option value="${escapeHtml(area)}">${escapeHtml(area)}</option>`
+    )).join("");
+    select.value = areas.includes(current) ? current : "";
+}
+
+async function loadActivityAreas() {
+    if (!canAccessPage("activity")) return;
+    try {
+        const r = await apiFetch("/activity-log/areas");
+        if (!r.ok) return;
+        const data = await r.json();
+        activityAreasCache = Array.isArray(data.items) ? data.items : [];
+        renderActivityAreaOptions();
+    } catch {
+        renderActivityAreaOptions();
+    }
+}
+
+function activityQueryParams(page = currentActivityPage) {
+    const params = new URLSearchParams();
+    params.set("page", String(page || 1));
+    params.set("page_size", "30");
+    const mapping = [
+        ["activitySearch", "q"],
+        ["activityActorFilter", "actor_user_id"],
+        ["activityAreaFilter", "area"],
+        ["activityMailboxFilter", "mailbox"],
+        ["activityStartDate", "start"],
+        ["activityEndDate", "end"],
+    ];
+    for (const [id, key] of mapping) {
+        const value = String(document.getElementById(id)?.value || "").trim();
+        if (value) params.set(key, value);
+    }
+    return params;
+}
+
+function renderActivityLog(data = {}) {
+    const list = document.getElementById("activityList");
+    const pageInfo = document.getElementById("activityPageInfo");
+    const prevBtn = document.getElementById("activityPrevBtn");
+    const nextBtn = document.getElementById("activityNextBtn");
+    renderActivityStats(data.summary || {});
+    renderActivityAreaChart(data.summary || {});
+    if (pageInfo) pageInfo.textContent = `Page ${data.page || currentActivityPage} - ${data.total || 0} recorded actions`;
+    if (prevBtn) prevBtn.disabled = Number(data.page || 1) <= 1;
+    if (nextBtn) nextBtn.disabled = !data.has_more;
+    if (!list) return;
+    const items = Array.isArray(data.items) ? data.items : [];
+    if (!items.length) {
+        list.innerHTML = `<div class="ticket-empty"><strong>No activity found</strong><div class="small muted" style="margin-top:6px">Try clearing filters or perform a platform action to create the first record.</div></div>`;
+        return;
+    }
+    list.innerHTML = items.map((item) => {
+        const status = activityStatusMeta(item.status_code);
+        const target = [item.entity_type, item.entity_id].filter(Boolean).join(" ");
+        return `
+          <article class="activity-row">
+            <div class="activity-row-main">
+              <span class="activity-badge">${escapeHtml(item.area || "Portal")}</span>
+              <h3>${escapeHtml(item.action || "Activity recorded")}</h3>
+              <p>${escapeHtml(activityActorLabel(item))} ${target ? `worked on ${escapeHtml(target)}` : "completed a platform action"}.</p>
+              <div class="activity-meta">
+                <span>${escapeHtml(formatDate(item.created_at))}</span>
+                <span>${escapeHtml(item.mailbox || "No mailbox context")}</span>
+                <span>${escapeHtml(item.path || "")}</span>
+              </div>
+            </div>
+            <div class="activity-row-side">
+              <span class="activity-status ${status.cls}">${escapeHtml(status.label)}</span>
+              <small>${escapeHtml(item.ip_address || "")}</small>
+            </div>
+          </article>
+        `;
+    }).join("");
+}
+
+async function loadActivityLog(page = currentActivityPage) {
+    if (!canAccessPage("activity")) return;
+    currentActivityPage = Math.max(Number(page || 1), 1);
+    const list = document.getElementById("activityList");
+    if (list) {
+        list.innerHTML = `<div class="ticket-empty"><strong>Loading activity...</strong><div class="small muted" style="margin-top:6px">Gathering staff actions and platform changes.</div></div>`;
+    }
+    await loadUsersCache();
+    renderActivityActorOptions();
+    renderActivityAreaOptions();
+    try {
+        const params = activityQueryParams(currentActivityPage);
+        const r = await apiFetch(`/activity-log?${params.toString()}`);
+        if (!r.ok) throw new Error(await extractErrorMessage(r));
+        const data = await r.json();
+        activityLoadedOnce = true;
+        currentActivityPage = Number(data.page || currentActivityPage);
+        renderActivityLog(data);
+    } catch (e) {
+        if (list) {
+            list.innerHTML = `<div class="ticket-empty"><strong>Could not load activity log</strong><div class="small muted" style="margin-top:6px">${escapeHtml(String(e?.message || e || "Please try again."))}</div></div>`;
+        }
+    }
+}
+
+function applyActivityFilters() {
+    loadActivityLog(1);
+}
+
+function resetActivityFilters() {
+    ["activitySearch", "activityActorFilter", "activityAreaFilter", "activityMailboxFilter", "activityStartDate", "activityEndDate"].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.value = "";
+    });
+    loadActivityLog(1);
+}
+
+function prevActivityPage() {
+    if (currentActivityPage <= 1) return;
+    loadActivityLog(currentActivityPage - 1);
+}
+
+function nextActivityPage() {
+    loadActivityLog(currentActivityPage + 1);
+}
+
 function toggleAccountMenu() {
     const dd = document.getElementById("accountMenuDropdown");
     if (!dd) return;
@@ -2269,7 +2477,7 @@ function formatDateShort(dt) {
 }
 
 function switchDashboardTab(tab) {
-    const requestedTab = ["portal", "notifications", "myspace", "maintenance", "rent", "compliance", "coverage", "properties", "team", "system", "inbox"].includes(tab) ? tab : "portal";
+    const requestedTab = ["portal", "notifications", "myspace", "maintenance", "rent", "compliance", "coverage", "properties", "team", "activity", "system", "inbox"].includes(tab) ? tab : "portal";
     if (!canAccessPage(requestedTab)) {
         alert("This page is not assigned to your role.");
         currentDashboardTab = firstAccessiblePage();
@@ -2287,6 +2495,7 @@ function switchDashboardTab(tab) {
         coverage: ["Compliance Report", "Review missing and incomplete MRS, Smoke, Gas, and Electrical checks."],
         properties: ["Properties", "Maintain the active Victorian managed property register."],
         team: ["Our Team", "Browse registered staff profiles, roles, contact details, and profile photos."],
+        activity: ["Activity Log", "Audit staff actions, platform changes, imports, uploads, and security events."],
         system: ["System Access", "Manage staff accounts, profile photos, roles, status, and password controls."],
     };
     const title = document.getElementById("topbarTitle");
@@ -2302,6 +2511,7 @@ function switchDashboardTab(tab) {
     const rentPanel = document.getElementById("rentPanel");
     const propertiesPanel = document.getElementById("propertiesPanel");
     const teamPanel = document.getElementById("teamPanel");
+    const activityPanel = document.getElementById("activityPanel");
     const compliancePanel = document.getElementById("compliancePanel");
     const coveragePanel = document.getElementById("coveragePanel");
     const systemPanel = document.getElementById("systemPanel");
@@ -2312,6 +2522,7 @@ function switchDashboardTab(tab) {
     const navRent = document.getElementById("navRentTracker");
     const navProperties = document.getElementById("navProperties");
     const navTeam = document.getElementById("navTeam");
+    const navActivity = document.getElementById("navActivity");
     const navSystem = document.getElementById("btnSystemUsers");
     const navCompliance = document.getElementById("navCompliance");
     const navCoverage = document.getElementById("navComplianceCoverage");
@@ -2325,6 +2536,7 @@ function switchDashboardTab(tab) {
     if (rentPanel) rentPanel.classList.toggle("hidden", currentDashboardTab !== "rent");
     if (propertiesPanel) propertiesPanel.classList.toggle("hidden", currentDashboardTab !== "properties");
     if (teamPanel) teamPanel.classList.toggle("hidden", currentDashboardTab !== "team");
+    if (activityPanel) activityPanel.classList.toggle("hidden", currentDashboardTab !== "activity");
     if (compliancePanel) compliancePanel.classList.toggle("hidden", currentDashboardTab !== "compliance");
     if (coveragePanel) coveragePanel.classList.toggle("hidden", currentDashboardTab !== "coverage");
     if (systemPanel) systemPanel.classList.toggle("hidden", currentDashboardTab !== "system");
@@ -2335,6 +2547,7 @@ function switchDashboardTab(tab) {
     if (navRent) navRent.classList.toggle("active", currentDashboardTab === "rent");
     if (navProperties) navProperties.classList.toggle("active", currentDashboardTab === "properties");
     if (navTeam) navTeam.classList.toggle("active", currentDashboardTab === "team");
+    if (navActivity) navActivity.classList.toggle("active", currentDashboardTab === "activity");
     if (navSystem) navSystem.classList.toggle("active", currentDashboardTab === "system");
     if (navCompliance) navCompliance.classList.toggle("active", currentDashboardTab === "compliance");
     if (navCoverage) navCoverage.classList.toggle("active", currentDashboardTab === "coverage");
@@ -2349,6 +2562,7 @@ function switchDashboardTab(tab) {
         shell.classList.toggle("coverage-mode", currentDashboardTab === "coverage");
         shell.classList.toggle("properties-mode", currentDashboardTab === "properties");
         shell.classList.toggle("team-mode", currentDashboardTab === "team");
+        shell.classList.toggle("activity-mode", currentDashboardTab === "activity");
         shell.classList.toggle("system-mode", currentDashboardTab === "system");
     }
 
@@ -2373,6 +2587,10 @@ function switchDashboardTab(tab) {
     }
     if (currentDashboardTab === "team" && !teamLoadedOnce) {
         loadTeamDirectory();
+    }
+    if (currentDashboardTab === "activity" && !activityLoadedOnce) {
+        loadActivityLog(1);
+        loadActivityAreas();
     }
     if (currentDashboardTab === "compliance" && !complianceLoadedOnce) {
         refreshPropertyOptions();
@@ -6436,12 +6654,20 @@ async function doLogin() {
 }
 
 function logout() {
+    try {
+        if (authToken) {
+            apiFetch("/user-auth/logout", { method: "POST" }).catch(() => {});
+        }
+    } catch {
+        // Logout should always clear local access even if audit recording fails.
+    }
     authToken = "";
     currentUser = null;
     localStorage.removeItem("agent_auth_token");
     allowedPages = new Set(["portal"]);
     rolePagePermissions = {};
     teamLoadedOnce = false;
+    activityLoadedOnce = false;
     applyPageVisibility();
 
     const badge = document.getElementById("userBadge");
@@ -6713,6 +6939,10 @@ window.addEventListener("load", async () => {
             if (currentDashboardTab === "coverage") {
                 currentCoveragePage = 1;
                 loadComplianceCoverage();
+            }
+            if (currentDashboardTab === "activity") {
+                currentActivityPage = 1;
+                loadActivityLog();
             }
         });
     }

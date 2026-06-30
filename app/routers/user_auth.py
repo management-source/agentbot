@@ -23,6 +23,7 @@ from app.db import get_db
 from app.models import AppState, PasswordResetToken, ThreadTicket, ThreadTicketAudit, ThreadTicketNote, User, UserRole
 from app.schemas import TeamMemberOut, UserOut
 from app.security import create_access_token, hash_password, verify_password
+from app.services.activity_log import record_activity
 
 router = APIRouter(prefix="/user-auth", tags=["user-auth"])
 logger = logging.getLogger(__name__)
@@ -98,6 +99,12 @@ PAGE_REGISTRY = [
         "section": "Setup",
     },
     {
+        "id": "activity",
+        "label": "Activity Log",
+        "description": "Review staff actions, platform changes, imports, uploads, assignments, and security events.",
+        "section": "Setup",
+    },
+    {
         "id": "system",
         "label": "System",
         "description": "Admin-only user accounts, avatars, roles, and page access controls.",
@@ -108,10 +115,10 @@ PAGE_REGISTRY = [
 
 
 DEFAULT_ROLE_PAGE_ACCESS = {
-    UserRole.ADMIN.value: ["portal", "notifications", "myspace", "inbox", "maintenance", "rent", "compliance", "coverage", "properties", "team", "system"],
-    UserRole.PM.value: ["portal", "notifications", "myspace", "inbox", "maintenance", "rent", "compliance", "coverage", "properties", "team", "system"],
+    UserRole.ADMIN.value: ["portal", "notifications", "myspace", "inbox", "maintenance", "rent", "compliance", "coverage", "properties", "team", "activity", "system"],
+    UserRole.PM.value: ["portal", "notifications", "myspace", "inbox", "maintenance", "rent", "compliance", "coverage", "properties", "team", "activity", "system"],
     UserRole.LEASING.value: ["portal", "notifications", "myspace", "inbox", "properties", "team"],
-    UserRole.SALES.value: ["portal", "notifications", "myspace", "inbox", "maintenance", "rent", "compliance", "coverage", "properties", "team", "system"],
+    UserRole.SALES.value: ["portal", "notifications", "myspace", "inbox", "maintenance", "rent", "compliance", "coverage", "properties", "team", "activity", "system"],
     UserRole.ACCOUNTS.value: ["portal", "notifications", "myspace", "inbox", "rent", "team"],
     UserRole.READONLY.value: ["portal", "notifications", "myspace", "team"],
 }
@@ -299,7 +306,7 @@ def _normalize_role_page_access(raw: dict | None) -> dict[str, list[str]]:
         default_selected = set(DEFAULT_ROLE_PAGE_ACCESS.get(key, ["portal"]))
         locked_pages = {str(page["id"]) for page in PAGE_REGISTRY if page.get("locked")}
         missing_default_pages = {
-            page_id for page_id in ("maintenance", "team", *locked_pages)
+            page_id for page_id in ("maintenance", "team", "activity", *locked_pages)
             if page_id in default_selected and page_id not in selected
         }
         if missing_default_pages and selected == (default_selected - missing_default_pages):
@@ -444,8 +451,29 @@ def login(payload: LoginIn, request: Request, db: Session = Depends(get_db)):
     user.updated_at = now
     db.commit()
 
+    record_activity(
+        db,
+        actor=user,
+        action="Logged in",
+        area="System Access",
+        entity_type="User Account",
+        entity_id=str(user.id),
+        method="POST",
+        path="/user-auth/login",
+        status_code=200,
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("User-Agent"),
+        detail={"result": "success"},
+        commit=True,
+    )
+
     token = create_access_token(subject=user.email, secret=settings.JWT_SECRET)
     return LoginOut(access_token=token, user=_to_user_out(user))
+
+
+@router.post("/logout")
+def logout(user: User = Depends(get_current_user)):
+    return {"ok": True, "user_id": user.id}
 
 
 @router.post("/forgot-password")

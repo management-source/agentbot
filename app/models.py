@@ -256,6 +256,34 @@ class ThreadTicketAudit(Base):
     actor = relationship("User")
 
 
+class ActivityLog(Base):
+    __tablename__ = "activity_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    mailbox: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    actor_user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    actor_name: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    actor_email: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    actor_role: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+
+    action: Mapped[str] = mapped_column(String, index=True)
+    area: Mapped[str] = mapped_column(String, index=True)
+    entity_type: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    entity_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    entity_label: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    method: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    path: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    status_code: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    request_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    ip_address: Mapped[str | None] = mapped_column(String, nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(Text, nullable=True)
+    detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+    actor = relationship("User")
+
+
 class MySpaceTodo(Base):
     __tablename__ = "my_space_todos"
 

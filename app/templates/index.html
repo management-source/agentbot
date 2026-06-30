@@ -857,6 +857,9 @@
     .dashboard-shell.team-mode{
       grid-template-columns: 1fr;
     }
+    .dashboard-shell.activity-mode{
+      grid-template-columns: 1fr;
+    }
     .dashboard-shell.system-mode{
       grid-template-columns: 1fr;
     }
@@ -870,6 +873,7 @@
     .dashboard-shell.coverage-mode .left-rail,
     .dashboard-shell.properties-mode .left-rail,
     .dashboard-shell.team-mode .left-rail,
+    .dashboard-shell.activity-mode .left-rail,
     .dashboard-shell.system-mode .left-rail{
       display:none;
     }
@@ -2550,6 +2554,213 @@
       .team-grid{grid-template-columns:1fr}
     }
 
+    /* Activity log */
+    .activity-workspace{
+      display:flex;
+      flex-direction:column;
+      gap:16px;
+    }
+    .activity-stats{
+      display:grid;
+      grid-template-columns:repeat(4, minmax(0, 1fr));
+      gap:12px;
+    }
+    .activity-stat,
+    .activity-card{
+      border:1px solid #dbe4ef;
+      background:rgba(255,255,255,.94);
+      box-shadow:0 14px 34px rgba(15,23,42,.065);
+    }
+    .activity-stat{
+      border-radius:20px;
+      padding:16px;
+    }
+    .activity-stat span,
+    .activity-stat small{
+      display:block;
+      color:#667085;
+      font-size:12px;
+      font-weight:850;
+      text-transform:uppercase;
+      letter-spacing:.06em;
+    }
+    .activity-stat strong{
+      display:block;
+      margin:8px 0 4px;
+      color:#101828;
+      font-size:30px;
+      line-height:1;
+      letter-spacing:-.045em;
+    }
+    .activity-grid{
+      display:grid;
+      grid-template-columns:minmax(0, .9fr) minmax(420px, 1.1fr);
+      gap:16px;
+      align-items:start;
+    }
+    .activity-card{
+      border-radius:24px;
+      padding:18px;
+    }
+    .activity-card h3{
+      margin:0;
+      color:#101828;
+      font-size:17px;
+      letter-spacing:-.025em;
+    }
+    .activity-card p{
+      margin:5px 0 0;
+      color:#667085;
+      font-size:13px;
+      line-height:1.45;
+    }
+    .activity-chart{
+      display:grid;
+      gap:10px;
+      margin-top:16px;
+    }
+    .activity-bar-row{
+      display:grid;
+      grid-template-columns:140px minmax(0, 1fr) 42px;
+      align-items:center;
+      gap:10px;
+    }
+    .activity-bar-row span{
+      color:#475467;
+      font-size:12px;
+      font-weight:850;
+    }
+    .activity-bar-row strong{
+      color:#101828;
+      font-size:12px;
+      text-align:right;
+    }
+    .activity-bar-track{
+      height:12px;
+      overflow:hidden;
+      border-radius:999px;
+      background:#eef2f7;
+    }
+    .activity-bar-fill{
+      height:100%;
+      border-radius:999px;
+      background:linear-gradient(90deg, #111827, #9b7a23);
+    }
+    .activity-filter-grid{
+      display:grid;
+      grid-template-columns:repeat(3, minmax(0, 1fr));
+      gap:12px;
+      margin-top:14px;
+    }
+    .activity-filter-grid .field{min-width:0}
+    .activity-log-card{
+      padding:20px;
+    }
+    .activity-list{
+      display:grid;
+      gap:10px;
+      margin-top:16px;
+    }
+    .activity-row{
+      display:grid;
+      grid-template-columns:minmax(0, 1fr) auto;
+      gap:16px;
+      padding:16px;
+      border:1px solid #edf1f6;
+      border-radius:20px;
+      background:
+        radial-gradient(circle at top right, rgba(201,162,70,.08), transparent 28%),
+        #fff;
+      transition:border-color .16s ease, box-shadow .16s ease, transform .16s ease;
+    }
+    .activity-row:hover{
+      border-color:rgba(201,162,70,.45);
+      box-shadow:0 14px 28px rgba(15,23,42,.08);
+      transform:translateY(-1px);
+    }
+    .activity-badge{
+      display:inline-flex;
+      width:max-content;
+      padding:5px 9px;
+      border-radius:999px;
+      background:#f8fafc;
+      border:1px solid #dbe4ef;
+      color:#475467;
+      font-size:11px;
+      font-weight:900;
+      text-transform:uppercase;
+      letter-spacing:.07em;
+    }
+    .activity-row h3{
+      margin:8px 0 0;
+      color:#101828;
+      font-size:16px;
+      letter-spacing:-.02em;
+    }
+    .activity-row p{
+      margin:5px 0 0;
+      color:#475467;
+      font-size:13px;
+      line-height:1.45;
+    }
+    .activity-meta{
+      display:flex;
+      flex-wrap:wrap;
+      gap:7px;
+      margin-top:10px;
+    }
+    .activity-meta span{
+      padding:5px 8px;
+      border-radius:999px;
+      border:1px solid #edf1f6;
+      background:#fbfcfe;
+      color:#667085;
+      font-size:11px;
+      font-weight:750;
+      max-width:520px;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      white-space:nowrap;
+    }
+    .activity-row-side{
+      display:flex;
+      flex-direction:column;
+      align-items:flex-end;
+      justify-content:space-between;
+      gap:10px;
+      min-width:128px;
+    }
+    .activity-status{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      min-height:30px;
+      padding:6px 10px;
+      border-radius:999px;
+      font-size:12px;
+      font-weight:900;
+    }
+    .activity-status.success{background:rgba(22,163,74,.10);color:#166534;border:1px solid rgba(22,163,74,.22)}
+    .activity-status.warning{background:rgba(245,158,11,.12);color:#92400e;border:1px solid rgba(245,158,11,.26)}
+    .activity-status.danger{background:rgba(220,38,38,.10);color:#991b1b;border:1px solid rgba(220,38,38,.24)}
+    .activity-status.neutral{background:#f8fafc;color:#475467;border:1px solid #dbe4ef}
+    .activity-row-side small{
+      color:#98a2b3;
+      font-size:11px;
+    }
+    @media (max-width: 1100px){
+      .activity-grid{grid-template-columns:1fr}
+      .activity-stats{grid-template-columns:repeat(2, minmax(0, 1fr))}
+    }
+    @media (max-width: 760px){
+      .activity-stats,
+      .activity-filter-grid{grid-template-columns:1fr}
+      .activity-bar-row,
+      .activity-row{grid-template-columns:1fr}
+      .activity-row-side{align-items:flex-start}
+      .activity-meta span{max-width:100%}
+    }
+
     /* My Space */
     .myspace-workspace{
       display:flex;
@@ -3635,6 +3846,13 @@
                     d="M22 21v-2a4 4 0 0 0-3-3.87"></path><path
                     d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg></span><span
                 class="nav-label">Our Team</span></a>
+            <a id="navActivity" href="javascript:void(0)"
+              onclick="switchDashboardTab('activity')" title="Activity Log"><span
+                class="nav-icon"><svg viewBox="0 0 24 24"
+                  aria-hidden="true"><path d="M5 4h14v16H5z"></path><path
+                    d="M8 8h8"></path><path d="M8 12h8"></path><path
+                    d="M8 16h5"></path></svg></span><span
+                class="nav-label">Activity Log</span></a>
             <a id="btnSystemUsers" class="hidden" href="javascript:void(0)"
               onclick="switchDashboardTab('system')" title="System"><span
                 class="nav-icon"><svg viewBox="0 0 24 24"
@@ -3865,6 +4083,14 @@
                     <p>View staff profiles, titles, avatars, phone numbers,
                       and email contacts in one elegant directory.</p>
                     <div class="tile-action">View team</div>
+                  </div>
+                  <div class="hub-tile" data-page-tile="activity"
+                    onclick="switchDashboardTab('activity')">
+                    <div class="tile-mark"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v16H5z"></path><path d="M8 8h8"></path><path d="M8 12h8"></path><path d="M8 16h5"></path></svg></div>
+                    <h3>Activity Log</h3>
+                    <p>Review staff actions, platform changes, uploads,
+                      imports, assignments, and security events.</p>
+                    <div class="tile-action">Review activity</div>
                   </div>
                   <div class="hub-tile hidden" id="portalSystemTile"
                     data-page-tile="system"
@@ -5182,6 +5408,101 @@
                         page to load registered staff profiles.</div>
                     </div>
                   </div>
+                </section>
+              </div>
+
+              <div id="activityPanel" class="hidden">
+                <section class="activity-workspace">
+                  <div class="page-banner activity-hero">
+                    <div class="page-banner-kicker">Audit Trail</div>
+                    <h2>Activity Log</h2>
+                    <p>Every staff platform action is recorded with who did it,
+                      what changed, where it happened, and whether it completed
+                      successfully.</p>
+                    <div class="page-banner-actions">
+                      <span class="chip">Staff accountability</span>
+                      <span class="chip">Platform changes</span>
+                      <span class="chip">Security events</span>
+                    </div>
+                  </div>
+
+                  <div class="activity-stats" id="activityStats"></div>
+
+                  <div class="activity-grid">
+                    <section class="activity-card">
+                      <div class="row space">
+                        <div>
+                          <h3>Activity by Area</h3>
+                          <p>Last 24 hours across the main workspaces.</p>
+                        </div>
+                        <button class="btn"
+                          onclick="loadActivityLog(currentActivityPage)">Refresh</button>
+                      </div>
+                      <div class="activity-chart" id="activityAreaChart"></div>
+                    </section>
+
+                    <section class="activity-card">
+                      <h3>Filters</h3>
+                      <p>Find an action by staff member, workspace, mailbox,
+                        date, request path, or keyword.</p>
+                      <div class="activity-filter-grid">
+                        <div class="field">
+                          <div class="label">Search</div>
+                          <input id="activitySearch"
+                            placeholder="Action, staff, path, property..." />
+                        </div>
+                        <div class="field">
+                          <div class="label">Staff</div>
+                          <select id="activityActorFilter"></select>
+                        </div>
+                        <div class="field">
+                          <div class="label">Area</div>
+                          <select id="activityAreaFilter"></select>
+                        </div>
+                        <div class="field">
+                          <div class="label">Mailbox</div>
+                          <input id="activityMailboxFilter"
+                            placeholder="admin@donspremier.com.au" />
+                        </div>
+                        <div class="field">
+                          <div class="label">From</div>
+                          <input type="date" id="activityStartDate" />
+                        </div>
+                        <div class="field">
+                          <div class="label">To</div>
+                          <input type="date" id="activityEndDate" />
+                        </div>
+                      </div>
+                      <div class="controls-actions">
+                        <button class="btn primary"
+                          onclick="applyActivityFilters()">Apply Filters</button>
+                        <button class="btn"
+                          onclick="resetActivityFilters()">Clear</button>
+                      </div>
+                    </section>
+                  </div>
+
+                  <section class="activity-card activity-log-card">
+                    <div class="row space">
+                      <div>
+                        <h3>Recorded Actions</h3>
+                        <p id="activityPageInfo">Activity log not loaded yet.</p>
+                      </div>
+                      <div class="row">
+                        <button class="btn" id="activityPrevBtn"
+                          onclick="prevActivityPage()">Prev</button>
+                        <button class="btn" id="activityNextBtn"
+                          onclick="nextActivityPage()">Next</button>
+                      </div>
+                    </div>
+                    <div class="activity-list" id="activityList">
+                      <div class="ticket-empty">
+                        <strong>Activity log not loaded yet</strong>
+                        <div class="small muted" style="margin-top:6px">Open
+                          this page to load recorded staff actions.</div>
+                      </div>
+                    </div>
+                  </section>
                 </section>
               </div>
 

@@ -14,12 +14,12 @@ from app.security import decode_access_token
 ROLE_PAGE_ACCESS_KEY = "system:role_page_access"
 DEFAULT_ADMIN_ACCESS_ROLES = {UserRole.ADMIN.value, UserRole.PM.value, UserRole.SALES.value}
 DEFAULT_PAGE_ACCESS = {
-    UserRole.ADMIN.value: {"portal", "myspace", "inbox", "maintenance", "rent", "compliance", "coverage", "properties", "team", "system"},
-    UserRole.PM.value: {"portal", "myspace", "inbox", "maintenance", "rent", "compliance", "coverage", "properties", "team", "system"},
-    UserRole.LEASING.value: {"portal", "myspace", "inbox", "properties", "team"},
-    UserRole.SALES.value: {"portal", "myspace", "inbox", "maintenance", "rent", "compliance", "coverage", "properties", "team", "system"},
-    UserRole.ACCOUNTS.value: {"portal", "myspace", "inbox", "rent", "team"},
-    UserRole.READONLY.value: {"portal", "myspace", "team"},
+    UserRole.ADMIN.value: {"portal", "notifications", "myspace", "inbox", "maintenance", "rent", "compliance", "coverage", "properties", "team", "activity", "system"},
+    UserRole.PM.value: {"portal", "notifications", "myspace", "inbox", "maintenance", "rent", "compliance", "coverage", "properties", "team", "activity", "system"},
+    UserRole.LEASING.value: {"portal", "notifications", "myspace", "inbox", "properties", "team"},
+    UserRole.SALES.value: {"portal", "notifications", "myspace", "inbox", "maintenance", "rent", "compliance", "coverage", "properties", "team", "activity", "system"},
+    UserRole.ACCOUNTS.value: {"portal", "notifications", "myspace", "inbox", "rent", "team"},
+    UserRole.READONLY.value: {"portal", "notifications", "myspace", "team"},
 }
 
 
