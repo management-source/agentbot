@@ -368,11 +368,92 @@ function notificationCategoryCards(data = {}) {
     `).join("");
 }
 
+function notificationCategoryChartHtml(data = {}) {
+    const c = data.categories || {};
+    const rows = [
+        ["email", "Assigned Tickets", Number(c.email || 0)],
+        ["maintenance", "Maintenance", Number(c.maintenance || 0)],
+        ["compliance", "Compliance", Number(c.compliance || 0)],
+        ["rent", "Rent", Number(c.rent || 0)],
+        ["myspace", "My Space", Number(c.myspace || 0)],
+    ];
+    const max = Math.max(...rows.map(([, , count]) => count), 1);
+    return `
+      <div class="notification-bar-chart">
+        ${rows.map(([kind, label, count]) => {
+            const width = Math.max(0, Math.round((count / max) * 100));
+            return `
+              <div class="notification-bar-row">
+                <span>${escapeHtml(label)}</span>
+                <div class="notification-bar-track" aria-label="${escapeHtml(label)} ${count}">
+                  <div class="notification-bar-fill" style="width:${width}%"></div>
+                </div>
+                <span>${count}</span>
+              </div>
+            `;
+        }).join("")}
+      </div>
+    `;
+}
+
+function notificationSeverityColor(severity) {
+    const key = String(severity || "").toLowerCase();
+    if (key === "critical") return "#991b1b";
+    if (key === "overdue") return "#dc2626";
+    if (key === "action") return "#b45309";
+    if (key === "assigned") return "#2563eb";
+    if (key === "new") return "#059669";
+    if (key === "soon") return "#64748b";
+    return "#94a3b8";
+}
+
+function notificationSeverityChartHtml() {
+    const rows = ["critical", "overdue", "action", "assigned", "new", "soon", "info"].map((severity) => ({
+        severity,
+        label: notificationSeverityLabel(severity),
+        count: notificationItems.filter((item) => String(item.severity || "info").toLowerCase() === severity).length,
+        color: notificationSeverityColor(severity),
+    })).filter((row) => row.count > 0);
+    const total = rows.reduce((sum, row) => sum + row.count, 0);
+    let cursor = 0;
+    const segments = rows.map((row) => {
+        const start = cursor;
+        const end = cursor + (row.count / Math.max(total, 1)) * 100;
+        cursor = end;
+        return `${row.color} ${start.toFixed(2)}% ${end.toFixed(2)}%`;
+    });
+    const ring = total > 0
+        ? `conic-gradient(${segments.join(", ")})`
+        : "conic-gradient(#e5e7eb 0% 100%)";
+    return `
+      <div class="notification-severity-layout">
+        <div class="notification-ring" style="background:${ring}">
+          <div>
+            <strong>${total}</strong>
+            <small>Items</small>
+          </div>
+        </div>
+        <div class="notification-severity-list">
+          ${(rows.length ? rows : [{ severity: "info", label: "No active alerts", count: 0, color: "#94a3b8" }]).map((row) => `
+            <div class="notification-severity-item">
+              <span><i class="notification-severity-dot" style="background:${row.color}"></i>${escapeHtml(row.label)}</span>
+              <strong>${row.count}</strong>
+            </div>
+          `).join("")}
+        </div>
+      </div>
+    `;
+}
+
 function renderNotificationCenter(data = latestNotificationData) {
     const stats = document.getElementById("notificationCenterStats");
+    const categoryChart = document.getElementById("notificationCategoryChart");
+    const severityChart = document.getElementById("notificationSeverityChart");
     const list = document.getElementById("notificationCenterList");
     const generated = document.getElementById("notificationCenterGenerated");
     if (stats) stats.innerHTML = notificationCategoryCards(data || {});
+    if (categoryChart) categoryChart.innerHTML = notificationCategoryChartHtml(data || {});
+    if (severityChart) severityChart.innerHTML = notificationSeverityChartHtml();
     if (generated) generated.textContent = data.generated_at ? `Updated ${formatDate(data.generated_at)}` : "Ready";
     if (!list) return;
     if (!notificationItems.length) {
