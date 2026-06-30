@@ -43,6 +43,13 @@ PAGE_REGISTRY = [
         "locked": True,
     },
     {
+        "id": "notifications",
+        "label": "Notification Center",
+        "description": "Action center for assigned tickets, maintenance updates, compliance risk, rent alerts, and personal follow-ups.",
+        "section": "Core",
+        "locked": True,
+    },
+    {
         "id": "inbox",
         "label": "Email Manager",
         "description": "Shared mailbox triage, ticket queues, replies, and Gmail sync.",
@@ -101,12 +108,12 @@ PAGE_REGISTRY = [
 
 
 DEFAULT_ROLE_PAGE_ACCESS = {
-    UserRole.ADMIN.value: ["portal", "myspace", "inbox", "maintenance", "rent", "compliance", "coverage", "properties", "team", "system"],
-    UserRole.PM.value: ["portal", "myspace", "inbox", "maintenance", "rent", "compliance", "coverage", "properties", "team", "system"],
-    UserRole.LEASING.value: ["portal", "myspace", "inbox", "properties", "team"],
-    UserRole.SALES.value: ["portal", "myspace", "inbox", "maintenance", "rent", "compliance", "coverage", "properties", "team", "system"],
-    UserRole.ACCOUNTS.value: ["portal", "myspace", "inbox", "rent", "team"],
-    UserRole.READONLY.value: ["portal", "myspace", "team"],
+    UserRole.ADMIN.value: ["portal", "notifications", "myspace", "inbox", "maintenance", "rent", "compliance", "coverage", "properties", "team", "system"],
+    UserRole.PM.value: ["portal", "notifications", "myspace", "inbox", "maintenance", "rent", "compliance", "coverage", "properties", "team", "system"],
+    UserRole.LEASING.value: ["portal", "notifications", "myspace", "inbox", "properties", "team"],
+    UserRole.SALES.value: ["portal", "notifications", "myspace", "inbox", "maintenance", "rent", "compliance", "coverage", "properties", "team", "system"],
+    UserRole.ACCOUNTS.value: ["portal", "notifications", "myspace", "inbox", "rent", "team"],
+    UserRole.READONLY.value: ["portal", "notifications", "myspace", "team"],
 }
 
 
@@ -290,8 +297,9 @@ def _normalize_role_page_access(raw: dict | None) -> dict[str, list[str]]:
             requested = DEFAULT_ROLE_PAGE_ACCESS.get(key, ["portal"])
         selected = {str(page_id).strip() for page_id in requested if str(page_id or "").strip() in page_ids}
         default_selected = set(DEFAULT_ROLE_PAGE_ACCESS.get(key, ["portal"]))
+        locked_pages = {str(page["id"]) for page in PAGE_REGISTRY if page.get("locked")}
         missing_default_pages = {
-            page_id for page_id in ("maintenance", "team")
+            page_id for page_id in ("maintenance", "team", *locked_pages)
             if page_id in default_selected and page_id not in selected
         }
         if missing_default_pages and selected == (default_selected - missing_default_pages):
@@ -300,6 +308,7 @@ def _normalize_role_page_access(raw: dict | None) -> dict[str, list[str]]:
         # Portal prevents blank workspaces. System controls admin access and is
         # intentionally configurable from the Access Control matrix.
         selected.add("portal")
+        selected.update(page_id for page_id in locked_pages if page_id in default_selected)
 
         normalized[key] = _ordered_page_list(selected)
 

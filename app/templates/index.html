@@ -444,6 +444,23 @@
       font-size:12px;
       margin-top:3px;
     }
+    .notification-open-centre{
+      width:100%;
+      min-height:42px;
+      border:1px solid #111827;
+      border-radius:14px;
+      color:#fff;
+      background:#111827;
+      font:inherit;
+      font-size:13px;
+      font-weight:900;
+      cursor:pointer;
+      transition:background .2s ease, transform .2s ease;
+    }
+    .notification-open-centre:hover{
+      background:#050505;
+      transform:translateY(-1px);
+    }
     .notification-refresh{
       border:none;
       background:#f4f7fb;
@@ -500,11 +517,112 @@
       text-transform:uppercase;
       letter-spacing:.05em;
     }
+    .notification-kind.overdue,
+    .notification-kind.critical{background:#fef2f2;color:#991b1b}
+    .notification-kind.action{background:#fffbeb;color:#92400e}
+    .notification-kind.assigned{background:#eff6ff;color:#1d4ed8}
+    .notification-kind.new{background:#ecfdf3;color:#047857}
+    .notification-kind.soon{background:#f8fafc;color:#475467}
     .notification-empty{
       padding:18px 8px 8px;
       text-align:center;
       color:#667085;
       font-size:13px;
+    }
+    .notification-centre-stats{
+      display:grid;
+      grid-template-columns:repeat(5, minmax(0, 1fr));
+      gap:14px;
+      margin-top:16px;
+    }
+    .notification-stat{
+      border:1px solid #dbe4ef;
+      border-radius:20px;
+      padding:16px;
+      background:linear-gradient(180deg, #fff, #f8fafc);
+      box-shadow:0 10px 26px rgba(15,23,42,.06);
+    }
+    .notification-stat span,
+    .notification-stat small{
+      display:block;
+      color:#667085;
+      font-size:12px;
+      font-weight:850;
+      text-transform:uppercase;
+      letter-spacing:.06em;
+    }
+    .notification-stat strong{
+      display:block;
+      margin:8px 0 4px;
+      color:#0f172a;
+      font-size:30px;
+      line-height:1;
+      letter-spacing:-.04em;
+    }
+    .notification-centre-list{
+      display:grid;
+      gap:16px;
+      margin-top:16px;
+    }
+    .notification-centre-section{
+      border:1px solid #dbe4ef;
+      border-radius:24px;
+      padding:18px;
+      background:rgba(255,255,255,.9);
+      box-shadow:0 12px 30px rgba(15,23,42,.07);
+    }
+    .notification-centre-section h3{
+      margin:0;
+      color:#101828;
+      font-size:18px;
+      letter-spacing:-.025em;
+    }
+    .notification-centre-grid{
+      display:grid;
+      grid-template-columns:repeat(2, minmax(0, 1fr));
+      gap:12px;
+      margin-top:12px;
+    }
+    .notification-centre-card{
+      width:100%;
+      text-align:left;
+      border:1px solid #e2e8f0;
+      border-radius:18px;
+      padding:15px;
+      background:#fff;
+      cursor:pointer;
+      display:grid;
+      gap:7px;
+      transition:border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+    }
+    .notification-centre-card:hover{
+      border-color:#c9a246;
+      box-shadow:0 14px 26px rgba(15,23,42,.09);
+      transform:translateY(-1px);
+    }
+    .notification-centre-card strong{
+      color:#101828;
+      font-size:15px;
+    }
+    .notification-centre-card span{
+      color:#667085;
+      font-size:13px;
+      line-height:1.45;
+    }
+    .notification-centre-card em{
+      color:#8f6f1d;
+      font-size:12px;
+      font-style:normal;
+      font-weight:950;
+      letter-spacing:.08em;
+      text-transform:uppercase;
+    }
+    @media (max-width: 980px){
+      .notification-centre-stats{grid-template-columns:repeat(2, minmax(0, 1fr))}
+      .notification-centre-grid{grid-template-columns:1fr}
+    }
+    @media (max-width: 560px){
+      .notification-centre-stats{grid-template-columns:1fr}
     }
     .account-menu{
       position:absolute;
@@ -602,6 +720,7 @@
     .dashboard-shell.inbox-mode .left-rail,
     .dashboard-shell.rent-mode .left-rail,
     .dashboard-shell.portal-mode .left-rail,
+    .dashboard-shell.notifications-mode .left-rail,
     .dashboard-shell.myspace-mode .left-rail,
     .dashboard-shell.maintenance-mode .left-rail,
     .dashboard-shell.compliance-mode .left-rail,
@@ -3406,7 +3525,7 @@
             <div class="notification-wrap">
               <button class="notification-bell" id="notificationBell"
                 type="button" onclick="toggleNotifications()"
-                aria-label="Open overdue notifications">
+                aria-label="Open notifications">
                 <svg viewBox="0 0 24 24" aria-hidden="true">
                   <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path>
                   <path d="M10 21h4"></path>
@@ -3417,7 +3536,7 @@
               <div class="notification-panel" id="notificationPanel">
                 <div class="notification-head">
                   <div>
-                    <strong>Overdue Centre</strong>
+                    <strong>Notification Center</strong>
                     <span id="notificationSummary">Checking portal
                       items...</span>
                   </div>
@@ -3614,6 +3733,34 @@
                     <div class="tile-action">Manage access</div>
                   </div>
                 </div>
+              </div>
+
+              <div id="notificationsPanel" class="hidden">
+                <div class="hub-hero page-banner">
+                  <div class="page-banner-kicker">Action Centre</div>
+                  <h2>Notification Center</h2>
+                  <p>Assigned tickets, maintenance action, compliance risk,
+                    rent alerts, and private follow-ups in one clear place.</p>
+                  <div class="page-banner-actions">
+                    <span class="chip">Assigned Work</span>
+                    <span class="chip">Maintenance</span>
+                    <span class="chip">Compliance</span>
+                    <span class="chip" id="notificationCenterGenerated">Ready</span>
+                  </div>
+                </div>
+                <div class="notification-centre-stats"
+                  id="notificationCenterStats"></div>
+                <div class="row space" style="margin-top:16px">
+                  <div>
+                    <p class="panel-title">Open Notifications</p>
+                    <p class="panel-sub">Click any item to jump to the related
+                      ticket, maintenance order, report, or workspace.</p>
+                  </div>
+                  <button class="btn"
+                    onclick="loadNotifications()">Refresh</button>
+                </div>
+                <div class="notification-centre-list"
+                  id="notificationCenterList"></div>
               </div>
 
               <div id="mySpacePanel" class="hidden">

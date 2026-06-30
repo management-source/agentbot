@@ -22,6 +22,7 @@ let currentUser = null;
 let usersCache = [];
 let assignableUsers = [];
 let notificationItems = [];
+let latestNotificationData = {};
 let loginRecaptchaWidgetId = null;
 
 window.onRecaptchaLoad = function () {
@@ -312,12 +313,99 @@ function notificationKindLabel(kind) {
     return "Portal";
 }
 
+function notificationSeverityLabel(severity) {
+    const key = String(severity || "").toLowerCase();
+    if (key === "critical") return "Critical";
+    if (key === "overdue") return "Overdue";
+    if (key === "action") return "Action Required";
+    if (key === "assigned") return "Assigned";
+    if (key === "new") return "New";
+    if (key === "soon") return "Due Soon";
+    return "Info";
+}
+
+function notificationDateLabel(item) {
+    if (item.due_at) return `Due ${formatDateShort(item.due_at)}`;
+    if (item.created_at) return `Updated ${formatDateShort(item.created_at)}`;
+    return "Needs attention";
+}
+
+function notificationActionLabel(item) {
+    return item.action || "Open";
+}
+
+function notificationIndexByItem(item) {
+    return notificationItems.indexOf(item);
+}
+
+function notificationCardHtml(item, idx, compact = false) {
+    return `
+      <button class="${compact ? "notification-item" : "notification-centre-card"}" type="button" onclick="openNotificationTarget(${idx})">
+        <span class="notification-kind ${escapeHtml(String(item.severity || "").toLowerCase())}">${escapeHtml(notificationKindLabel(item.kind))} - ${escapeHtml(notificationSeverityLabel(item.severity))}</span>
+        <strong>${escapeHtml(item.title || "Notification")}</strong>
+        <span>${escapeHtml(item.detail || "")}</span>
+        <span>${escapeHtml(notificationDateLabel(item))}</span>
+        ${compact ? "" : `<em>${escapeHtml(notificationActionLabel(item))}</em>`}
+      </button>
+    `;
+}
+
+function notificationCategoryCards(data = {}) {
+    const c = data.categories || {};
+    const cards = [
+        ["email", "Assigned Tickets", c.email || 0],
+        ["maintenance", "Maintenance", c.maintenance || 0],
+        ["compliance", "Compliance", c.compliance || 0],
+        ["rent", "Rent", c.rent || 0],
+        ["myspace", "My Space", c.myspace || 0],
+    ];
+    return cards.map(([kind, label, count]) => `
+      <div class="notification-stat">
+        <span>${escapeHtml(label)}</span>
+        <strong>${Number(count || 0)}</strong>
+        <small>${escapeHtml(notificationKindLabel(kind))}</small>
+      </div>
+    `).join("");
+}
+
+function renderNotificationCenter(data = latestNotificationData) {
+    const stats = document.getElementById("notificationCenterStats");
+    const list = document.getElementById("notificationCenterList");
+    const generated = document.getElementById("notificationCenterGenerated");
+    if (stats) stats.innerHTML = notificationCategoryCards(data || {});
+    if (generated) generated.textContent = data.generated_at ? `Updated ${formatDate(data.generated_at)}` : "Ready";
+    if (!list) return;
+    if (!notificationItems.length) {
+        list.innerHTML = `<div class="ticket-empty"><strong>No notifications right now</strong><div class="small muted" style="margin-top:6px">Assigned tickets, maintenance action, compliance risk, rent alerts, and personal follow-ups will appear here.</div></div>`;
+        return;
+    }
+    const groups = ["maintenance", "email", "compliance", "rent", "myspace"];
+    list.innerHTML = groups.map((kind) => {
+        const groupItems = notificationItems.filter((item) => String(item.kind || "").toLowerCase() === kind);
+        if (!groupItems.length) return "";
+        return `
+          <section class="notification-centre-section">
+            <div class="row space">
+              <div>
+                <h3>${escapeHtml(notificationKindLabel(kind))}</h3>
+                <p class="small muted">${groupItems.length} active notification${groupItems.length === 1 ? "" : "s"}</p>
+              </div>
+            </div>
+            <div class="notification-centre-grid">
+              ${groupItems.map((item) => notificationCardHtml(item, notificationIndexByItem(item), false)).join("")}
+            </div>
+          </section>
+        `;
+    }).join("");
+}
+
 function renderNotifications(data = {}) {
     const bell = document.getElementById("notificationBell");
     const countEl = document.getElementById("notificationCount");
     const summary = document.getElementById("notificationSummary");
     const list = document.getElementById("notificationList");
     const total = Number(data.total || 0);
+    latestNotificationData = data || {};
     notificationItems = Array.isArray(data.items) ? data.items : [];
 
     if (bell) bell.classList.toggle("has-alerts", total > 0);
@@ -325,27 +413,25 @@ function renderNotifications(data = {}) {
     if (summary) {
         const c = data.categories || {};
         if (total > 0) {
-            summary.textContent = `${total} overdue item${total === 1 ? "" : "s"} - Email ${c.email || 0}, Maintenance ${c.maintenance || 0}, Rent ${c.rent || 0}, Compliance ${c.compliance || 0}, My Space ${c.myspace || 0}`;
+            summary.textContent = `${total} active notification${total === 1 ? "" : "s"} - Tickets ${c.email || 0}, Maintenance ${c.maintenance || 0}, Compliance ${c.compliance || 0}, Rent ${c.rent || 0}, My Space ${c.myspace || 0}`;
         } else {
-            summary.textContent = "No overdue emails, maintenance, reminders, rent, or compliance items.";
+            summary.textContent = "No assigned tickets, maintenance action, compliance risk, rent alerts, or personal follow-ups.";
         }
     }
     if (!list) return;
     if (!notificationItems.length) {
-        list.innerHTML = `<div class="notification-empty">Everything important is up to date.</div>`;
+        list.innerHTML = `
+          <button class="notification-open-centre" type="button" onclick="openNotificationCenter()">Open Notification Center</button>
+          <div class="notification-empty">Everything important is up to date.</div>
+        `;
+        renderNotificationCenter(data);
         return;
     }
-    list.innerHTML = notificationItems.map((item, idx) => {
-        const due = item.due_at ? `Due ${formatDateShort(item.due_at)}` : "Needs attention";
-        return `
-          <button class="notification-item" type="button" onclick="openNotificationTarget(${idx})">
-            <span class="notification-kind">${escapeHtml(notificationKindLabel(item.kind))}</span>
-            <strong>${escapeHtml(item.title || "Overdue item")}</strong>
-            <span>${escapeHtml(item.detail || "")}</span>
-            <span>${escapeHtml(due)}</span>
-          </button>
-        `;
-    }).join("");
+    list.innerHTML = `
+      <button class="notification-open-centre" type="button" onclick="openNotificationCenter()">Open Notification Center</button>
+      ${notificationItems.slice(0, 5).map((item, idx) => notificationCardHtml(item, idx, true)).join("")}
+    `;
+    renderNotificationCenter(data);
 }
 
 async function loadNotifications() {
@@ -376,6 +462,12 @@ function closeNotifications() {
     if (panel) panel.classList.remove("show");
 }
 
+function openNotificationCenter() {
+    closeNotifications();
+    switchDashboardTab("notifications");
+    loadNotifications();
+}
+
 function refreshNotifications(ev) {
     if (ev) ev.stopPropagation();
     loadNotifications();
@@ -392,6 +484,24 @@ async function openNotificationTarget(index) {
         if (item.thread_id) {
             setTimeout(() => openThread(item.thread_id), 400);
         }
+        return;
+    }
+    if (page === "maintenance") {
+        switchDashboardTab("maintenance");
+        switchMaintenanceView(item.view || "active");
+        if (item.order_id) {
+            setTimeout(() => openMaintenanceOrder(item.order_id), 450);
+        }
+        return;
+    }
+    if (page === "compliance") {
+        switchDashboardTab("compliance");
+        setTimeout(() => loadComplianceDashboard(1), 100);
+        return;
+    }
+    if (page === "coverage") {
+        switchDashboardTab("coverage");
+        setTimeout(() => loadComplianceCoverage(), 100);
         return;
     }
     switchDashboardTab(page);
@@ -1317,6 +1427,7 @@ const TEAM_ROLE_PRIORITY = { SALES: 0, PM: 1, LEASING: 2, ACCOUNTS: 3, ADMIN: 4,
 
 const FALLBACK_PAGE_REGISTRY = [
     { id: "portal", label: "Portal Hub", description: "Landing dashboard and shortcuts.", section: "Core", locked: true },
+    { id: "notifications", label: "Notification Center", description: "Assigned tickets and portal alerts.", section: "Core", locked: true },
     { id: "myspace", label: "My Space", description: "Private planner, follow-ups, links, snippets, notes, and guides.", section: "Core" },
     { id: "inbox", label: "Email Manager", description: "Email tickets and inbox operations.", section: "Operations" },
     { id: "maintenance", label: "Maintenance", description: "Maintenance orders, owner approvals, quotes, tradie arrangements, and completion tracking.", section: "Operations" },
@@ -2077,7 +2188,7 @@ function formatDateShort(dt) {
 }
 
 function switchDashboardTab(tab) {
-    const requestedTab = ["portal", "myspace", "maintenance", "rent", "compliance", "coverage", "properties", "team", "system", "inbox"].includes(tab) ? tab : "portal";
+    const requestedTab = ["portal", "notifications", "myspace", "maintenance", "rent", "compliance", "coverage", "properties", "team", "system", "inbox"].includes(tab) ? tab : "portal";
     if (!canAccessPage(requestedTab)) {
         alert("This page is not assigned to your role.");
         currentDashboardTab = firstAccessiblePage();
@@ -2086,6 +2197,7 @@ function switchDashboardTab(tab) {
     }
     const titles = {
         portal: ["Portal Hub", "Your workspace shortcuts for email, rent, compliance, and property setup."],
+        notifications: ["Notification Center", "Assigned work, maintenance action, compliance risk, rent alerts, and private follow-ups in one place."],
         myspace: ["My Space", "Your private workspace for planning, follow-ups, snippets, notes, and staff guides."],
         inbox: ["Email Manager", "Unified inbox operations with clear action queues and fast follow-up tools."],
         maintenance: ["Maintenance", "Create, approve, quote, schedule, and complete property maintenance orders."],
@@ -2102,6 +2214,7 @@ function switchDashboardTab(tab) {
     if (subtitle) subtitle.textContent = titles[currentDashboardTab]?.[1] || "";
     
     const portalPanel = document.getElementById("portalPanel");
+    const notificationsPanel = document.getElementById("notificationsPanel");
     const mySpacePanel = document.getElementById("mySpacePanel");
     const inboxPanel = document.getElementById("inboxPanel");
     const maintenancePanel = document.getElementById("maintenancePanel");
@@ -2124,6 +2237,7 @@ function switchDashboardTab(tab) {
     const shell = document.getElementById("dashboardShell");
 
     if (portalPanel) portalPanel.classList.toggle("hidden", currentDashboardTab !== "portal");
+    if (notificationsPanel) notificationsPanel.classList.toggle("hidden", currentDashboardTab !== "notifications");
     if (mySpacePanel) mySpacePanel.classList.toggle("hidden", currentDashboardTab !== "myspace");
     if (inboxPanel) inboxPanel.classList.toggle("hidden", currentDashboardTab !== "inbox");
     if (maintenancePanel) maintenancePanel.classList.toggle("hidden", currentDashboardTab !== "maintenance");
@@ -2147,6 +2261,7 @@ function switchDashboardTab(tab) {
         shell.classList.toggle("inbox-mode", currentDashboardTab === "inbox");
         shell.classList.toggle("maintenance-mode", currentDashboardTab === "maintenance");
         shell.classList.toggle("portal-mode", currentDashboardTab === "portal");
+        shell.classList.toggle("notifications-mode", currentDashboardTab === "notifications");
         shell.classList.toggle("myspace-mode", currentDashboardTab === "myspace");
         shell.classList.toggle("rent-mode", currentDashboardTab === "rent");
         shell.classList.toggle("compliance-mode", currentDashboardTab === "compliance");
@@ -2167,6 +2282,9 @@ function switchDashboardTab(tab) {
     }
     if (currentDashboardTab === "myspace" && !mySpaceLoadedOnce) {
         loadMySpace();
+    }
+    if (currentDashboardTab === "notifications") {
+        loadNotifications();
     }
     if (currentDashboardTab === "properties" && !propertiesLoadedOnce) {
         loadProperties();
