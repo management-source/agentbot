@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import base64
 from datetime import datetime
+from email.message import EmailMessage
 import json
+import logging
 import mimetypes
 from pathlib import Path
 import re
@@ -29,6 +32,7 @@ from app.models import (
 
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 MAX_MAINTENANCE_ATTACHMENT_BYTES = settings.TENANT_UPLOAD_MAX_BYTES
 OPEN_STATUSES = {
     MaintenanceOrderStatus.NEW,
@@ -114,6 +118,10 @@ class MaintenanceEmailIn(BaseModel):
 
 class MaintenanceNoteIn(BaseModel):
     note: str
+
+
+class MaintenanceInfoRequestIn(BaseModel):
+    message: str
 
 
 class MaintenanceTradieIn(BaseModel):
@@ -233,6 +241,68 @@ def _maintenance_reference(order_id: int | None) -> str:
 def _property_label(row: MaintenanceOrder) -> str:
     tail = " ".join([x for x in [row.suburb, row.state_code, row.postcode] if x])
     return ", ".join([x for x in [row.property_address, tail] if x])
+
+
+def _tenant_portal_login_url() -> str:
+    return "https://portal.donspremier.com.au/tenant/login"
+
+
+def _tenant_info_request(row: MaintenanceOrder) -> dict[str, object] | None:
+    events = sorted(row.events or [], key=lambda item: item.created_at or datetime.min)
+    latest_request = None
+    for event in events:
+        if event.event_type == "tenant_info_requested":
+            latest_request = event
+    if not latest_request:
+        return None
+    responses = [
+        event
+        for event in events
+        if event.created_at
+        and latest_request.created_at
+        and event.created_at > latest_request.created_at
+        and event.event_type in {"tenant_update", "tenant_media_uploaded"}
+    ]
+    latest_response = responses[-1] if responses else None
+    return {
+        "required": latest_response is None,
+        "message": latest_request.detail,
+        "requested_at": latest_request.created_at,
+        "responded_at": latest_response.created_at if latest_response else None,
+    }
+
+
+def _send_tenant_info_request_email(db: Session, row: MaintenanceOrder, message: str) -> bool:
+    recipient = _clean(row.tenant_email)
+    if not recipient:
+        return False
+    try:
+        from app.services.gmail_client import get_gmail_service, gmail_user_id
+
+        service = get_gmail_service(db)
+        reference = _maintenance_reference(row.id)
+        msg = EmailMessage()
+        msg["To"] = recipient
+        msg["Subject"] = f"{reference} - Maintenance request needs an update"
+        msg.set_content(
+            f"Hi {row.tenant_name or 'there'},\n\n"
+            "Dons Premier Estate Agents needs more information for your maintenance request.\n\n"
+            f"Reference: {reference}\n"
+            f"Property: {_property_label(row)}\n"
+            f"Issue: {row.title}\n\n"
+            "Information requested:\n"
+            f"{message}\n\n"
+            "Please log in to the tenant portal to add your update and upload any photos or videos that may help us progress the job:\n"
+            f"{_tenant_portal_login_url()}\n\n"
+            "Kind regards,\n"
+            "Dons Premier Estate Agents"
+        )
+        raw = base64.urlsafe_b64encode(msg.as_bytes()).decode("utf-8")
+        service.users().messages().send(userId=gmail_user_id(), body={"raw": raw}).execute()
+        return True
+    except Exception:
+        logger.exception("Tenant information request email could not be sent")
+        return False
 
 
 def _get_property(db: Session, mailbox: str, property_id: int | None) -> ManagedProperty | None:
@@ -443,6 +513,7 @@ def _order_to_dict(row: MaintenanceOrder, include_detail: bool = False) -> dict:
         "updated_at": row.updated_at,
         "attachment_count": len(attachments),
         "quote_count": len([a for a in attachments if str(a.kind or "").upper() == "QUOTE"]),
+        "info_request": _tenant_info_request(row),
         "attachments": [_attachment_to_dict(a) for a in attachments] if include_detail else [],
         "events": [_event_to_dict(e) for e in events] if include_detail else [],
     }
@@ -768,6 +839,7 @@ def list_maintenance_orders(
             selectinload(MaintenanceOrder.assignee),
             selectinload(MaintenanceOrder.attachments),
             selectinload(MaintenanceOrder.tenant_account),
+            selectinload(MaintenanceOrder.events),
         )
         .filter(MaintenanceOrder.mailbox == mailbox)
     )
@@ -965,6 +1037,45 @@ def update_maintenance_status(
     _add_event(db, row, f"status:{payload.status.value}", user, _clean(payload.note) or f"Status changed to {_status_label(payload.status)}.")
     db.commit()
     return _order_to_dict(_get_order(db, mailbox, order_id), include_detail=True)
+
+
+@router.post("/orders/{order_id}/request-info")
+def request_tenant_information(
+    order_id: int,
+    payload: MaintenanceInfoRequestIn,
+    mailbox: str = Depends(get_current_mailbox),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_page_access("maintenance")),
+):
+    row = _get_order(db, mailbox, order_id)
+    message = _clean(payload.message)
+    if not message:
+        raise HTTPException(status_code=400, detail="Write what information you need from the tenant.")
+    if not row.tenant_account_id:
+        raise HTTPException(status_code=400, detail="This order is not linked to a tenant portal account.")
+    if row.tenant_account and not row.tenant_account.is_active:
+        raise HTTPException(status_code=400, detail="The linked tenant portal account is inactive.")
+    if not row.tenant_email:
+        raise HTTPException(status_code=400, detail="This maintenance order does not have a tenant email address.")
+
+    now = datetime.utcnow()
+    row.updated_at = now
+    _add_event(db, row, "tenant_info_requested", user, message)
+    db.commit()
+    db.refresh(row)
+
+    sent = _send_tenant_info_request_email(db, row, message)
+    _add_event(
+        db,
+        row,
+        "tenant_info_email",
+        user,
+        "Tenant update request email sent." if sent else "Tenant update request email could not be sent automatically.",
+    )
+    db.commit()
+    data = _order_to_dict(_get_order(db, mailbox, order_id), include_detail=True)
+    data["info_email_sent"] = sent
+    return data
 
 
 @router.post("/orders/{order_id}/send-owner-email")

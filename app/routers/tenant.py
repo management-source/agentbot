@@ -87,6 +87,10 @@ class TenantMaintenanceIn(BaseModel):
     preferred_contact: str | None = None
 
 
+class TenantMaintenanceUpdateIn(BaseModel):
+    message: str
+
+
 class TenantRegistrationUpdateIn(BaseModel):
     is_active: bool | None = None
     is_verified: bool | None = None
@@ -373,6 +377,31 @@ def _tenant_timeline(row: MaintenanceOrder) -> list[dict[str, object]]:
     return result
 
 
+def _tenant_info_request(row: MaintenanceOrder) -> dict[str, object] | None:
+    events = sorted(row.events or [], key=lambda item: item.created_at or datetime.min)
+    latest_request = None
+    for event in events:
+        if event.event_type == "tenant_info_requested":
+            latest_request = event
+    if not latest_request:
+        return None
+    responses = [
+        event
+        for event in events
+        if event.created_at
+        and latest_request.created_at
+        and event.created_at > latest_request.created_at
+        and event.event_type in {"tenant_update", "tenant_media_uploaded"}
+    ]
+    latest_response = responses[-1] if responses else None
+    return {
+        "required": latest_response is None,
+        "message": latest_request.detail,
+        "requested_at": latest_request.created_at,
+        "responded_at": latest_response.created_at if latest_response else None,
+    }
+
+
 def _get_registered_property(db: Session, mailbox: str, property_id: int | None) -> ManagedProperty:
     if not property_id:
         raise HTTPException(status_code=400, detail="Please select your property from the portal property list.")
@@ -461,6 +490,7 @@ def _order_to_tenant_dict(row: MaintenanceOrder) -> dict:
         "completed_at": row.completed_at,
         "attachment_count": len(row.attachments or []),
         "timeline": _tenant_timeline(row),
+        "info_request": _tenant_info_request(row),
     }
 
 
@@ -731,7 +761,11 @@ def list_tenant_maintenance(
 ):
     rows = (
         db.query(MaintenanceOrder)
-        .options(selectinload(MaintenanceOrder.property), selectinload(MaintenanceOrder.attachments))
+        .options(
+            selectinload(MaintenanceOrder.property),
+            selectinload(MaintenanceOrder.attachments),
+            selectinload(MaintenanceOrder.events),
+        )
         .filter(MaintenanceOrder.mailbox == tenant.mailbox)
         .filter(MaintenanceOrder.tenant_account_id == tenant.id)
         .order_by(MaintenanceOrder.created_at.desc())
@@ -821,6 +855,49 @@ def create_tenant_maintenance(
     return {"ok": True, "request": _order_to_tenant_dict(row), "confirmation_email_sent": confirmation_sent}
 
 
+@router.post("/maintenance-requests/{order_id}/updates")
+def add_tenant_maintenance_update(
+    order_id: int,
+    payload: TenantMaintenanceUpdateIn,
+    db: Session = Depends(get_db),
+    tenant: TenantAccount = Depends(get_current_tenant),
+):
+    message = _clean(payload.message)
+    if not message:
+        raise HTTPException(status_code=400, detail="Please enter an update before sending.")
+
+    order = (
+        db.query(MaintenanceOrder)
+        .options(
+            selectinload(MaintenanceOrder.property),
+            selectinload(MaintenanceOrder.attachments),
+            selectinload(MaintenanceOrder.events),
+        )
+        .filter(MaintenanceOrder.mailbox == tenant.mailbox)
+        .filter(MaintenanceOrder.id == order_id)
+        .filter(MaintenanceOrder.tenant_account_id == tenant.id)
+        .first()
+    )
+    if not order:
+        raise HTTPException(status_code=404, detail="Maintenance request not found.")
+
+    now = datetime.utcnow()
+    order.updated_at = now
+    db.add(
+        MaintenanceEvent(
+            mailbox=order.mailbox,
+            order_id=order.id,
+            actor_user_id=None,
+            event_type="tenant_update",
+            detail=f"Tenant update from {tenant.name}: {message}",
+            created_at=now,
+        )
+    )
+    db.commit()
+    db.refresh(order)
+    return {"ok": True, "request": _order_to_tenant_dict(order)}
+
+
 @router.post("/maintenance-requests/{order_id}/attachments")
 def upload_tenant_maintenance_attachments(
     order_id: int,
@@ -904,8 +981,10 @@ def upload_tenant_maintenance_attachments(
             except OSError:
                 pass
         raise
+    db.refresh(order)
     return {
         "ok": True,
+        "request": _order_to_tenant_dict(order),
         "items": [
             {
                 "id": item.id,

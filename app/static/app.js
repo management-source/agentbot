@@ -2562,7 +2562,10 @@ function renderMaintenanceList(items) {
       <button class="maintenance-order-card ${Number(selectedMaintenanceOrderId) === Number(item.id) ? "active" : ""}" type="button" onclick="openMaintenanceOrder(${item.id})">
         <div class="row space">
           <h4>${escapeHtml(item.reference || `#${item.id}`)} ${escapeHtml(item.title || "Maintenance order")}</h4>
-          <div class="row" style="gap:6px;justify-content:flex-end">${maintenanceSourceChip(item.source)}${maintenanceStatusChip(item.status)}</div>
+          <div class="row" style="gap:6px;justify-content:flex-end">
+            ${item.info_request && item.info_request.required ? `<span class="maintenance-status wait">Info Required</span>` : ""}
+            ${maintenanceSourceChip(item.source)}${maintenanceStatusChip(item.status)}
+          </div>
         </div>
         <p>${escapeHtml(item.property_label || item.property_address || "-")}</p>
         <p>${escapeHtml(item.category || "General")} - ${escapeHtml(item.priority || "normal")} - Updated ${escapeHtml(formatDateShort(item.updated_at))}</p>
@@ -2850,6 +2853,7 @@ function renderMaintenanceDetail(order) {
     if (!body) return;
     const attachments = Array.isArray(order.attachments) ? order.attachments : [];
     const events = Array.isArray(order.events) ? order.events : [];
+    const infoRequest = order.info_request || null;
     body.innerHTML = `
       <div class="maintenance-detail-panel">
         <h4>Order Snapshot</h4>
@@ -2857,6 +2861,12 @@ function renderMaintenanceDetail(order) {
           <div class="maintenance-warning">
             <strong>Tenant account pending verification</strong>
             This request came through the tenant portal, but the account has not been verified against the property register yet. Continue the job if needed, but double-check tenant/property details before approving access or arranging attendance.
+          </div>
+        ` : ""}
+        ${infoRequest ? `
+          <div class="maintenance-warning ${infoRequest.required ? "" : "resolved"}">
+            <strong>${infoRequest.required ? "Tenant information required" : "Tenant update received"}</strong>
+            ${escapeHtml(infoRequest.required ? (infoRequest.message || "Waiting for tenant update.") : `Tenant responded ${formatDateShort(infoRequest.responded_at)}.`)}
           </div>
         ` : ""}
         <div class="maintenance-meta-grid">
@@ -2881,6 +2891,7 @@ function renderMaintenanceDetail(order) {
           <button class="btn" onclick="setMaintenanceStatus(${order.id}, 'OWNER_DECLINED')">Mark Owner Declined</button>
           <button class="btn" onclick="setMaintenanceStatus(${order.id}, 'OWNER_ARRANGING')">Owner Arranging Themselves</button>
           <button class="btn" onclick="setMaintenanceStatus(${order.id}, 'QUOTE_REQUESTED')">Looking for Quote</button>
+          ${order.tenant_account_id ? `<button class="btn" onclick="requestMaintenanceInfo(${order.id})">Request Tenant Info</button>` : ""}
           <button class="btn" onclick="openMaintenanceEmailDraft(${order.id}, 'tradie')">Draft Tradie Work Order</button>
           <button class="btn" onclick="setMaintenanceStatus(${order.id}, 'TRADIE_ARRANGED')">Tradie Arranged</button>
           <button class="btn" onclick="openMaintenanceEmailDraft(${order.id}, 'tenant')">Draft Tenant Arrangement</button>
@@ -2955,6 +2966,29 @@ async function setMaintenanceStatus(orderId, status) {
     renderMaintenanceDetail(order);
     await loadMaintenanceDashboard(currentMaintenancePage || 1);
     await loadNotifications();
+}
+
+async function requestMaintenanceInfo(orderId) {
+    const message = prompt("What information do you need from the tenant? This will appear in their portal and an email will ask them to check the portal.");
+    const text = String(message || "").trim();
+    if (!text) return;
+    const r = await apiFetch(`/maintenance/orders/${orderId}/request-info`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: text }),
+    });
+    if (!r.ok) {
+        alert(`Failed to request tenant information: ${await extractErrorMessage(r)}`);
+        return;
+    }
+    const order = await r.json();
+    fillMaintenanceForm(order);
+    renderMaintenanceDetail(order);
+    await loadMaintenanceDashboard(currentMaintenancePage || 1);
+    await loadNotifications();
+    if (order.info_email_sent === false) {
+        alert("Information request was added to the tenant portal, but the email could not be sent automatically.");
+    }
 }
 
 async function deleteMaintenanceOrder(orderId) {
