@@ -2162,6 +2162,27 @@ function activityActorLabel(item) {
     return role ? `${name} (${role})` : name;
 }
 
+function activityActorUser(item) {
+    const actorId = Number(item?.actor_user_id || 0);
+    if (!actorId) return null;
+    return (Array.isArray(usersCache) ? usersCache : []).find((u) => Number(u.id) === actorId) || null;
+}
+
+function activityActorAvatar(item) {
+    const user = activityActorUser(item) || {};
+    const name = item?.actor_name || user.name || item?.actor_email || "Staff";
+    const initials = userInitials({ name });
+    if (user.avatar_url) {
+        return `
+          <span class="activity-avatar-wrap">
+            <img class="activity-avatar" src="${escapeHtml(user.avatar_url)}" alt="${escapeHtml(name)} avatar" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-flex';" />
+            <span class="activity-avatar activity-avatar-fallback">${initials}</span>
+          </span>
+        `;
+    }
+    return `<span class="activity-avatar-wrap"><span class="activity-avatar">${initials}</span></span>`;
+}
+
 function renderActivityStats(summary = {}) {
     const target = document.getElementById("activityStats");
     if (!target) return;
@@ -2277,22 +2298,20 @@ function renderActivityLog(data = {}) {
     }
     list.innerHTML = items.map((item) => {
         const status = activityStatusMeta(item.status_code);
-        const target = [item.entity_type, item.entity_id].filter(Boolean).join(" ");
+        const target = item.entity_label || [item.entity_type, item.entity_id].filter(Boolean).join(" ");
         return `
           <article class="activity-row">
+            ${activityActorAvatar(item)}
             <div class="activity-row-main">
               <span class="activity-badge">${escapeHtml(item.area || "Portal")}</span>
               <h3>${escapeHtml(item.action || "Activity recorded")}</h3>
-              <p>${escapeHtml(activityActorLabel(item))} ${target ? `worked on ${escapeHtml(target)}` : "completed a platform action"}.</p>
+              <p>${escapeHtml(activityActorLabel(item))}${target ? ` worked on ${escapeHtml(target)}.` : " completed a platform action."}</p>
               <div class="activity-meta">
                 <span>${escapeHtml(formatDate(item.created_at))}</span>
-                <span>${escapeHtml(item.mailbox || "No mailbox context")}</span>
-                <span>${escapeHtml(item.path || "")}</span>
               </div>
             </div>
             <div class="activity-row-side">
               <span class="activity-status ${status.cls}">${escapeHtml(status.label)}</span>
-              <small>${escapeHtml(item.ip_address || "")}</small>
             </div>
           </article>
         `;
