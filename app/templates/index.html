@@ -997,9 +997,12 @@
     }
     .dashboard-shell{
       display:grid;
-      grid-template-columns: 340px minmax(0, 1fr);
+      grid-template-columns: minmax(0, 1fr);
       gap: var(--gap);
       align-items:start;
+    }
+    .dashboard-shell.email-rail-mode{
+      grid-template-columns: 340px minmax(0, 1fr);
     }
     .dashboard-shell.inbox-mode{
       grid-template-columns: 1fr;
@@ -1025,6 +1028,9 @@
     .dashboard-shell.coverage-mode{
       grid-template-columns: 1fr;
     }
+    .dashboard-shell.compliance-providers-mode{
+      grid-template-columns: 1fr;
+    }
     .dashboard-shell.properties-mode{
       grid-template-columns: 1fr;
     }
@@ -1037,6 +1043,12 @@
     .dashboard-shell.system-mode{
       grid-template-columns: 1fr;
     }
+    .dashboard-shell .left-rail{
+      display:none !important;
+    }
+    .dashboard-shell.email-rail-mode .left-rail{
+      display:flex !important;
+    }
     .dashboard-shell.inbox-mode .left-rail,
     .dashboard-shell.rent-mode .left-rail,
     .dashboard-shell.portal-mode .left-rail,
@@ -1045,6 +1057,7 @@
     .dashboard-shell.maintenance-mode .left-rail,
     .dashboard-shell.compliance-mode .left-rail,
     .dashboard-shell.coverage-mode .left-rail,
+    .dashboard-shell.compliance-providers-mode .left-rail,
     .dashboard-shell.properties-mode .left-rail,
     .dashboard-shell.team-mode .left-rail,
     .dashboard-shell.activity-mode .left-rail,
@@ -1501,7 +1514,7 @@
       min-width:140px;
     }
     .label{font-size:12px; color:var(--muted)}
-    input[type="text"], input[type="password"], input[type="date"], input[type="number"], select{
+    input[type="text"], input[type="password"], input[type="email"], input[type="date"], input[type="number"], select{
       width:100%;
       padding:10px 12px;
       border:1px solid var(--border);
@@ -1514,6 +1527,74 @@
     .checkbox{
       display:flex; gap:8px; align-items:center; font-size:13px; color:var(--muted);
       padding:10px 12px; border:1px solid var(--border); border-radius:12px; background:#fff;
+    }
+
+    .compliance-providers-grid{
+      display:grid;
+      grid-template-columns:minmax(360px, .8fr) minmax(0, 1.2fr);
+      gap:var(--gap);
+      align-items:start;
+    }
+    .compliance-provider-card{
+      border-radius:18px;
+      background:linear-gradient(180deg, rgba(255,255,255,.98), rgba(248,251,255,.96));
+      box-shadow:0 18px 42px rgba(15,23,42,.08);
+    }
+    .compliance-provider-form-grid{
+      display:grid;
+      grid-template-columns:repeat(2, minmax(0, 1fr));
+      gap:12px;
+      margin-top:14px;
+    }
+    .compliance-provider-card .field{
+      min-width:0;
+    }
+    .compliance-provider-card .label{
+      font-weight:800;
+      color:#53657d;
+    }
+    .compliance-provider-card input[type="text"],
+    .compliance-provider-card input[type="email"],
+    .compliance-provider-card textarea{
+      width:100%;
+      border:1px solid #d6e0ec;
+      border-radius:14px;
+      background:#fff;
+      color:#0f172a;
+      font-size:14px;
+      line-height:1.35;
+      outline:none;
+      box-shadow:inset 0 1px 0 rgba(15,23,42,.03);
+      transition:border-color .18s ease, box-shadow .18s ease, background .18s ease;
+    }
+    .compliance-provider-card input[type="text"],
+    .compliance-provider-card input[type="email"]{
+      min-height:44px;
+      padding:11px 13px;
+    }
+    .compliance-provider-card textarea{
+      min-height:108px;
+      padding:12px 13px;
+      resize:vertical;
+    }
+    .compliance-provider-card input:focus,
+    .compliance-provider-card textarea:focus{
+      border-color:#c9a246;
+      box-shadow:0 0 0 4px rgba(201,162,70,.16);
+      background:#fffdf8;
+    }
+    .compliance-provider-card .checkbox{
+      min-height:42px;
+      border-color:#d6e0ec;
+      border-radius:14px;
+      color:#42526a;
+      font-weight:700;
+    }
+    @media (max-width: 1180px){
+      .compliance-providers-grid{grid-template-columns:1fr}
+    }
+    @media (max-width: 720px){
+      .compliance-provider-form-grid{grid-template-columns:1fr}
     }
 
     .panel-title{
@@ -5788,7 +5869,8 @@
                 </div>
               </div>
 
-              <div id="complianceProvidersPanel" class="hidden">
+              <div id="complianceProvidersPanel"
+                class="hidden compliance-providers-workspace">
                 <div class="page-banner">
                   <div class="page-banner-kicker">Compliance Providers</div>
                   <h2>Providers</h2>
@@ -5801,8 +5883,8 @@
                   </div>
                 </div>
 
-                <div class="dashboard-grid" style="align-items:start">
-                  <section class="card">
+                <div class="compliance-providers-grid">
+                  <section class="card compliance-provider-card">
                     <div class="row space">
                       <div>
                         <p class="panel-title" id="complianceProviderFormTitle">Add Provider</p>
@@ -5812,7 +5894,7 @@
                       <button class="btn" type="button"
                         onclick="resetComplianceProviderForm()">Clear</button>
                     </div>
-                    <div class="form-grid" style="margin-top:12px">
+                    <div class="compliance-provider-form-grid">
                       <div class="field">
                         <div class="label">Provider Name</div>
                         <input id="complianceProviderName"
@@ -5850,7 +5932,7 @@
                     </div>
                   </section>
 
-                  <section class="card">
+                  <section class="card compliance-provider-card">
                     <div class="row space">
                       <div>
                         <p class="panel-title">Provider Register</p>
