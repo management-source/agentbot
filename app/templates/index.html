@@ -1633,6 +1633,17 @@
     .kpi .warn{color:var(--warn)}
     .kpi .ok{color:var(--success)}
     .kpi .danger{color:var(--danger)}
+    .lease-kpi-row{
+      grid-template-columns:repeat(4, minmax(0,1fr));
+    }
+    .activity-page-gap{
+      display:inline-flex;
+      align-items:center;
+      padding:0 2px;
+      color:#98a2b3;
+      font-size:12px;
+      font-weight:900;
+    }
 
     .filters-row{
       display:flex;
@@ -4217,6 +4228,34 @@
                   d="M6 10v10h12V10"></path><path
                   d="M10 20v-5h4v5"></path></svg></span><span
               class="nav-label">Rent Tracker</span></a>
+          <div class="side-nav-group subnav-collapsed" id="leaseNavGroup"
+            data-side-subnav-group="lease">
+            <div class="side-nav-row">
+              <a id="navLeaseRenewals" href="javascript:void(0)"
+                onclick="openLeaseRenewalPrimary()"
+                title="Lease Renewals"><span
+                  class="nav-icon"><svg viewBox="0 0 24 24"
+                    aria-hidden="true"><path d="M6 3h9l3 3v15H6z"></path><path
+                      d="M14 3v4h4"></path><path d="M9 11h6"></path><path
+                      d="M9 15h6"></path><path d="M9 19h4"></path></svg></span><span
+                  class="nav-label">Lease Renewals</span></a>
+              <button class="side-subnav-toggle" id="leaseSubnavToggle"
+                type="button" onclick="toggleSideSubnav('lease')"
+                aria-label="Toggle lease renewals menu" aria-expanded="false">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path
+                    d="m6 9 6 6 6-6"></path></svg>
+              </button>
+            </div>
+            <div class="side-subnav" id="leaseSideSubnav">
+              <button type="button" data-lease-renewal-view="dashboard"
+                onclick="switchDashboardTab('lease_renewals'); switchLeaseRenewalView('dashboard')">Dashboard</button>
+              <button type="button" data-lease-renewal-view="track"
+                onclick="switchDashboardTab('lease_renewals'); switchLeaseRenewalView('track')">Track
+                Renewal</button>
+              <button type="button" data-lease-renewal-view="report"
+                onclick="switchDashboardTab('lease_renewals'); switchLeaseRenewalView('report')">Report</button>
+            </div>
+          </div>
           <div class="side-nav-group subnav-collapsed" id="complianceNavGroup"
             data-side-subnav-group="compliance">
             <div class="side-nav-row">
@@ -4471,6 +4510,14 @@
                     <p>Import rent schedules and monitor overdue, due soon,
                       paid, partial, and vacant statuses.</p>
                     <div class="tile-action">Track rent</div>
+                  </div>
+                  <div class="hub-tile" data-page-tile="lease_renewals"
+                    onclick="switchDashboardTab('lease_renewals')">
+                    <div class="tile-mark"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l3 3v15H6z"></path><path d="M14 3v4h4"></path><path d="M9 11h6"></path><path d="M9 15h6"></path><path d="M9 19h4"></path></svg></div>
+                    <h3>Lease Renewals</h3>
+                    <p>Track renewal due dates, signatures, rent review
+                      details, follow-ups, and portfolio reports.</p>
+                    <div class="tile-action">Track renewals</div>
                   </div>
                   <div class="hub-tile" data-page-tile="compliance"
                     onclick="switchDashboardTab('compliance')">
@@ -5676,6 +5723,363 @@
                       onclick="closePropertyEditor()">Cancel</button>
                     <button class="btn primary" id="propertyEditSaveBtn"
                       onclick="savePropertyEditor()">Save Property</button>
+                  </div>
+                </div>
+              </div>
+
+              <div id="leaseRenewalsPanel" class="hidden">
+                <div class="page-banner">
+                  <div class="page-banner-kicker">Lease Renewal Workspace</div>
+                  <h2>Lease Renewals</h2>
+                  <p>Track renewal due dates, signatures, rent review details,
+                    follow-ups, and reporting from the managed property list.</p>
+                  <div class="page-banner-actions">
+                    <span class="chip">Renewal due dates</span>
+                    <span class="chip">Owner and tenant signatures</span>
+                    <span class="chip">Rent reviews</span>
+                  </div>
+                </div>
+
+                <div class="maintenance-subnav" role="tablist"
+                  aria-label="Lease renewal views">
+                  <button type="button" data-lease-renewal-view="dashboard"
+                    class="active"
+                    onclick="switchLeaseRenewalView('dashboard')">Dashboard</button>
+                  <button type="button" data-lease-renewal-view="track"
+                    onclick="switchLeaseRenewalView('track')">Track Renewal</button>
+                  <button type="button" data-lease-renewal-view="report"
+                    onclick="switchLeaseRenewalView('report')">Report</button>
+                </div>
+
+                <div id="leaseRenewalDashboardView" class="maintenance-view">
+                  <div class="kpi-row lease-kpi-row">
+                    <div class="card kpi">
+                      <h3>Due Next 30</h3>
+                      <div class="num warn" id="leaseKpiDue30">0</div>
+                    </div>
+                    <div class="card kpi">
+                      <h3>Due Next 60</h3>
+                      <div class="num" id="leaseKpiDue60">0</div>
+                    </div>
+                    <div class="card kpi">
+                      <h3>Overdue</h3>
+                      <div class="num danger" id="leaseKpiOverdue">0</div>
+                    </div>
+                    <div class="card kpi">
+                      <h3>Awaiting Owner</h3>
+                      <div class="num accent" id="leaseKpiAwaitingOwner">0</div>
+                    </div>
+                    <div class="card kpi">
+                      <h3>Awaiting Tenant</h3>
+                      <div class="num accent" id="leaseKpiAwaitingTenant">0</div>
+                    </div>
+                    <div class="card kpi">
+                      <h3>Fully Signed</h3>
+                      <div class="num ok" id="leaseKpiSigned">0</div>
+                    </div>
+                    <div class="card kpi">
+                      <h3>Periodic</h3>
+                      <div class="num" id="leaseKpiPeriodic">0</div>
+                    </div>
+                    <div class="card kpi">
+                      <h3>Missing Details</h3>
+                      <div class="num danger" id="leaseKpiMissing">0</div>
+                    </div>
+                  </div>
+
+                  <div class="maintenance-dashboard-grid">
+                    <div class="maintenance-dashboard-card">
+                      <strong>Track a renewal</strong>
+                      <p>Select an existing managed property and create the
+                        lease renewal tracking record from there.</p>
+                      <button class="btn" style="margin-top:14px"
+                        onclick="switchLeaseRenewalView('track'); resetLeaseRenewalForm()">Track
+                        Renewal</button>
+                    </div>
+                    <div class="maintenance-dashboard-card">
+                      <strong>Review the portfolio</strong>
+                      <p>Filter all lease renewals by due window, status,
+                        assigned staff, or missing details.</p>
+                      <button class="btn" style="margin-top:14px"
+                        onclick="switchLeaseRenewalView('report')">Open
+                        Report</button>
+                    </div>
+                    <div class="maintenance-dashboard-card">
+                      <strong>Needs attention</strong>
+                      <p>Overdue, due-soon, stale, and incomplete records are
+                        surfaced below for fast daily review.</p>
+                      <button class="btn" style="margin-top:14px"
+                        onclick="loadLeaseRenewals(1)">Refresh</button>
+                    </div>
+                  </div>
+
+                  <div class="card" style="margin-top:16px">
+                    <div class="row space">
+                      <div>
+                        <p class="panel-title">Needs Attention</p>
+                        <p class="panel-sub">Urgent lease renewal records from
+                          the current mailbox.</p>
+                      </div>
+                    </div>
+                    <div id="leaseRenewalAttentionList"
+                      class="maintenance-list"></div>
+                  </div>
+                </div>
+
+                <div id="leaseRenewalTrackView"
+                  class="maintenance-view maintenance-grid hidden">
+                  <div class="card maintenance-form-card">
+                    <div class="row space">
+                      <div>
+                        <p class="panel-title" id="leaseRenewalFormTitle">Track
+                          Renewal</p>
+                        <p class="panel-sub">Create a renewal record from the
+                          property list, then keep the dates, signatures, rent,
+                          and follow-up status current.</p>
+                      </div>
+                      <button class="btn" onclick="resetLeaseRenewalForm()">New
+                        Record</button>
+                    </div>
+                    <input type="hidden" id="leaseRenewalRecordId" />
+                    <input type="hidden" id="leaseRenewalPropertyId" />
+
+                    <div class="maintenance-form-grid" style="margin-top:16px">
+                      <div class="maintenance-form-section">Property</div>
+                      <div class="field wide">
+                        <div class="label">Managed Property</div>
+                        <input type="text" id="leaseRenewalPropertySearch"
+                          list="leaseRenewalPropertyOptions"
+                          placeholder="Search and select a property..."
+                          autocomplete="off" />
+                        <datalist id="leaseRenewalPropertyOptions"></datalist>
+                      </div>
+                      <div class="field wide">
+                        <div class="label">Property Contacts</div>
+                        <div id="leaseRenewalPropertyContacts"
+                          class="maintenance-detail-panel"
+                          style="padding:12px"></div>
+                      </div>
+
+                      <div class="maintenance-form-section">Current Lease</div>
+                      <div class="field">
+                        <div class="label">Current Lease Start</div>
+                        <input type="date" id="leaseRenewalCurrentStart" />
+                      </div>
+                      <div class="field">
+                        <div class="label">Current Lease End</div>
+                        <input type="date" id="leaseRenewalCurrentEnd"
+                          onchange="updateLeaseRenewalDueFromLeaseEnd()" />
+                      </div>
+                      <div class="field">
+                        <div class="label">Renewal Due Date</div>
+                        <input type="date" id="leaseRenewalDueDate" />
+                      </div>
+                      <div class="field">
+                        <div class="label">Assigned Staff</div>
+                        <select id="leaseRenewalAssignee"></select>
+                      </div>
+
+                      <div class="maintenance-form-section">Renewal Workflow</div>
+                      <div class="field">
+                        <div class="label">Status</div>
+                        <select id="leaseRenewalStatus">
+                          <option value="NOT_STARTED">Not Started</option>
+                          <option value="PREPARING_RENEWAL">Preparing Renewal</option>
+                          <option value="SENT_TO_OWNER">Sent To Owner</option>
+                          <option value="OWNER_SIGNED">Owner Signed</option>
+                          <option value="SENT_TO_TENANT">Sent To Tenant</option>
+                          <option value="TENANT_SIGNED">Tenant Signed</option>
+                          <option value="PARTIALLY_SIGNED">Partially Signed</option>
+                          <option value="FULLY_SIGNED">Fully Signed</option>
+                          <option value="PERIODIC_CONFIRMED">Periodic Confirmed</option>
+                          <option value="TENANT_VACATING">Tenant Vacating</option>
+                          <option value="ADVERTISED">Advertised</option>
+                          <option value="ON_HOLD">On Hold</option>
+                          <option value="COMPLETED">Completed</option>
+                        </select>
+                      </div>
+                      <div class="field">
+                        <div class="label">Lease Sent Date</div>
+                        <input type="date" id="leaseRenewalSentDate" />
+                      </div>
+                      <div class="field">
+                        <div class="label">Last Resent Date</div>
+                        <input type="date" id="leaseRenewalResentDate" />
+                      </div>
+                      <div class="field">
+                        <div class="label">Follow-up Date</div>
+                        <input type="date" id="leaseRenewalFollowUp" />
+                      </div>
+                      <div class="field">
+                        <div class="label">Owner Signed</div>
+                        <input type="date" id="leaseRenewalOwnerSigned" />
+                      </div>
+                      <div class="field">
+                        <div class="label">Tenant Signed</div>
+                        <input type="date" id="leaseRenewalTenantSigned" />
+                      </div>
+
+                      <div class="maintenance-form-section">Proposed Lease & Rent</div>
+                      <div class="field">
+                        <div class="label">Proposed Start</div>
+                        <input type="date" id="leaseRenewalProposedStart" />
+                      </div>
+                      <div class="field">
+                        <div class="label">Proposed End</div>
+                        <input type="date" id="leaseRenewalProposedEnd" />
+                      </div>
+                      <div class="field">
+                        <div class="label">Proposed Term</div>
+                        <select id="leaseRenewalProposedTerm">
+                          <option value="6 months">6 months</option>
+                          <option value="12 months" selected>12 months</option>
+                          <option value="Periodic">Periodic</option>
+                          <option value="Other">Other</option>
+                        </select>
+                      </div>
+                      <div class="field">
+                        <div class="label">Current Rent / Week</div>
+                        <input type="number" min="0" step="0.01"
+                          id="leaseRenewalCurrentRent" />
+                      </div>
+                      <div class="field">
+                        <div class="label">Proposed Rent / Week</div>
+                        <input type="number" min="0" step="0.01"
+                          id="leaseRenewalProposedRent" />
+                      </div>
+                      <div class="field">
+                        <div class="label">Rent Increase Date</div>
+                        <input type="date" id="leaseRenewalRentIncreaseDate" />
+                      </div>
+                      <div class="field wide">
+                        <div class="label">Notes</div>
+                        <textarea id="leaseRenewalNotes"
+                          placeholder="Owner instructions, tenant response, periodic agreement, vacate/ad details, rent review context..."></textarea>
+                      </div>
+                    </div>
+                    <div class="row maintenance-form-actions">
+                      <button class="btn primary"
+                        onclick="saveLeaseRenewalRecord()">Save Renewal</button>
+                      <button class="btn" onclick="resetLeaseRenewalForm()">Clear</button>
+                    </div>
+                  </div>
+
+                  <div class="maintenance-detail">
+                    <div class="card">
+                      <div class="row space">
+                        <div>
+                          <p class="panel-title" id="leaseRenewalDetailTitle">No
+                            renewal selected</p>
+                          <p class="panel-sub" id="leaseRenewalDetailSub">Create
+                            or open a lease renewal record.</p>
+                        </div>
+                        <span class="maintenance-status"
+                          id="leaseRenewalDetailStatus">Ready</span>
+                      </div>
+                      <div id="leaseRenewalDetailBody" style="margin-top:14px">
+                        <div class="ticket-empty">
+                          <strong>No lease renewal selected</strong>
+                          <div class="small muted" style="margin-top:6px">Save a
+                            record or open one from the report to see details
+                            and history.</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div id="leaseRenewalReportView"
+                  class="maintenance-view hidden">
+                  <div class="card">
+                    <div class="row space">
+                      <div>
+                        <p class="panel-title">Lease Renewal Report</p>
+                        <p class="panel-sub">All tracked lease renewal records
+                          with due dates, signatures, rent review details, and
+                          assigned staff.</p>
+                      </div>
+                      <button class="btn"
+                        onclick="loadLeaseRenewals(1)">Refresh</button>
+                    </div>
+                    <div class="filters-row">
+                      <div class="field">
+                        <div class="label">Due Window</div>
+                        <select id="leaseRenewalWindowFilter">
+                          <option value>All</option>
+                          <option value="ACTIVE">Active</option>
+                          <option value="OVERDUE">Overdue</option>
+                          <option value="30">Due Next 30 Days</option>
+                          <option value="60">Due Next 60 Days</option>
+                          <option value="90">Due Next 90 Days</option>
+                          <option value="MISSING">Missing Details</option>
+                          <option value="COMPLETED">Completed</option>
+                        </select>
+                      </div>
+                      <div class="field">
+                        <div class="label">Status</div>
+                        <select id="leaseRenewalStatusFilter">
+                          <option value>All</option>
+                          <option value="NOT_STARTED">Not Started</option>
+                          <option value="PREPARING_RENEWAL">Preparing Renewal</option>
+                          <option value="SENT_TO_OWNER">Sent To Owner</option>
+                          <option value="OWNER_SIGNED">Owner Signed</option>
+                          <option value="SENT_TO_TENANT">Sent To Tenant</option>
+                          <option value="PARTIALLY_SIGNED">Partially Signed</option>
+                          <option value="FULLY_SIGNED">Fully Signed</option>
+                          <option value="PERIODIC_CONFIRMED">Periodic Confirmed</option>
+                          <option value="TENANT_VACATING">Tenant Vacating</option>
+                          <option value="ADVERTISED">Advertised</option>
+                          <option value="ON_HOLD">On Hold</option>
+                          <option value="COMPLETED">Completed</option>
+                        </select>
+                      </div>
+                      <div class="field">
+                        <div class="label">Assigned Staff</div>
+                        <select id="leaseRenewalAssignedFilter"></select>
+                      </div>
+                      <div class="field" style="min-width:280px">
+                        <div class="label">Search</div>
+                        <input type="text" id="leaseRenewalSearchBox"
+                          placeholder="Property, tenant, owner, notes..." />
+                      </div>
+                      <div class="row" style="align-self:flex-end">
+                        <button class="btn"
+                          onclick="loadLeaseRenewals(1)">Apply</button>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="rent-table-wrap">
+                    <table class="rent-table" style="min-width:1420px">
+                      <thead>
+                        <tr>
+                          <th>Property</th>
+                          <th>Status</th>
+                          <th>Lease End</th>
+                          <th>Renewal Due</th>
+                          <th>Sent</th>
+                          <th>Owner Signed</th>
+                          <th>Tenant Signed</th>
+                          <th>Proposed</th>
+                          <th>Follow-up</th>
+                          <th>Assigned</th>
+                          <th>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody id="leaseRenewalReportBody">
+                        <tr><td colspan="11" class="muted">No lease renewal
+                            records loaded.</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  <div class="small muted" id="leaseRenewalPageInfo"
+                    style="margin-top:8px"></div>
+                  <div class="row space" style="margin-top:10px">
+                    <button class="btn" id="leaseRenewalBtnPrev"
+                      onclick="prevLeaseRenewalPage()">Prev</button>
+                    <div class="activity-page-numbers"
+                      id="leaseRenewalPageNumbers"></div>
+                    <button class="btn" id="leaseRenewalBtnNext"
+                      onclick="nextLeaseRenewalPage()">Next</button>
                   </div>
                 </div>
               </div>

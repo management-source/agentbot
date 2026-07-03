@@ -31,6 +31,7 @@ AREA_LABELS = {
     "maintenance": "Maintenance",
     "tenant": "Tenant Portal",
     "rent-tracker": "Rent Tracker",
+    "lease-renewals": "Lease Renewals",
     "properties": "Properties",
     "compliance": "Compliance",
     "my-space": "My Space",
@@ -45,6 +46,7 @@ ENTITY_LABELS = {
     "threads": "Email Thread",
     "maintenance": "Maintenance",
     "rent-tracker": "Rent Item",
+    "lease-renewals": "Lease Renewal",
     "properties": "Property",
     "compliance": "Compliance",
     "my-space": "My Space",
@@ -166,6 +168,14 @@ def infer_activity(method: str, path: str) -> dict[str, str | None]:
         entity_type = "Rent Tracker Item"
         if tail == "import-xlsx":
             action = "Imported rent tracker"
+    elif root == "lease-renewals":
+        entity_type = "Lease Renewal"
+        if "records" in parts:
+            action = f"{action} lease renewal"
+        if tail == "status":
+            action = "Updated lease renewal status"
+        elif tail == "notes":
+            action = "Added lease renewal note"
     elif root == "my-space":
         entity_type = "My Space"
         if "staff-guides" in parts and method.upper() == "POST":

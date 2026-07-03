@@ -177,6 +177,12 @@ let currentSearch = "";
 let currentRentPage = 1;
 let rentLoadedOnce = false;
 let rentViewMode = "tracker";
+let currentLeaseRenewalPage = 1;
+let leaseRenewalTotalPages = 1;
+let leaseRenewalsLoadedOnce = false;
+let leaseRenewalViewMode = "dashboard";
+let selectedLeaseRenewalId = null;
+let leaseRenewalRecordsCache = {};
 let currentMaintenancePage = 1;
 let maintenanceLoadedOnce = false;
 let selectedMaintenanceOrderId = null;
@@ -247,6 +253,11 @@ function updateSyncContextUI() {
     if (currentDashboardTab === "rent") {
         if (viewBadge) viewBadge.textContent = "Rent Tracker";
         if (info) info.textContent = "Inbox sync controls are hidden while you are on the rent tracker tab.";
+        return;
+    }
+    if (currentDashboardTab === "lease_renewals") {
+        if (viewBadge) viewBadge.textContent = "Lease Renewals";
+        if (info) info.textContent = "Inbox sync controls are hidden while you are managing lease renewal tracking.";
         return;
     }
     if (currentDashboardTab === "maintenance") {
@@ -326,6 +337,7 @@ function notificationKindLabel(kind) {
     if (key === "email") return "Email";
     if (key === "maintenance") return "Maintenance";
     if (key === "rent") return "Rent";
+    if (key === "lease") return "Lease";
     if (key === "compliance") return "Compliance";
     if (key === "myspace") return "My Space";
     return "Portal";
@@ -373,6 +385,7 @@ function notificationCategoryCards(data = {}) {
     const cards = [
         ["email", "Assigned Tickets", c.email || 0],
         ["maintenance", "Maintenance", c.maintenance || 0],
+        ["lease", "Lease Renewals", c.lease || 0],
         ["compliance", "Compliance", c.compliance || 0],
         ["rent", "Rent", c.rent || 0],
         ["myspace", "My Space", c.myspace || 0],
@@ -391,6 +404,7 @@ function notificationCategoryChartHtml(data = {}) {
     const rows = [
         ["email", "Assigned Tickets", Number(c.email || 0)],
         ["maintenance", "Maintenance", Number(c.maintenance || 0)],
+        ["lease", "Lease Renewals", Number(c.lease || 0)],
         ["compliance", "Compliance", Number(c.compliance || 0)],
         ["rent", "Rent", Number(c.rent || 0)],
         ["myspace", "My Space", Number(c.myspace || 0)],
@@ -475,10 +489,10 @@ function renderNotificationCenter(data = latestNotificationData) {
     if (generated) generated.textContent = data.generated_at ? `Updated ${formatDate(data.generated_at)}` : "Ready";
     if (!list) return;
     if (!notificationItems.length) {
-        list.innerHTML = `<div class="ticket-empty"><strong>No notifications right now</strong><div class="small muted" style="margin-top:6px">Assigned tickets, maintenance action, compliance risk, rent alerts, and personal follow-ups will appear here.</div></div>`;
+        list.innerHTML = `<div class="ticket-empty"><strong>No notifications right now</strong><div class="small muted" style="margin-top:6px">Assigned tickets, maintenance action, lease renewal alerts, compliance risk, rent alerts, and personal follow-ups will appear here.</div></div>`;
         return;
     }
-    const groups = ["maintenance", "email", "compliance", "rent", "myspace"];
+    const groups = ["maintenance", "lease", "email", "compliance", "rent", "myspace"];
     list.innerHTML = groups.map((kind) => {
         const groupItems = notificationItems.filter((item) => String(item.kind || "").toLowerCase() === kind);
         if (!groupItems.length) return "";
@@ -512,9 +526,9 @@ function renderNotifications(data = {}) {
     if (summary) {
         const c = data.categories || {};
         if (total > 0) {
-            summary.textContent = `${total} active notification${total === 1 ? "" : "s"} - Tickets ${c.email || 0}, Maintenance ${c.maintenance || 0}, Compliance ${c.compliance || 0}, Rent ${c.rent || 0}, My Space ${c.myspace || 0}`;
+            summary.textContent = `${total} active notification${total === 1 ? "" : "s"} - Tickets ${c.email || 0}, Maintenance ${c.maintenance || 0}, Lease ${c.lease || 0}, Compliance ${c.compliance || 0}, Rent ${c.rent || 0}, My Space ${c.myspace || 0}`;
         } else {
-            summary.textContent = "No assigned tickets, maintenance action, compliance risk, rent alerts, or personal follow-ups.";
+            summary.textContent = "No assigned tickets, maintenance action, lease renewal alerts, compliance risk, rent alerts, or personal follow-ups.";
         }
     }
     if (!list) return;
@@ -593,6 +607,14 @@ async function openNotificationTarget(index) {
         }
         return;
     }
+    if (page === "lease_renewals") {
+        switchDashboardTab("lease_renewals");
+        switchLeaseRenewalView("report");
+        if (item.record_id) {
+            setTimeout(() => openLeaseRenewalRecord(item.record_id), 450);
+        }
+        return;
+    }
     if (page === "compliance") {
         switchDashboardTab("compliance");
         setTimeout(() => loadComplianceDashboard(1), 100);
@@ -634,6 +656,11 @@ async function initMailboxes() {
             // refresh UI data under new mailbox
             currentPage = 1;
             rentLoadedOnce = false;
+            leaseRenewalsLoadedOnce = false;
+            currentLeaseRenewalPage = 1;
+            leaseRenewalTotalPages = 1;
+            selectedLeaseRenewalId = null;
+            leaseRenewalRecordsCache = {};
             maintenanceLoadedOnce = false;
             propertiesLoadedOnce = false;
             complianceLoadedOnce = false;
@@ -645,6 +672,10 @@ async function initMailboxes() {
             if (currentDashboardTab === "rent") {
                 currentRentPage = 1;
                 loadActiveRentView();
+            }
+            if (currentDashboardTab === "lease_renewals") {
+                resetLeaseRenewalForm();
+                loadLeaseRenewals();
             }
             if (currentDashboardTab === "maintenance") {
                 currentMaintenancePage = 1;
@@ -1490,27 +1521,27 @@ const USER_ROLE_ACCESS = {
         optionLabel: "Administrator",
         defaultAdminAccess: true,
         summary: "Full control over the portal, system users, settings, and all operational workspaces.",
-        access: ["Portal Hub", "My Space", "Email Manager", "Maintenance", "Rent Tracker", "Compliance", "Compliance Report", "Compliance Providers", "Properties", "Our Team", "Activity Log", "System"],
+        access: ["Portal Hub", "My Space", "Email Manager", "Maintenance", "Rent Tracker", "Lease Renewals", "Compliance", "Compliance Report", "Compliance Providers", "Properties", "Our Team", "Activity Log", "System"],
     },
     PM: {
         label: "Property Manager",
         optionLabel: "Property Manager",
         defaultAdminAccess: true,
         summary: "Property management access for inbox triage, maintenance, compliance, rent, and property work.",
-        access: ["Portal Hub", "My Space", "Email Manager", "Maintenance", "Rent Tracker", "Compliance", "Compliance Report", "Compliance Providers", "Properties", "Our Team", "Activity Log", "System"],
+        access: ["Portal Hub", "My Space", "Email Manager", "Maintenance", "Rent Tracker", "Lease Renewals", "Compliance", "Compliance Report", "Compliance Providers", "Properties", "Our Team", "Activity Log", "System"],
     },
     LEASING: {
         label: "Marketing Advisor",
         optionLabel: "Marketing Advisor",
         summary: "Marketing and leasing-focused access for email work, property information, and team contacts.",
-        access: ["Portal Hub", "My Space", "Email Manager", "Properties", "Our Team"],
+        access: ["Portal Hub", "My Space", "Email Manager", "Lease Renewals", "Properties", "Our Team"],
     },
     SALES: {
         label: "Director",
         optionLabel: "Director",
         defaultAdminAccess: true,
         summary: "Director-level access across the core portal workspaces.",
-        access: ["Portal Hub", "My Space", "Email Manager", "Maintenance", "Rent Tracker", "Compliance", "Compliance Report", "Compliance Providers", "Properties", "Our Team", "Activity Log", "System"],
+        access: ["Portal Hub", "My Space", "Email Manager", "Maintenance", "Rent Tracker", "Lease Renewals", "Compliance", "Compliance Report", "Compliance Providers", "Properties", "Our Team", "Activity Log", "System"],
     },
     ACCOUNTS: {
         label: "Administrative Assistant",
@@ -1536,6 +1567,7 @@ const FALLBACK_PAGE_REGISTRY = [
     { id: "inbox", label: "Email Manager", description: "Email tickets and inbox operations.", section: "Operations" },
     { id: "maintenance", label: "Maintenance", description: "Maintenance orders, owner approvals, quotes, tradie arrangements, and completion tracking.", section: "Operations" },
     { id: "rent", label: "Rent Tracker", description: "Rent tracking and reports.", section: "Operations" },
+    { id: "lease_renewals", label: "Lease Renewals", description: "Lease renewal dates, signatures, rent review tracking, follow-ups, and reporting.", section: "Operations" },
     { id: "compliance", label: "Compliance", description: "Compliance records and due dates.", section: "Compliance" },
     { id: "coverage", label: "Compliance Report", description: "Missing and incomplete compliance checks.", section: "Compliance" },
     { id: "compliance_providers", label: "Compliance Providers", description: "Reusable provider contacts for compliance records.", section: "Compliance" },
@@ -1615,7 +1647,7 @@ function isSideSubnavCollapsed(group) {
 }
 
 function applySideSubnavState() {
-    ["maintenance", "compliance"].forEach((group) => {
+    ["maintenance", "lease", "compliance"].forEach((group) => {
         const navGroup = document.querySelector(`[data-side-subnav-group="${group}"]`);
         const toggle = document.getElementById(`${group}SubnavToggle`);
         if (!navGroup) return;
@@ -1629,6 +1661,15 @@ function toggleSideSubnav(group) {
     const collapsed = !isSideSubnavCollapsed(group);
     localStorage.setItem(sideSubnavStorageKey(group), collapsed ? "1" : "0");
     applySideSubnavState();
+}
+
+function openLeaseRenewalPrimary() {
+    if (canAccessPage("lease_renewals")) {
+        switchDashboardTab("lease_renewals");
+        switchLeaseRenewalView("dashboard");
+    } else {
+        alert("This page is not assigned to your role.");
+    }
 }
 
 function openCompliancePrimary() {
@@ -1650,6 +1691,7 @@ function applyPageVisibility() {
         inbox: "navInbox",
         maintenance: "navMaintenance",
         rent: "navRentTracker",
+        lease_renewals: "navLeaseRenewals",
         compliance: "navCompliance",
         coverage: "navComplianceCoverage",
         compliance_providers: "navComplianceProviders",
@@ -1671,6 +1713,10 @@ function applyPageVisibility() {
     if (maintenanceSideSubnav) maintenanceSideSubnav.classList.toggle("hidden", !canAccessPage("maintenance"));
     const maintenanceNavGroup = document.getElementById("maintenanceNavGroup");
     if (maintenanceNavGroup) maintenanceNavGroup.classList.toggle("hidden", !canAccessPage("maintenance"));
+    const leaseSideSubnav = document.getElementById("leaseSideSubnav");
+    if (leaseSideSubnav) leaseSideSubnav.classList.toggle("hidden", !canAccessPage("lease_renewals"));
+    const leaseNavGroup = document.getElementById("leaseNavGroup");
+    if (leaseNavGroup) leaseNavGroup.classList.toggle("hidden", !canAccessPage("lease_renewals"));
     const complianceMenuVisible = canAccessPage("compliance") || canAccessPage("coverage") || canAccessPage("compliance_providers");
     const complianceNavGroup = document.getElementById("complianceNavGroup");
     if (complianceNavGroup) complianceNavGroup.classList.toggle("hidden", !complianceMenuVisible);
@@ -2600,7 +2646,7 @@ function formatDateShort(dt) {
 }
 
 function switchDashboardTab(tab) {
-    const requestedTab = ["portal", "notifications", "myspace", "maintenance", "rent", "compliance", "coverage", "compliance_providers", "properties", "team", "activity", "system", "inbox"].includes(tab) ? tab : "portal";
+    const requestedTab = ["portal", "notifications", "myspace", "maintenance", "rent", "lease_renewals", "compliance", "coverage", "compliance_providers", "properties", "team", "activity", "system", "inbox"].includes(tab) ? tab : "portal";
     if (!canAccessPage(requestedTab)) {
         alert("This page is not assigned to your role.");
         currentDashboardTab = firstAccessiblePage();
@@ -2614,6 +2660,7 @@ function switchDashboardTab(tab) {
         inbox: ["Email Manager", "Unified inbox operations with clear action queues and fast follow-up tools."],
         maintenance: ["Maintenance", "Create, approve, quote, schedule, and complete property maintenance orders."],
         rent: ["Rent Tracker", "Track rental due dates, payments, arrears, and yearly rent reporting."],
+        lease_renewals: ["Lease Renewals", "Track renewal due dates, signatures, rent review details, follow-ups, and portfolio reporting."],
         compliance: ["Compliance", "Create and update compliance records with calculated due dates."],
         coverage: ["Compliance Report", "Review missing and incomplete MRS, Smoke, Gas, and Electrical checks."],
         compliance_providers: ["Compliance Providers", "Manage reusable provider contacts for compliance records."],
@@ -2633,6 +2680,7 @@ function switchDashboardTab(tab) {
     const inboxPanel = document.getElementById("inboxPanel");
     const maintenancePanel = document.getElementById("maintenancePanel");
     const rentPanel = document.getElementById("rentPanel");
+    const leaseRenewalsPanel = document.getElementById("leaseRenewalsPanel");
     const propertiesPanel = document.getElementById("propertiesPanel");
     const teamPanel = document.getElementById("teamPanel");
     const activityPanel = document.getElementById("activityPanel");
@@ -2645,6 +2693,7 @@ function switchDashboardTab(tab) {
     const navMySpace = document.getElementById("navMySpace");
     const navPortal = document.getElementById("navPortal");
     const navRent = document.getElementById("navRentTracker");
+    const navLeaseRenewals = document.getElementById("navLeaseRenewals");
     const navProperties = document.getElementById("navProperties");
     const navTeam = document.getElementById("navTeam");
     const navActivity = document.getElementById("navActivity");
@@ -2660,6 +2709,7 @@ function switchDashboardTab(tab) {
     if (inboxPanel) inboxPanel.classList.toggle("hidden", currentDashboardTab !== "inbox");
     if (maintenancePanel) maintenancePanel.classList.toggle("hidden", currentDashboardTab !== "maintenance");
     if (rentPanel) rentPanel.classList.toggle("hidden", currentDashboardTab !== "rent");
+    if (leaseRenewalsPanel) leaseRenewalsPanel.classList.toggle("hidden", currentDashboardTab !== "lease_renewals");
     if (propertiesPanel) propertiesPanel.classList.toggle("hidden", currentDashboardTab !== "properties");
     if (teamPanel) teamPanel.classList.toggle("hidden", currentDashboardTab !== "team");
     if (activityPanel) activityPanel.classList.toggle("hidden", currentDashboardTab !== "activity");
@@ -2672,6 +2722,7 @@ function switchDashboardTab(tab) {
     if (navInbox) navInbox.classList.toggle("active", currentDashboardTab === "inbox");
     if (navMaintenance) navMaintenance.classList.toggle("active", currentDashboardTab === "maintenance");
     if (navRent) navRent.classList.toggle("active", currentDashboardTab === "rent");
+    if (navLeaseRenewals) navLeaseRenewals.classList.toggle("active", currentDashboardTab === "lease_renewals");
     if (navProperties) navProperties.classList.toggle("active", currentDashboardTab === "properties");
     if (navTeam) navTeam.classList.toggle("active", currentDashboardTab === "team");
     if (navActivity) navActivity.classList.toggle("active", currentDashboardTab === "activity");
@@ -2686,9 +2737,13 @@ function switchDashboardTab(tab) {
             || (view === "providers" && currentDashboardTab === "compliance_providers");
         btn.classList.toggle("active", isActive);
     });
+    document.querySelectorAll("[data-lease-renewal-view]").forEach((btn) => {
+        btn.classList.toggle("active", currentDashboardTab === "lease_renewals" && btn.getAttribute("data-lease-renewal-view") === leaseRenewalViewMode);
+    });
     if (shell) {
         shell.classList.toggle("inbox-mode", currentDashboardTab === "inbox");
         shell.classList.toggle("maintenance-mode", currentDashboardTab === "maintenance");
+        shell.classList.toggle("lease-renewals-mode", currentDashboardTab === "lease_renewals");
         shell.classList.toggle("portal-mode", currentDashboardTab === "portal");
         shell.classList.toggle("notifications-mode", currentDashboardTab === "notifications");
         shell.classList.toggle("myspace-mode", currentDashboardTab === "myspace");
@@ -2705,6 +2760,11 @@ function switchDashboardTab(tab) {
     updateSyncContextUI();
     if (currentDashboardTab === "rent" && !rentLoadedOnce) {
         loadActiveRentView();
+    }
+    if (currentDashboardTab === "lease_renewals" && !leaseRenewalsLoadedOnce) {
+        refreshPropertyOptions();
+        loadAssignableUsers();
+        loadLeaseRenewals();
     }
     if (currentDashboardTab === "maintenance" && !maintenanceLoadedOnce) {
         refreshPropertyOptions();
@@ -4867,14 +4927,19 @@ async function refreshPropertyOptions() {
     const maintenanceSearch = document.getElementById("maintenancePropertySearch");
     const maintenanceHidden = document.getElementById("maintenancePropertyId");
     const maintenanceList = document.getElementById("maintenancePropertyOptions");
+    const leaseSearch = document.getElementById("leaseRenewalPropertySearch");
+    const leaseHidden = document.getElementById("leaseRenewalPropertyId");
+    const leaseList = document.getElementById("leaseRenewalPropertyOptions");
     try {
         const r = await apiFetch("/properties/options");
         if (!r.ok) {
             if (complianceList) complianceList.innerHTML = "";
             if (maintenanceList) maintenanceList.innerHTML = "";
+            if (leaseList) leaseList.innerHTML = "";
             renderAddressSuggestionOptions();
             if (hidden) hidden.value = "";
             if (maintenanceHidden) maintenanceHidden.value = "";
+            if (leaseHidden) leaseHidden.value = "";
             return;
         }
         const data = await r.json();
@@ -4897,6 +4962,7 @@ async function refreshPropertyOptions() {
             .join("");
         if (complianceList) complianceList.innerHTML = optionsHtml;
         if (maintenanceList) maintenanceList.innerHTML = optionsHtml;
+        if (leaseList) leaseList.innerHTML = optionsHtml;
         renderAddressSuggestionOptions();
         if (search && hidden) {
             const match = resolvePropertySearchValue(search.value);
@@ -4906,12 +4972,18 @@ async function refreshPropertyOptions() {
             const match = resolvePropertySearchValue(maintenanceSearch.value);
             maintenanceHidden.value = match ? String(match.id) : "";
         }
+        if (leaseSearch && leaseHidden) {
+            const match = resolvePropertySearchValue(leaseSearch.value);
+            leaseHidden.value = match ? String(match.id) : "";
+        }
     } catch {
         if (complianceList) complianceList.innerHTML = "";
         if (maintenanceList) maintenanceList.innerHTML = "";
+        if (leaseList) leaseList.innerHTML = "";
         renderAddressSuggestionOptions();
         if (hidden) hidden.value = "";
         if (maintenanceHidden) maintenanceHidden.value = "";
+        if (leaseHidden) leaseHidden.value = "";
     }
 }
 
@@ -4921,6 +4993,560 @@ function resolvePropertySearchValue(value) {
     if (propertyOptionsByLabel[needle]) return propertyOptionsByLabel[needle];
     const matches = propertyOptionsCache.filter((p) => String(p.label || "").toLowerCase().includes(needle));
     return matches.length === 1 ? matches[0] : null;
+}
+
+const LEASE_RENEWAL_STATUSES = [
+    "NOT_STARTED",
+    "PREPARING_RENEWAL",
+    "SENT_TO_OWNER",
+    "OWNER_SIGNED",
+    "SENT_TO_TENANT",
+    "TENANT_SIGNED",
+    "PARTIALLY_SIGNED",
+    "FULLY_SIGNED",
+    "PERIODIC_CONFIRMED",
+    "TENANT_VACATING",
+    "ADVERTISED",
+    "ON_HOLD",
+    "COMPLETED",
+];
+
+function leaseRenewalStatusLabel(status) {
+    const labels = {
+        NOT_STARTED: "Not Started",
+        PREPARING_RENEWAL: "Preparing Renewal",
+        SENT_TO_OWNER: "Sent To Owner",
+        OWNER_SIGNED: "Owner Signed",
+        SENT_TO_TENANT: "Sent To Tenant",
+        TENANT_SIGNED: "Tenant Signed",
+        PARTIALLY_SIGNED: "Partially Signed",
+        FULLY_SIGNED: "Fully Signed",
+        PERIODIC_CONFIRMED: "Periodic Confirmed",
+        TENANT_VACATING: "Tenant Vacating",
+        ADVERTISED: "Advertised",
+        ON_HOLD: "On Hold",
+        COMPLETED: "Completed",
+    };
+    return labels[String(status || "NOT_STARTED").toUpperCase()] || String(status || "").replaceAll("_", " ");
+}
+
+function leaseRenewalStatusClass(status) {
+    const key = String(status || "").toUpperCase();
+    if (["FULLY_SIGNED", "PERIODIC_CONFIRMED", "COMPLETED"].includes(key)) return "done";
+    if (["SENT_TO_OWNER", "SENT_TO_TENANT", "PARTIALLY_SIGNED"].includes(key)) return "wait";
+    if (["TENANT_VACATING", "ADVERTISED", "ON_HOLD"].includes(key)) return "stop";
+    if (["PREPARING_RENEWAL", "OWNER_SIGNED", "TENANT_SIGNED"].includes(key)) return "action";
+    return "";
+}
+
+function leaseRenewalStatusChip(status) {
+    return `<span class="maintenance-status ${leaseRenewalStatusClass(status)}">${escapeHtml(leaseRenewalStatusLabel(status))}</span>`;
+}
+
+function leaseRenewalStateChip(state) {
+    const key = String(state || "ACTIVE").toUpperCase();
+    if (key === "COMPLETED") return `<span class="compliance-status current">Completed</span>`;
+    if (key === "OVERDUE") return `<span class="compliance-status overdue">Overdue</span>`;
+    if (key === "DUE_SOON") return `<span class="compliance-status due-soon">Due Soon</span>`;
+    if (key === "MISSING_DETAILS") return `<span class="compliance-status missing">Missing Details</span>`;
+    return `<span class="compliance-status action">Active</span>`;
+}
+
+function leaseRenewalMoney(value) {
+    const amount = Number(value || 0);
+    if (!(amount > 0)) return "-";
+    return amount.toLocaleString(undefined, { style: "currency", currency: "AUD" });
+}
+
+function leaseRenewalDatePayload(id) {
+    return isoDateOrNull(document.getElementById(id)?.value || "");
+}
+
+function renderLeaseRenewalAssigneeOptions(selectedId = "") {
+    const ids = ["leaseRenewalAssignee", "leaseRenewalAssignedFilter"];
+    ids.forEach((id) => {
+        const sel = document.getElementById(id);
+        if (!sel) return;
+        const current = id === "leaseRenewalAssignee" && selectedId ? String(selectedId) : sel.value || "";
+        const first = id === "leaseRenewalAssignedFilter" ? "All staff" : "Unassigned";
+        sel.innerHTML = [
+            `<option value="">${first}</option>`,
+            ...assignableUsers.map((u) => {
+                const value = String(u.id);
+                return `<option value="${escapeHtml(value)}" ${value === current ? "selected" : ""}>${escapeHtml(staffOptionLabel(u))}</option>`;
+            }),
+        ].join("");
+        sel.value = current;
+    });
+}
+
+function updateLeaseRenewalPropertySelection() {
+    const search = document.getElementById("leaseRenewalPropertySearch");
+    const hidden = document.getElementById("leaseRenewalPropertyId");
+    if (!search || !hidden) return null;
+    const match = resolvePropertySearchValue(search.value);
+    hidden.value = match ? String(match.id) : "";
+    renderLeaseRenewalPropertyContacts(match);
+    return match;
+}
+
+function renderLeaseRenewalPropertyContacts(property) {
+    const target = document.getElementById("leaseRenewalPropertyContacts");
+    if (!target) return;
+    if (!property) {
+        target.innerHTML = `<div class="small muted">Select a property to preview owner and tenant contacts.</div>`;
+        return;
+    }
+    const owner = property.primary_owner || propertyPrimaryContact(property.owners);
+    const tenant = property.primary_tenant || propertyPrimaryContact(property.tenants);
+    target.innerHTML = `
+      <div class="maintenance-meta-grid">
+        <div><span>Owner</span>${escapeHtml(owner.name || "-")}<br>${escapeHtml(owner.email || owner.phone || "")}</div>
+        <div><span>Tenant</span>${escapeHtml(tenant.name || "-")}<br>${escapeHtml(tenant.email || tenant.phone || "")}</div>
+        <div><span>Tenancy Status</span>${escapeHtml(property.tenancy_status || "-")}</div>
+      </div>
+    `;
+}
+
+function updateLeaseRenewalDueFromLeaseEnd() {
+    const end = document.getElementById("leaseRenewalCurrentEnd")?.value || "";
+    const due = document.getElementById("leaseRenewalDueDate");
+    if (end && due && !due.value) due.value = end;
+}
+
+function resetLeaseRenewalForm() {
+    selectedLeaseRenewalId = null;
+    [
+        "leaseRenewalRecordId",
+        "leaseRenewalPropertyId",
+        "leaseRenewalPropertySearch",
+        "leaseRenewalCurrentStart",
+        "leaseRenewalCurrentEnd",
+        "leaseRenewalDueDate",
+        "leaseRenewalSentDate",
+        "leaseRenewalResentDate",
+        "leaseRenewalProposedStart",
+        "leaseRenewalProposedEnd",
+        "leaseRenewalCurrentRent",
+        "leaseRenewalProposedRent",
+        "leaseRenewalRentIncreaseDate",
+        "leaseRenewalOwnerSigned",
+        "leaseRenewalTenantSigned",
+        "leaseRenewalFollowUp",
+        "leaseRenewalNotes",
+    ].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.value = "";
+    });
+    const status = document.getElementById("leaseRenewalStatus");
+    const term = document.getElementById("leaseRenewalProposedTerm");
+    if (status) status.value = "NOT_STARTED";
+    if (term) term.value = "12 months";
+    renderLeaseRenewalAssigneeOptions("");
+    const assignee = document.getElementById("leaseRenewalAssignee");
+    if (assignee) assignee.value = "";
+    renderLeaseRenewalPropertyContacts(null);
+    renderLeaseRenewalDetail(null);
+    const title = document.getElementById("leaseRenewalFormTitle");
+    if (title) title.textContent = "Track Renewal";
+}
+
+function fillLeaseRenewalForm(row) {
+    if (!row) return;
+    selectedLeaseRenewalId = row.id;
+    const set = (id, value = "") => {
+        const el = document.getElementById(id);
+        if (el) el.value = value ?? "";
+    };
+    set("leaseRenewalRecordId", row.id);
+    set("leaseRenewalPropertyId", row.property_id);
+    set("leaseRenewalPropertySearch", row.property_label || row.property_address || "");
+    set("leaseRenewalStatus", row.status || "NOT_STARTED");
+    set("leaseRenewalCurrentStart", dateInputValue(row.current_lease_start));
+    set("leaseRenewalCurrentEnd", dateInputValue(row.current_lease_end));
+    set("leaseRenewalDueDate", dateInputValue(row.renewal_due_date));
+    set("leaseRenewalSentDate", dateInputValue(row.lease_sent_date));
+    set("leaseRenewalResentDate", dateInputValue(row.last_resent_date));
+    set("leaseRenewalProposedStart", dateInputValue(row.proposed_lease_start));
+    set("leaseRenewalProposedEnd", dateInputValue(row.proposed_lease_end));
+    set("leaseRenewalProposedTerm", row.proposed_term || "");
+    set("leaseRenewalCurrentRent", row.current_rent || "");
+    set("leaseRenewalProposedRent", row.proposed_rent || "");
+    set("leaseRenewalRentIncreaseDate", dateInputValue(row.rent_increase_date));
+    set("leaseRenewalOwnerSigned", dateInputValue(row.owner_signed_date));
+    set("leaseRenewalTenantSigned", dateInputValue(row.tenant_signed_date));
+    set("leaseRenewalFollowUp", dateInputValue(row.follow_up_date));
+    set("leaseRenewalNotes", row.notes || "");
+    renderLeaseRenewalAssigneeOptions(row.assigned_user_id || "");
+    renderLeaseRenewalPropertyContacts(propertyOptionsCache.find((p) => Number(p.id) === Number(row.property_id)) || row);
+    const title = document.getElementById("leaseRenewalFormTitle");
+    if (title) title.textContent = `Edit Renewal #${row.id}`;
+}
+
+function leaseRenewalPayload() {
+    const selectedProperty = updateLeaseRenewalPropertySelection();
+    const currentRent = document.getElementById("leaseRenewalCurrentRent")?.value || "";
+    const proposedRent = document.getElementById("leaseRenewalProposedRent")?.value || "";
+    return {
+        property_id: selectedProperty ? Number(selectedProperty.id) : Number(document.getElementById("leaseRenewalPropertyId")?.value || 0),
+        status: document.getElementById("leaseRenewalStatus")?.value || "NOT_STARTED",
+        current_lease_start: leaseRenewalDatePayload("leaseRenewalCurrentStart"),
+        current_lease_end: leaseRenewalDatePayload("leaseRenewalCurrentEnd"),
+        renewal_due_date: leaseRenewalDatePayload("leaseRenewalDueDate"),
+        lease_sent_date: leaseRenewalDatePayload("leaseRenewalSentDate"),
+        last_resent_date: leaseRenewalDatePayload("leaseRenewalResentDate"),
+        proposed_lease_start: leaseRenewalDatePayload("leaseRenewalProposedStart"),
+        proposed_lease_end: leaseRenewalDatePayload("leaseRenewalProposedEnd"),
+        proposed_term: String(document.getElementById("leaseRenewalProposedTerm")?.value || "").trim(),
+        current_rent: currentRent ? Number(currentRent) : null,
+        proposed_rent: proposedRent ? Number(proposedRent) : null,
+        rent_increase_date: leaseRenewalDatePayload("leaseRenewalRentIncreaseDate"),
+        owner_signed_date: leaseRenewalDatePayload("leaseRenewalOwnerSigned"),
+        tenant_signed_date: leaseRenewalDatePayload("leaseRenewalTenantSigned"),
+        follow_up_date: leaseRenewalDatePayload("leaseRenewalFollowUp"),
+        assigned_user_id: document.getElementById("leaseRenewalAssignee")?.value ? Number(document.getElementById("leaseRenewalAssignee").value) : null,
+        notes: String(document.getElementById("leaseRenewalNotes")?.value || "").trim(),
+    };
+}
+
+async function saveLeaseRenewalRecord() {
+    const payload = leaseRenewalPayload();
+    if (!payload.property_id) {
+        alert("Search and select a property from the property list first.");
+        return;
+    }
+    const id = document.getElementById("leaseRenewalRecordId")?.value || "";
+    const r = await apiFetch(id ? `/lease-renewals/records/${id}` : "/lease-renewals/records", {
+        method: id ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+    });
+    if (!r.ok) {
+        alert(`Failed to save lease renewal: ${await extractErrorMessage(r)}`);
+        return;
+    }
+    const row = await r.json();
+    selectedLeaseRenewalId = row.id;
+    leaseRenewalRecordsCache[row.id] = row;
+    fillLeaseRenewalForm(row);
+    renderLeaseRenewalDetail(row);
+    leaseRenewalsLoadedOnce = false;
+    await loadLeaseRenewals(currentLeaseRenewalPage || 1);
+    await loadNotifications();
+}
+
+function renderLeaseRenewalSummary(summary = {}) {
+    const set = (id, value) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = String(value || 0);
+    };
+    set("leaseKpiDue30", summary.due_next_30);
+    set("leaseKpiDue60", summary.due_next_60);
+    set("leaseKpiOverdue", summary.overdue);
+    set("leaseKpiAwaitingOwner", summary.awaiting_owner);
+    set("leaseKpiAwaitingTenant", summary.awaiting_tenant);
+    set("leaseKpiSigned", summary.fully_signed);
+    set("leaseKpiPeriodic", summary.periodic_confirmed);
+    set("leaseKpiMissing", summary.missing_details);
+}
+
+function renderLeaseRenewalAttention(items = []) {
+    const target = document.getElementById("leaseRenewalAttentionList");
+    if (!target) return;
+    if (!items.length) {
+        target.innerHTML = `<div class="ticket-empty"><strong>No urgent lease renewal items</strong><div class="small muted" style="margin-top:6px">Overdue, due-soon, missing-detail, and stale follow-up renewals will appear here.</div></div>`;
+        return;
+    }
+    target.innerHTML = items.map((row) => `
+      <button class="maintenance-order-card" type="button" onclick="openLeaseRenewalRecord(${row.id})">
+        <div class="row space">
+          <h4>${escapeHtml(row.property_label || row.property_address || "Lease renewal")}</h4>
+          <div class="row" style="gap:6px;justify-content:flex-end">${leaseRenewalStateChip(row.state)}${leaseRenewalStatusChip(row.status)}</div>
+        </div>
+        <p>Renewal due ${escapeHtml(formatDateShort(row.renewal_due_date))} - Follow-up ${escapeHtml(formatDateShort(row.follow_up_date))}</p>
+        <p>${escapeHtml(row.assigned_user_name ? `Assigned to ${row.assigned_user_name}` : "Unassigned")}</p>
+      </button>
+    `).join("");
+}
+
+function getLeaseRenewalFilters() {
+    return {
+        query: String(document.getElementById("leaseRenewalSearchBox")?.value || "").trim(),
+        status: String(document.getElementById("leaseRenewalStatusFilter")?.value || "").trim(),
+        window: String(document.getElementById("leaseRenewalWindowFilter")?.value || "").trim(),
+        assigned: String(document.getElementById("leaseRenewalAssignedFilter")?.value || "").trim(),
+    };
+}
+
+async function loadLeaseRenewals(page = null) {
+    if (page !== null) currentLeaseRenewalPage = page;
+    const p = currentLeaseRenewalPage || 1;
+    const { query, status, window: dueWindow, assigned } = getLeaseRenewalFilters();
+    const url = new URL("/lease-renewals/records", window.location.origin);
+    url.searchParams.set("page", String(p));
+    url.searchParams.set("page_size", "25");
+    if (query) url.searchParams.set("query", query);
+    if (status) url.searchParams.set("status", status);
+    if (dueWindow) url.searchParams.set("window", dueWindow);
+    if (assigned) url.searchParams.set("assigned_user_id", assigned);
+
+    const body = document.getElementById("leaseRenewalReportBody");
+    if (body) body.innerHTML = `<tr><td colspan="11" class="muted">Loading lease renewals...</td></tr>`;
+    await loadAssignableUsers();
+    renderLeaseRenewalAssigneeOptions();
+    const [summaryResp, recordsResp] = await Promise.all([
+        apiFetch("/lease-renewals/summary"),
+        apiFetch(url.toString()),
+    ]);
+    if (!summaryResp.ok || !recordsResp.ok) {
+        const errorText = !recordsResp.ok ? await extractErrorMessage(recordsResp) : await extractErrorMessage(summaryResp);
+        if (body) body.innerHTML = `<tr><td colspan="11" class="muted">Failed to load lease renewals: ${escapeHtml(errorText)}</td></tr>`;
+        return;
+    }
+    const summary = await summaryResp.json();
+    const data = await recordsResp.json();
+    const total = Number(data.total || 0);
+    const size = Math.max(Number(data.page_size || 25), 1);
+    const totalPages = Math.max(1, Math.ceil(total / size));
+    if (total > 0 && Number(data.page || p) > totalPages) {
+        return loadLeaseRenewals(totalPages);
+    }
+    leaseRenewalsLoadedOnce = true;
+    renderLeaseRenewalSummary(summary);
+    renderLeaseRenewalAttention(Array.isArray(summary.needs_attention) ? summary.needs_attention : []);
+    renderLeaseRenewalReport(data);
+}
+
+function leaseRenewalPaginationItems(page, totalPages) {
+    const total = Math.max(Number(totalPages || 1), 1);
+    if (total <= 9) return Array.from({ length: total }, (_, index) => index + 1);
+    const items = new Set([1, total, page - 1, page, page + 1]);
+    if (page <= 3) [2, 3, 4].forEach((item) => items.add(item));
+    if (page >= total - 2) [total - 3, total - 2, total - 1].forEach((item) => items.add(item));
+    return Array.from(items)
+        .filter((item) => item >= 1 && item <= total)
+        .sort((a, b) => a - b);
+}
+
+function renderLeaseRenewalReport(data = {}) {
+    const body = document.getElementById("leaseRenewalReportBody");
+    const items = Array.isArray(data.items) ? data.items : [];
+    leaseRenewalRecordsCache = {};
+    items.forEach((row) => { leaseRenewalRecordsCache[row.id] = row; });
+    if (body) {
+        if (!items.length) {
+            body.innerHTML = `<tr><td colspan="11" class="muted">No lease renewal records found for this filter.</td></tr>`;
+        } else {
+            body.innerHTML = items.map((row) => `
+              <tr>
+                <td>
+                  <div style="font-weight:800">${escapeHtml(row.property_label || row.property_address || "")}</div>
+                  <div class="small muted">${escapeHtml(row.tenancy_status || "-")}</div>
+                </td>
+                <td>${leaseRenewalStateChip(row.state)}<div style="margin-top:6px">${leaseRenewalStatusChip(row.status)}</div></td>
+                <td>${escapeHtml(formatDateShort(row.current_lease_end))}</td>
+                <td>${escapeHtml(formatDateShort(row.renewal_due_date))}</td>
+                <td>${escapeHtml(formatDateShort(row.lease_sent_date))}</td>
+                <td>${escapeHtml(formatDateShort(row.owner_signed_date))}</td>
+                <td>${escapeHtml(formatDateShort(row.tenant_signed_date))}</td>
+                <td>${escapeHtml(row.proposed_term || "-")}<div class="small muted">${escapeHtml(leaseRenewalMoney(row.current_rent))} to ${escapeHtml(leaseRenewalMoney(row.proposed_rent))}</div></td>
+                <td>${escapeHtml(formatDateShort(row.follow_up_date))}</td>
+                <td>${escapeHtml(row.assigned_user_name || "-")}</td>
+                <td><button class="btn" onclick="openLeaseRenewalRecord(${row.id})">Open</button></td>
+              </tr>
+            `).join("");
+        }
+    }
+    const pi = document.getElementById("leaseRenewalPageInfo");
+    if (pi) {
+        const total = Number(data.total || 0);
+        const pageNow = Number(data.page || 1);
+        const sizeNow = Number(data.page_size || 25);
+        const pages = sizeNow > 0 ? Math.max(1, Math.ceil(total / sizeNow)) : 1;
+        currentLeaseRenewalPage = Math.min(Math.max(pageNow, 1), pages);
+        leaseRenewalTotalPages = pages;
+        pi.textContent = `Page ${pageNow} of ${pages} - ${total} lease renewal records`;
+    }
+    const prev = document.getElementById("leaseRenewalBtnPrev");
+    const next = document.getElementById("leaseRenewalBtnNext");
+    const pageNumbers = document.getElementById("leaseRenewalPageNumbers");
+    if (prev) prev.disabled = currentLeaseRenewalPage <= 1;
+    if (next) next.disabled = currentLeaseRenewalPage >= leaseRenewalTotalPages || !Boolean(data.has_more);
+    if (pageNumbers) {
+        pageNumbers.innerHTML = leaseRenewalPaginationItems(currentLeaseRenewalPage, leaseRenewalTotalPages).map((item, index, arr) => {
+            const gap = index > 0 && item - arr[index - 1] > 1 ? `<span class="activity-page-gap">...</span>` : "";
+            const active = Number(item) === currentLeaseRenewalPage;
+            return `${gap}<button class="activity-page-btn ${active ? "active" : ""}" type="button" onclick="goLeaseRenewalPage(${Number(item)})" ${active ? 'aria-current="page"' : ""}>${Number(item)}</button>`;
+        }).join("");
+    }
+}
+
+function renderLeaseRenewalDetail(row) {
+    const title = document.getElementById("leaseRenewalDetailTitle");
+    const sub = document.getElementById("leaseRenewalDetailSub");
+    const status = document.getElementById("leaseRenewalDetailStatus");
+    const body = document.getElementById("leaseRenewalDetailBody");
+    if (!row) {
+        if (title) title.textContent = "No renewal selected";
+        if (sub) sub.textContent = "Create or open a lease renewal record.";
+        if (status) status.textContent = "Ready";
+        if (body) body.innerHTML = `<div class="ticket-empty"><strong>No lease renewal selected</strong><div class="small muted" style="margin-top:6px">Save a record or open one from the report to see details and history.</div></div>`;
+        return;
+    }
+    if (title) title.textContent = row.property_label || row.property_address || `Lease Renewal #${row.id}`;
+    if (sub) sub.textContent = `Renewal due ${formatDateShort(row.renewal_due_date)} - Updated ${formatDateShort(row.updated_at)}`;
+    if (status) {
+        status.className = `maintenance-status ${leaseRenewalStatusClass(row.status)}`;
+        status.textContent = leaseRenewalStatusLabel(row.status);
+    }
+    if (!body) return;
+    const owner = row.primary_owner || {};
+    const tenant = row.primary_tenant || {};
+    const events = Array.isArray(row.events) ? row.events : [];
+    body.innerHTML = `
+      <div class="maintenance-detail-panel">
+        <h4>Renewal Snapshot</h4>
+        <div class="maintenance-meta-grid">
+          <div><span>Owner</span>${escapeHtml(owner.name || "-")}<br>${escapeHtml(owner.email || owner.phone || "")}</div>
+          <div><span>Tenant</span>${escapeHtml(tenant.name || "-")}<br>${escapeHtml(tenant.email || tenant.phone || "")}</div>
+          <div><span>Current Lease End</span>${escapeHtml(formatDateShort(row.current_lease_end))}</div>
+          <div><span>Renewal Due</span>${escapeHtml(formatDateShort(row.renewal_due_date))}</div>
+          <div><span>Lease Sent</span>${escapeHtml(formatDateShort(row.lease_sent_date))}</div>
+          <div><span>Follow-up</span>${escapeHtml(formatDateShort(row.follow_up_date))}</div>
+          <div><span>Proposed Term</span>${escapeHtml(row.proposed_term || "-")}</div>
+          <div><span>Rent</span>${escapeHtml(leaseRenewalMoney(row.current_rent))} to ${escapeHtml(leaseRenewalMoney(row.proposed_rent))}</div>
+          <div><span>Assigned</span>${escapeHtml(row.assigned_user_name || "-")}</div>
+        </div>
+        ${row.notes ? `<p class="small muted" style="margin-top:12px">${escapeHtml(row.notes)}</p>` : ""}
+      </div>
+      <div class="maintenance-detail-panel">
+        <h4>Quick Status</h4>
+        <div class="maintenance-action-strip">
+          ${["SENT_TO_OWNER", "OWNER_SIGNED", "SENT_TO_TENANT", "PARTIALLY_SIGNED", "FULLY_SIGNED", "PERIODIC_CONFIRMED", "TENANT_VACATING", "ON_HOLD"].map((statusKey) => (
+            `<button class="btn" onclick="setLeaseRenewalStatus(${row.id}, '${statusKey}')">${escapeHtml(leaseRenewalStatusLabel(statusKey))}</button>`
+          )).join("")}
+          <button class="btn danger" onclick="deleteLeaseRenewalRecord(${row.id})">Delete Record</button>
+        </div>
+      </div>
+      <div class="maintenance-detail-panel">
+        <h4>Notes & History</h4>
+        <div class="field">
+          <div class="label">Add Note</div>
+          <textarea id="leaseRenewalNewNote" placeholder="Add follow-up notes, owner instructions, tenant response, or rent review context."></textarea>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <button class="btn primary" onclick="addLeaseRenewalNote(${row.id})">Add Note</button>
+        </div>
+        <div class="maintenance-events">
+          ${events.length ? events.map((event) => `
+            <div class="maintenance-event">
+              <strong>${escapeHtml(String(event.event_type || "activity").replaceAll("_", " "))} - ${escapeHtml(formatDate(event.created_at))}</strong>
+              <p>${escapeHtml(event.detail || "")}</p>
+              <span>${escapeHtml(event.actor_name || "System")}</span>
+            </div>
+          `).join("") : `<div class="small muted">No history yet.</div>`}
+        </div>
+      </div>
+    `;
+}
+
+async function openLeaseRenewalRecord(recordId) {
+    const r = await apiFetch(`/lease-renewals/records/${recordId}`);
+    if (!r.ok) {
+        alert(`Failed to open lease renewal: ${await extractErrorMessage(r)}`);
+        return;
+    }
+    const row = await r.json();
+    selectedLeaseRenewalId = row.id;
+    leaseRenewalRecordsCache[row.id] = row;
+    switchLeaseRenewalView("track");
+    fillLeaseRenewalForm(row);
+    renderLeaseRenewalDetail(row);
+}
+
+async function setLeaseRenewalStatus(recordId, status) {
+    const r = await apiFetch(`/lease-renewals/records/${recordId}/status`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+    });
+    if (!r.ok) {
+        alert(`Failed to update status: ${await extractErrorMessage(r)}`);
+        return;
+    }
+    const row = await r.json();
+    fillLeaseRenewalForm(row);
+    renderLeaseRenewalDetail(row);
+    await loadLeaseRenewals(currentLeaseRenewalPage || 1);
+    await loadNotifications();
+}
+
+async function addLeaseRenewalNote(recordId) {
+    const note = String(document.getElementById("leaseRenewalNewNote")?.value || "").trim();
+    if (!note) {
+        alert("Enter a note first.");
+        return;
+    }
+    const r = await apiFetch(`/lease-renewals/records/${recordId}/notes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ note }),
+    });
+    if (!r.ok) {
+        alert(`Failed to add note: ${await extractErrorMessage(r)}`);
+        return;
+    }
+    const row = await r.json();
+    fillLeaseRenewalForm(row);
+    renderLeaseRenewalDetail(row);
+}
+
+async function deleteLeaseRenewalRecord(recordId) {
+    const row = leaseRenewalRecordsCache[recordId] || {};
+    if (!confirm(`Delete lease renewal record for ${row.property_label || row.property_address || "this property"}?`)) return;
+    const r = await apiFetch(`/lease-renewals/records/${recordId}`, { method: "DELETE" });
+    if (!r.ok) {
+        alert(`Failed to delete lease renewal: ${await extractErrorMessage(r)}`);
+        return;
+    }
+    resetLeaseRenewalForm();
+    await loadLeaseRenewals(1);
+    await loadNotifications();
+}
+
+function prevLeaseRenewalPage() {
+    goLeaseRenewalPage(currentLeaseRenewalPage - 1);
+}
+
+function nextLeaseRenewalPage() {
+    goLeaseRenewalPage(currentLeaseRenewalPage + 1);
+}
+
+function goLeaseRenewalPage(page) {
+    const nextPage = Math.min(Math.max(Number(page || 1), 1), Math.max(Number(leaseRenewalTotalPages || 1), 1));
+    if (nextPage === currentLeaseRenewalPage) return;
+    loadLeaseRenewals(nextPage);
+}
+
+function switchLeaseRenewalView(view = "dashboard") {
+    const nextView = ["dashboard", "track", "report"].includes(view) ? view : "dashboard";
+    leaseRenewalViewMode = nextView;
+    document.querySelectorAll("[data-lease-renewal-view]").forEach((btn) => {
+        btn.classList.toggle("active", btn.getAttribute("data-lease-renewal-view") === nextView);
+    });
+    const dashboard = document.getElementById("leaseRenewalDashboardView");
+    const track = document.getElementById("leaseRenewalTrackView");
+    const report = document.getElementById("leaseRenewalReportView");
+    if (dashboard) dashboard.classList.toggle("hidden", nextView !== "dashboard");
+    if (track) track.classList.toggle("hidden", nextView !== "track");
+    if (report) report.classList.toggle("hidden", nextView !== "report");
+    if (nextView === "track") {
+        refreshPropertyOptions();
+        renderLeaseRenewalAssigneeOptions(selectedLeaseRenewalId ? document.getElementById("leaseRenewalAssignee")?.value || "" : "");
+    }
+    if (nextView === "dashboard" || nextView === "report") {
+        loadLeaseRenewals(nextView === "report" ? currentLeaseRenewalPage : 1);
+    }
 }
 
 function updateCompliancePropertySelection() {
@@ -7153,6 +7779,11 @@ function logout() {
     rolePagePermissions = {};
     teamLoadedOnce = false;
     activityLoadedOnce = false;
+    leaseRenewalsLoadedOnce = false;
+    currentLeaseRenewalPage = 1;
+    leaseRenewalTotalPages = 1;
+    selectedLeaseRenewalId = null;
+    leaseRenewalRecordsCache = {};
     applyPageVisibility();
 
     const badge = document.getElementById("userBadge");
@@ -7314,6 +7945,36 @@ window.addEventListener("load", async () => {
     if (maintenancePropertySearch) {
         maintenancePropertySearch.addEventListener("input", updateMaintenancePropertySelection);
         maintenancePropertySearch.addEventListener("change", updateMaintenancePropertySelection);
+    }
+    const leaseRenewalPropertySearch = document.getElementById("leaseRenewalPropertySearch");
+    if (leaseRenewalPropertySearch) {
+        leaseRenewalPropertySearch.addEventListener("input", updateLeaseRenewalPropertySelection);
+        leaseRenewalPropertySearch.addEventListener("change", updateLeaseRenewalPropertySelection);
+    }
+    const leaseRenewalCurrentEnd = document.getElementById("leaseRenewalCurrentEnd");
+    if (leaseRenewalCurrentEnd) {
+        leaseRenewalCurrentEnd.addEventListener("change", updateLeaseRenewalDueFromLeaseEnd);
+    }
+    ["leaseRenewalWindowFilter", "leaseRenewalStatusFilter", "leaseRenewalAssignedFilter"].forEach((id) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.addEventListener("change", () => {
+            if (currentDashboardTab === "lease_renewals") {
+                loadLeaseRenewals(1);
+            }
+        });
+    });
+    const leaseRenewalSearch = document.getElementById("leaseRenewalSearchBox");
+    if (leaseRenewalSearch) {
+        let tmr = null;
+        leaseRenewalSearch.addEventListener("input", () => {
+            if (tmr) clearTimeout(tmr);
+            tmr = setTimeout(() => {
+                if (currentDashboardTab === "lease_renewals") {
+                    loadLeaseRenewals(1);
+                }
+            }, 250);
+        });
     }
     const maintenanceTradieCompany = document.getElementById("maintenanceTradieCompany");
     if (maintenanceTradieCompany) {

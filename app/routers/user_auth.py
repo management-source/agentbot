@@ -75,6 +75,12 @@ PAGE_REGISTRY = [
         "section": "Operations",
     },
     {
+        "id": "lease_renewals",
+        "label": "Lease Renewals",
+        "description": "Track lease renewal due dates, signatures, rent review details, follow-ups, and portfolio reporting.",
+        "section": "Operations",
+    },
+    {
         "id": "compliance",
         "label": "Compliance",
         "description": "Create and maintain compliance records for managed properties.",
@@ -121,10 +127,10 @@ PAGE_REGISTRY = [
 
 
 DEFAULT_ROLE_PAGE_ACCESS = {
-    UserRole.ADMIN.value: ["portal", "notifications", "myspace", "inbox", "maintenance", "rent", "compliance", "coverage", "compliance_providers", "properties", "team", "activity", "system"],
-    UserRole.PM.value: ["portal", "notifications", "myspace", "inbox", "maintenance", "rent", "compliance", "coverage", "compliance_providers", "properties", "team", "activity", "system"],
-    UserRole.LEASING.value: ["portal", "notifications", "myspace", "inbox", "properties", "team"],
-    UserRole.SALES.value: ["portal", "notifications", "myspace", "inbox", "maintenance", "rent", "compliance", "coverage", "compliance_providers", "properties", "team", "activity", "system"],
+    UserRole.ADMIN.value: ["portal", "notifications", "myspace", "inbox", "maintenance", "rent", "lease_renewals", "compliance", "coverage", "compliance_providers", "properties", "team", "activity", "system"],
+    UserRole.PM.value: ["portal", "notifications", "myspace", "inbox", "maintenance", "rent", "lease_renewals", "compliance", "coverage", "compliance_providers", "properties", "team", "activity", "system"],
+    UserRole.LEASING.value: ["portal", "notifications", "myspace", "inbox", "lease_renewals", "properties", "team"],
+    UserRole.SALES.value: ["portal", "notifications", "myspace", "inbox", "maintenance", "rent", "lease_renewals", "compliance", "coverage", "compliance_providers", "properties", "team", "activity", "system"],
     UserRole.ACCOUNTS.value: ["portal", "notifications", "myspace", "inbox", "rent", "team"],
     UserRole.READONLY.value: ["portal", "notifications", "myspace", "team"],
 }
@@ -312,7 +318,7 @@ def _normalize_role_page_access(raw: dict | None) -> dict[str, list[str]]:
         default_selected = set(DEFAULT_ROLE_PAGE_ACCESS.get(key, ["portal"]))
         locked_pages = {str(page["id"]) for page in PAGE_REGISTRY if page.get("locked")}
         missing_default_pages = {
-            page_id for page_id in ("maintenance", "team", "activity", "compliance_providers", *locked_pages)
+            page_id for page_id in ("maintenance", "lease_renewals", "team", "activity", "compliance_providers", *locked_pages)
             if page_id in default_selected and page_id not in selected
         }
         if missing_default_pages and selected == (default_selected - missing_default_pages):

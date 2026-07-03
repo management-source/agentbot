@@ -90,6 +90,22 @@ class MaintenanceOrderStatus(str, Enum):
     CANCELLED = "CANCELLED"
 
 
+class LeaseRenewalStatus(str, Enum):
+    NOT_STARTED = "NOT_STARTED"
+    PREPARING_RENEWAL = "PREPARING_RENEWAL"
+    SENT_TO_OWNER = "SENT_TO_OWNER"
+    OWNER_SIGNED = "OWNER_SIGNED"
+    SENT_TO_TENANT = "SENT_TO_TENANT"
+    TENANT_SIGNED = "TENANT_SIGNED"
+    PARTIALLY_SIGNED = "PARTIALLY_SIGNED"
+    FULLY_SIGNED = "FULLY_SIGNED"
+    PERIODIC_CONFIRMED = "PERIODIC_CONFIRMED"
+    TENANT_VACATING = "TENANT_VACATING"
+    ADVERTISED = "ADVERTISED"
+    ON_HOLD = "ON_HOLD"
+    COMPLETED = "COMPLETED"
+
+
 class AuditAction(str, Enum):
     CREATED = "CREATED"
     UPDATED = "UPDATED"
@@ -611,6 +627,62 @@ class MaintenanceTradie(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class LeaseRenewalRecord(Base):
+    __tablename__ = "lease_renewal_records"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    mailbox: Mapped[str] = mapped_column(String, index=True)
+    property_id: Mapped[int] = mapped_column(Integer, ForeignKey("managed_properties.id"), index=True)
+
+    status: Mapped[LeaseRenewalStatus] = mapped_column(
+        SAEnum(LeaseRenewalStatus),
+        default=LeaseRenewalStatus.NOT_STARTED,
+        index=True,
+    )
+    current_lease_start: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    current_lease_end: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    renewal_due_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    lease_sent_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    last_resent_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    proposed_lease_start: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    proposed_lease_end: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    proposed_term: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    current_rent: Mapped[float | None] = mapped_column(Float, nullable=True)
+    proposed_rent: Mapped[float | None] = mapped_column(Float, nullable=True)
+    rent_increase_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    owner_signed_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    tenant_signed_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    follow_up_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+
+    assigned_user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    created_by_user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+    property = relationship("ManagedProperty")
+    assigned_user = relationship("User", foreign_keys=[assigned_user_id])
+    created_by = relationship("User", foreign_keys=[created_by_user_id])
+    events = relationship("LeaseRenewalEvent", back_populates="record", cascade="all, delete-orphan")
+
+
+class LeaseRenewalEvent(Base):
+    __tablename__ = "lease_renewal_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    mailbox: Mapped[str] = mapped_column(String, index=True)
+    record_id: Mapped[int] = mapped_column(Integer, ForeignKey("lease_renewal_records.id"), index=True)
+    actor_user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    event_type: Mapped[str] = mapped_column(String, index=True)
+    detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+    record = relationship("LeaseRenewalRecord", back_populates="events")
+    actor = relationship("User")
 
 
 class ComplianceProvider(Base):

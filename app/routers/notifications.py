@@ -16,6 +16,8 @@ from app.models import (
     ComplianceState,
     ComplianceRecord,
     ComplianceRecordStatus,
+    LeaseRenewalRecord,
+    LeaseRenewalStatus,
     MaintenanceOrder,
     MaintenanceOrderStatus,
     ManagedProperty,
@@ -32,6 +34,14 @@ from app.routers.user_auth import _get_role_page_access, _role_key
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 COMPLIANCE_DUE_SOON_DAYS = 30
 MAINTENANCE_DUE_SOON_DAYS = 7
+LEASE_RENEWAL_DUE_SOON_DAYS = 30
+LEASE_RENEWAL_FINAL_STATUSES = {
+    LeaseRenewalStatus.FULLY_SIGNED,
+    LeaseRenewalStatus.PERIODIC_CONFIRMED,
+    LeaseRenewalStatus.TENANT_VACATING,
+    LeaseRenewalStatus.ADVERTISED,
+    LeaseRenewalStatus.COMPLETED,
+}
 
 
 def _iso(value: datetime | None) -> str | None:
@@ -222,6 +232,79 @@ def notification_summary(
                 action="Review rent",
                 due_at=row.due_date,
             )
+
+    lease_count = 0
+    if "lease_renewals" in allowed_pages:
+        lease_ids: set[int] = set()
+        active_lease_base = (
+            db.query(LeaseRenewalRecord)
+            .join(ManagedProperty, LeaseRenewalRecord.property_id == ManagedProperty.id)
+            .filter(LeaseRenewalRecord.mailbox == mailbox)
+            .filter(ManagedProperty.mailbox == mailbox)
+            .filter(ManagedProperty.is_active == True)
+            .filter(LeaseRenewalRecord.status.notin_(list(LEASE_RENEWAL_FINAL_STATUSES)))
+        )
+        overdue_base = active_lease_base.filter(
+            or_(
+                LeaseRenewalRecord.renewal_due_date < now,
+                LeaseRenewalRecord.follow_up_date < now,
+            )
+        )
+        soon_base = (
+            active_lease_base.filter(LeaseRenewalRecord.renewal_due_date.isnot(None))
+            .filter(LeaseRenewalRecord.renewal_due_date >= now)
+            .filter(LeaseRenewalRecord.renewal_due_date <= now + timedelta(days=LEASE_RENEWAL_DUE_SOON_DAYS))
+        )
+        stale_base = (
+            active_lease_base.filter(LeaseRenewalRecord.lease_sent_date.isnot(None))
+            .filter(LeaseRenewalRecord.lease_sent_date <= now - timedelta(days=14))
+            .filter(or_(LeaseRenewalRecord.owner_signed_date.is_(None), LeaseRenewalRecord.tenant_signed_date.is_(None)))
+        )
+        lease_ids.update(row_id for (row_id,) in overdue_base.with_entities(LeaseRenewalRecord.id).all())
+        lease_ids.update(row_id for (row_id,) in soon_base.with_entities(LeaseRenewalRecord.id).all())
+        lease_ids.update(row_id for (row_id,) in stale_base.with_entities(LeaseRenewalRecord.id).all())
+        for row in overdue_base.order_by(LeaseRenewalRecord.renewal_due_date.asc().nullslast()).limit(8).all():
+            address = row.property.property_address if row.property else "Lease renewal"
+            due_at = row.follow_up_date if row.follow_up_date and row.follow_up_date < now else row.renewal_due_date
+            _add_item(
+                items,
+                kind="lease",
+                severity="overdue",
+                page="lease_renewals",
+                record_id=row.id,
+                title=address,
+                detail=f"Lease renewal needs follow-up - {_status_label(row.status)}",
+                action="Open renewal",
+                due_at=due_at,
+            )
+        for row in stale_base.order_by(LeaseRenewalRecord.lease_sent_date.asc()).limit(6).all():
+            address = row.property.property_address if row.property else "Lease renewal"
+            _add_item(
+                items,
+                kind="lease",
+                severity="action",
+                page="lease_renewals",
+                record_id=row.id,
+                title=address,
+                detail="Lease sent more than 14 days ago and signatures are incomplete",
+                action="Follow up",
+                due_at=row.follow_up_date,
+                created_at=row.lease_sent_date,
+            )
+        for row in soon_base.order_by(LeaseRenewalRecord.renewal_due_date.asc()).limit(6).all():
+            address = row.property.property_address if row.property else "Lease renewal"
+            _add_item(
+                items,
+                kind="lease",
+                severity="soon",
+                page="lease_renewals",
+                record_id=row.id,
+                title=address,
+                detail=f"Renewal due within {LEASE_RENEWAL_DUE_SOON_DAYS} days",
+                action="Plan renewal",
+                due_at=row.renewal_due_date,
+            )
+        lease_count = len(lease_ids)
 
     compliance_count = 0
     if "compliance" in allowed_pages or "coverage" in allowed_pages:
@@ -452,7 +535,7 @@ def notification_summary(
                 due_at=row.due_at,
             )
 
-    total = email_count + rent_count + compliance_count + maintenance_count + my_space_count
+    total = email_count + rent_count + lease_count + compliance_count + maintenance_count + my_space_count
     sorted_items = _sort_items(_dedupe_items(items))
     item_limit = max(10, min(int(limit or 80), 200))
     return {
@@ -460,6 +543,7 @@ def notification_summary(
         "categories": {
             "email": email_count,
             "rent": rent_count,
+            "lease": lease_count,
             "compliance": compliance_count,
             "maintenance": maintenance_count,
             "myspace": my_space_count,
