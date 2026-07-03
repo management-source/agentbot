@@ -2981,6 +2981,45 @@
     .activity-log-card{
       padding:20px;
     }
+    .activity-pagination{
+      display:flex;
+      align-items:center;
+      justify-content:flex-end;
+      gap:8px;
+      flex-wrap:wrap;
+    }
+    .activity-page-numbers{
+      display:flex;
+      align-items:center;
+      justify-content:flex-end;
+      gap:6px;
+      flex-wrap:wrap;
+      max-width:min(580px, 100%);
+    }
+    .activity-page-btn{
+      min-width:34px;
+      height:34px;
+      padding:0 10px;
+      border-radius:12px;
+      border:1px solid #dbe4ef;
+      background:#fff;
+      color:#475467;
+      font-size:12px;
+      font-weight:900;
+      cursor:pointer;
+      transition:background .16s ease, border-color .16s ease, color .16s ease, transform .16s ease;
+    }
+    .activity-page-btn:hover{
+      border-color:rgba(201,162,70,.55);
+      color:#101828;
+      transform:translateY(-1px);
+    }
+    .activity-page-btn.active{
+      border-color:#101828;
+      background:#101828;
+      color:#f9e7a7;
+      box-shadow:0 10px 22px rgba(15,23,42,.14);
+    }
     .activity-list{
       display:grid;
       gap:8px;
@@ -3112,6 +3151,8 @@
       .activity-avatar-wrap{display:none}
       .activity-row-side{align-items:flex-start}
       .activity-meta span{max-width:100%}
+      .activity-pagination,
+      .activity-page-numbers{justify-content:flex-start}
     }
 
     /* My Space */
@@ -6108,9 +6149,11 @@
                         <h3>Recorded Actions</h3>
                         <p id="activityPageInfo">Activity log not loaded yet.</p>
                       </div>
-                      <div class="row">
+                      <div class="activity-pagination" aria-label="Activity log pagination">
                         <button class="btn" id="activityPrevBtn"
-                          onclick="prevActivityPage()">Prev</button>
+                          onclick="prevActivityPage()">Previous</button>
+                        <div class="activity-page-numbers"
+                          id="activityPageNumbers"></div>
                         <button class="btn" id="activityNextBtn"
                           onclick="nextActivityPage()">Next</button>
                       </div>

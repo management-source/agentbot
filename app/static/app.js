@@ -194,6 +194,7 @@ let usersLoadedOnce = false;
 let teamLoadedOnce = false;
 let activityLoadedOnce = false;
 let currentActivityPage = 1;
+let activityTotalPages = 1;
 let activityAreasCache = [];
 let mySpaceLoadedOnce = false;
 let mySpaceSaveTimer = null;
@@ -2280,16 +2281,44 @@ function activityQueryParams(page = currentActivityPage) {
     return params;
 }
 
-function renderActivityLog(data = {}) {
-    const list = document.getElementById("activityList");
+function activityPaginationItems(page, totalPages) {
+    const total = Math.max(Number(totalPages || 1), 1);
+    return Array.from({ length: total }, (_, index) => index + 1);
+}
+
+function renderActivityPagination(data = {}) {
     const pageInfo = document.getElementById("activityPageInfo");
     const prevBtn = document.getElementById("activityPrevBtn");
     const nextBtn = document.getElementById("activityNextBtn");
+    const pageNumbers = document.getElementById("activityPageNumbers");
+    const total = Number(data.total || 0);
+    const pageSize = Math.max(Number(data.page_size || 30), 1);
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+    const page = Math.min(Math.max(Number(data.page || currentActivityPage || 1), 1), totalPages);
+
+    activityTotalPages = totalPages;
+    currentActivityPage = page;
+
+    if (pageInfo) pageInfo.textContent = `Page ${page} of ${totalPages} - ${total} recorded actions`;
+    if (prevBtn) prevBtn.disabled = page <= 1;
+    if (nextBtn) nextBtn.disabled = page >= totalPages || !data.has_more;
+    if (!pageNumbers) return;
+
+    pageNumbers.innerHTML = activityPaginationItems(page, totalPages).map((item) => {
+        const isActive = Number(item) === page;
+        return `
+          <button class="activity-page-btn ${isActive ? "active" : ""}" type="button" onclick="goActivityPage(${Number(item)})" ${isActive ? 'aria-current="page"' : ""}>
+            ${Number(item)}
+          </button>
+        `;
+    }).join("");
+}
+
+function renderActivityLog(data = {}) {
+    const list = document.getElementById("activityList");
     renderActivityStats(data.summary || {});
     renderActivityAreaChart(data.summary || {});
-    if (pageInfo) pageInfo.textContent = `Page ${data.page || currentActivityPage} - ${data.total || 0} recorded actions`;
-    if (prevBtn) prevBtn.disabled = Number(data.page || 1) <= 1;
-    if (nextBtn) nextBtn.disabled = !data.has_more;
+    renderActivityPagination(data);
     if (!list) return;
     const items = Array.isArray(data.items) ? data.items : [];
     if (!items.length) {
@@ -2335,6 +2364,13 @@ async function loadActivityLog(page = currentActivityPage) {
         const data = await r.json();
         activityLoadedOnce = true;
         currentActivityPage = Number(data.page || currentActivityPage);
+        const total = Number(data.total || 0);
+        const pageSize = Math.max(Number(data.page_size || 30), 1);
+        const totalPages = Math.max(1, Math.ceil(total / pageSize));
+        if (total > 0 && currentActivityPage > totalPages) {
+            currentActivityPage = totalPages;
+            return loadActivityLog(totalPages);
+        }
         renderActivityLog(data);
     } catch (e) {
         if (list) {
@@ -2355,13 +2391,18 @@ function resetActivityFilters() {
     loadActivityLog(1);
 }
 
+function goActivityPage(page) {
+    const nextPage = Math.min(Math.max(Number(page || 1), 1), Math.max(Number(activityTotalPages || 1), 1));
+    if (nextPage === currentActivityPage) return;
+    loadActivityLog(nextPage);
+}
+
 function prevActivityPage() {
-    if (currentActivityPage <= 1) return;
-    loadActivityLog(currentActivityPage - 1);
+    goActivityPage(currentActivityPage - 1);
 }
 
 function nextActivityPage() {
-    loadActivityLog(currentActivityPage + 1);
+    goActivityPage(currentActivityPage + 1);
 }
 
 function toggleAccountMenu() {
