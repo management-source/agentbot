@@ -3862,12 +3862,82 @@
       box-shadow:none;
     }
     .viewer-head .btn:hover{background:rgba(255,255,255,.14)}
+    .viewer-workflow{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      padding:10px 18px;
+      border-bottom:1px solid #dbe4ef;
+      background:
+        radial-gradient(circle at 100% 0%, rgba(201,162,70,.10), transparent 28%),
+        #fff;
+    }
+    .viewer-workflow-summary{
+      display:flex;
+      align-items:center;
+      gap:8px;
+      min-width:0;
+      flex-wrap:wrap;
+    }
+    .viewer-assignee-chip{
+      display:inline-flex;
+      align-items:center;
+      min-height:28px;
+      padding:5px 9px;
+      border-radius:999px;
+      border:1px solid #dbe4ef;
+      background:#f8fafc;
+      color:#344054;
+      font-size:11px;
+      font-weight:900;
+    }
+    .viewer-workflow-controls{
+      display:flex;
+      align-items:flex-end;
+      justify-content:flex-end;
+      gap:8px;
+      flex-wrap:wrap;
+    }
+    .viewer-control{
+      display:flex;
+      flex-direction:column;
+      gap:4px;
+      min-width:150px;
+    }
+    .viewer-control span{
+      color:#667085;
+      font-size:10px;
+      font-weight:900;
+      text-transform:uppercase;
+      letter-spacing:.07em;
+    }
+    .viewer-control select{
+      min-height:34px;
+      border-radius:12px;
+      border:1px solid #dbe4ef;
+      background:#fff;
+      color:#101828;
+      padding:0 10px;
+      font-size:12px;
+      font-weight:800;
+    }
+    .viewer-workflow .btn{
+      min-height:34px;
+      padding:7px 10px;
+      border-radius:12px;
+      font-size:12px;
+      box-shadow:none;
+    }
     .viewer-body{flex:1; background:#eef3f8}
     .viewer-body iframe{width:100%; height:100%; border:none}
     @media (max-width: 760px){
       .viewer-backdrop{padding:10px}
       .viewer{height:calc(100dvh - 20px); min-height:0; border-radius:16px}
       .viewer-head{align-items:flex-start; flex-direction:column}
+      .viewer-workflow{align-items:stretch; flex-direction:column; padding:10px}
+      .viewer-workflow-controls{justify-content:flex-start}
+      .viewer-control{min-width:100%; flex:1}
       .viewer-actions{width:100%}
       .viewer-actions .btn{flex:1}
       .viewer-head .title,
@@ -6740,6 +6810,7 @@
               onclick="closeThreadModal()">Close</button>
           </div>
         </div>
+        <div class="viewer-workflow hidden" id="viewerWorkflow"></div>
         <div class="viewer-body">
           <iframe id="viewerFrame"
             sandbox="allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"></iframe>

@@ -36,6 +36,24 @@ def _get_ticket(db: Session, thread_id: str) -> ThreadTicket:
     return ticket
 
 
+def _enum_value(value) -> str:
+    return value.value if hasattr(value, "value") else str(value or "")
+
+
+def _ticket_payload(ticket: ThreadTicket) -> dict[str, Any]:
+    return {
+        "thread_id": ticket.thread_id,
+        "mailbox": ticket.mailbox,
+        "status": _enum_value(ticket.status),
+        "is_not_replied": bool(ticket.is_not_replied),
+        "assignee_user_id": ticket.assignee_user_id,
+        "assignee_name": ticket.assignee_name,
+        "assignee_email": ticket.assignee_email,
+        "assignee_avatar_url": ticket.assignee_avatar_url,
+        "priority": ticket.priority,
+    }
+
+
 def _normalize_cid(cid: str) -> str:
     """Normalize content-id values (strip brackets, whitespace)."""
     cid = (cid or "").strip()
@@ -322,6 +340,7 @@ def get_thread(thread_id: str, db: Session = Depends(get_db), user=Depends(get_c
         "thread_id": thread_id,
         "gmail_thread_id": ticket.gmail_thread_id,
         "mailbox": ticket.mailbox,
+        "ticket": _ticket_payload(ticket),
         "messages": messages_out,
         "gmail_url": _gmail_thread_url(ticket.gmail_thread_id),
     }

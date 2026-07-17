@@ -1,6 +1,8 @@
 let currentTab = "awaiting_reply";
 let currentAckThreadId = null;
 let currentAiThreadId = null;
+let currentViewerThreadId = null;
+let currentViewerTicket = null;
 let aiVoiceRecorder = null;
 let aiVoiceStream = null;
 let aiVoiceChunks = [];
@@ -6362,7 +6364,18 @@ async function updateAssignee(threadId, value, control = null) {
             alert(`Assignment failed: ${await extractErrorMessage(r)}`);
             return;
         }
+        const result = await r.json();
         if (control) control.setAttribute("data-current-assignee", value || "");
+        if (currentViewerThreadId === threadId && currentViewerTicket) {
+            currentViewerTicket = {
+                ...currentViewerTicket,
+                assignee_user_id: result.assignee_user_id,
+                assignee_name: result.assignee_name,
+                assignee_email: result.assignee_email,
+                assignee_avatar_url: result.assignee_avatar_url,
+            };
+            renderViewerWorkflow(currentViewerTicket);
+        }
         await loadTickets();
         await loadNotifications();
     } catch (e) {
@@ -6392,6 +6405,140 @@ function ticketStatusClass(status) {
     if (key === "RESPONDED") return "responded";
     if (key === "NO_REPLY_NEEDED") return "closed";
     return "pending";
+}
+
+function viewerAssigneeLabel(ticket) {
+    if (!ticket || !ticket.assignee_user_id) return "Unassigned";
+    return ticket.assignee_name || ticket.assignee_email || "Assigned staff";
+}
+
+function setViewerWorkflowBusy(isBusy) {
+    document.querySelectorAll("[data-viewer-control]").forEach((control) => {
+        control.disabled = Boolean(isBusy);
+    });
+}
+
+function renderViewerWorkflow(ticket) {
+    const wrap = document.getElementById("viewerWorkflow");
+    if (!wrap) return;
+    if (!ticket || !ticket.thread_id) {
+        wrap.classList.add("hidden");
+        wrap.innerHTML = "";
+        currentViewerThreadId = null;
+        currentViewerTicket = null;
+        return;
+    }
+
+    currentViewerThreadId = ticket.thread_id;
+    currentViewerTicket = ticket;
+    const assignee = viewerAssigneeLabel(ticket);
+    wrap.classList.remove("hidden");
+    wrap.innerHTML = `
+      <div class="viewer-workflow-summary">
+        <span class="ticket-status-pill ${ticketStatusClass(ticket.status)}">${escapeHtml(ticketStatusLabel(ticket.status))}</span>
+        <span class="viewer-assignee-chip">${escapeHtml(assignee)}</span>
+      </div>
+      <div class="viewer-workflow-controls">
+        <label class="viewer-control">
+          <span>Status</span>
+          <select data-viewer-control data-viewer-status-select data-current-status="${escapeHtml(ticket.status || "")}">
+            ${statusOptions(ticket.status)}
+          </select>
+        </label>
+        <label class="viewer-control">
+          <span>Assign</span>
+          <select data-viewer-control data-viewer-assignee-select data-current-assignee="${escapeHtml(String(ticket.assignee_user_id || ""))}">
+            ${assigneeOptions(ticket.assignee_user_id, assignee)}
+          </select>
+        </label>
+        <button class="btn" type="button" data-viewer-control data-viewer-status="IN_PROGRESS">Start</button>
+        <button class="btn" type="button" data-viewer-control data-viewer-status="RESPONDED">Responded</button>
+        <button class="btn" type="button" data-viewer-control data-viewer-status="NO_REPLY_NEEDED">No Reply Needed</button>
+      </div>
+    `;
+
+    const statusSelect = wrap.querySelector("[data-viewer-status-select]");
+    if (statusSelect) {
+        statusSelect.addEventListener("change", () => updateViewerStatus(ticket.thread_id, statusSelect.value, statusSelect));
+    }
+    const assigneeSelect = wrap.querySelector("[data-viewer-assignee-select]");
+    if (assigneeSelect) {
+        assigneeSelect.addEventListener("change", () => updateViewerAssignee(ticket.thread_id, assigneeSelect.value, assigneeSelect));
+    }
+    wrap.querySelectorAll("[data-viewer-status]").forEach((btn) => {
+        btn.addEventListener("click", () => updateViewerStatus(ticket.thread_id, btn.getAttribute("data-viewer-status") || "PENDING"));
+    });
+}
+
+async function updateViewerStatus(threadId, status, control = null) {
+    const previous = control ? (control.getAttribute("data-current-status") || currentViewerTicket?.status || "") : currentViewerTicket?.status || "";
+    if (control) control.disabled = true;
+    setViewerWorkflowBusy(true);
+    try {
+        const r = await apiFetch(`/tickets/${encodeURIComponent(threadId)}/status`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ status }),
+        });
+        const text = await r.text();
+        if (!r.ok) {
+            if (control && previous) control.value = previous;
+            alert(`Status update failed (${r.status}):\n\n${text}`);
+            return;
+        }
+        let result = {};
+        try { result = JSON.parse(text); } catch { result = {}; }
+        currentViewerTicket = {
+            ...(currentViewerTicket || {}),
+            thread_id: threadId,
+            status: result.status || status,
+            is_not_replied: result.is_not_replied,
+        };
+        renderViewerWorkflow(currentViewerTicket);
+        await loadTickets();
+        await loadNotifications();
+    } catch (e) {
+        if (control && previous) control.value = previous;
+        alert("Status update failed: " + e);
+    } finally {
+        setViewerWorkflowBusy(false);
+    }
+}
+
+async function updateViewerAssignee(threadId, value, control = null) {
+    const previous = control ? (control.getAttribute("data-current-assignee") || currentViewerTicket?.assignee_user_id || "") : currentViewerTicket?.assignee_user_id || "";
+    if (control) control.disabled = true;
+    setViewerWorkflowBusy(true);
+    try {
+        const assigneeId = value ? Number(value) : null;
+        const r = await apiFetch(`/tickets/${encodeURIComponent(threadId)}/assignee`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ assignee_user_id: Number.isFinite(assigneeId) ? assigneeId : null }),
+        });
+        if (!r.ok) {
+            if (control) control.value = previous ? String(previous) : "";
+            alert(`Assignment failed: ${await extractErrorMessage(r)}`);
+            return;
+        }
+        const result = await r.json();
+        currentViewerTicket = {
+            ...(currentViewerTicket || {}),
+            thread_id: threadId,
+            assignee_user_id: result.assignee_user_id,
+            assignee_name: result.assignee_name,
+            assignee_email: result.assignee_email,
+            assignee_avatar_url: result.assignee_avatar_url,
+        };
+        renderViewerWorkflow(currentViewerTicket);
+        await loadTickets();
+        await loadNotifications();
+    } catch (e) {
+        if (control) control.value = previous ? String(previous) : "";
+        alert("Assignment failed: " + e);
+    } finally {
+        setViewerWorkflowBusy(false);
+    }
 }
 
 function renderTicket(t) {
@@ -6679,6 +6826,14 @@ async function updateStatus(threadId, status, control = null) {
             control.value = nextStatus;
             control.setAttribute("data-current-status", nextStatus);
         }
+        if (currentViewerThreadId === threadId && currentViewerTicket) {
+            currentViewerTicket = {
+                ...currentViewerTicket,
+                status: nextStatus,
+                is_not_replied: result.is_not_replied,
+            };
+            renderViewerWorkflow(currentViewerTicket);
+        }
         const card = control ? control.closest(".ticket, [data-ticket-card]") : null;
         if (card && !ticketBelongsToCurrentTab(nextStatus, result.is_not_replied)) {
             card.remove();
@@ -6704,8 +6859,15 @@ async function openThread(threadId) {
     const viewerFrame = document.getElementById("viewerFrame");
     const viewerTitle = document.getElementById("viewerTitle");
     const viewerSubtitle = document.getElementById("viewerSubtitle");
+    const viewerWorkflow = document.getElementById("viewerWorkflow");
 
     const useViewer = (!modal || !content) && viewerBackdrop && viewerFrame;
+    currentViewerThreadId = threadId;
+    currentViewerTicket = null;
+    if (viewerWorkflow) {
+        viewerWorkflow.classList.add("hidden");
+        viewerWorkflow.innerHTML = "";
+    }
 
     if (useViewer) {
         viewerBackdrop.classList.add("show");
@@ -6723,12 +6885,19 @@ async function openThread(threadId) {
     const r = await apiFetch(`/threads/${encodeURIComponent(threadId)}`);
     const t = await r.text();
     if (!r.ok) {
+        renderViewerWorkflow(null);
         if (useViewer) viewerFrame.srcdoc = `<pre style="white-space:pre-wrap; color:#b91c1c; padding:16px">${escapeHtml(t)}</pre>`;
         else content.innerHTML = `<pre class="text-xs text-red-700 whitespace-pre-wrap">${t}</pre>`;
         return;
     }
 
     const j = JSON.parse(t);
+    currentViewerThreadId = j.thread_id || threadId;
+    currentViewerTicket = j.ticket || null;
+    if (currentViewerTicket && !assignableUsers.length) {
+        await loadAssignableUsers();
+    }
+    renderViewerWorkflow(currentViewerTicket);
     const gmailThreadId = j.gmail_thread_id || "";
     const threadMailbox = j.mailbox || currentMailbox || "";
     if (gmailLink) {
@@ -6997,6 +7166,9 @@ function closeThreadModal() {
     if (m) m.classList.add("hidden");
     const v = document.getElementById("viewerBackdrop");
     if (v) v.classList.remove("show");
+    currentViewerThreadId = null;
+    currentViewerTicket = null;
+    renderViewerWorkflow(null);
     const frame = document.getElementById("viewerFrame");
     if (frame) frame.srcdoc = "";
     const gmailLink = document.getElementById("gmailLink");
