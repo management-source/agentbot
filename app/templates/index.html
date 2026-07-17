@@ -39,6 +39,7 @@
     #forgotPasswordModal:not(.hidden){display:flex}
     #resetPasswordModal:not(.hidden){display:flex}
     #complianceEditModal:not(.hidden){display:flex}
+    #maintenanceOrderModal:not(.hidden){display:flex}
     #maintenanceEmailDraftModal:not(.hidden){display:flex}
     #propertyEditorModal:not(.hidden){display:flex}
     html,body{height:100%}
@@ -2089,16 +2090,13 @@
       background:#fff;
     }
     .maintenance-grid{
-      display:grid;
-      grid-template-columns:minmax(360px, 440px) minmax(0, 1fr);
-      gap:16px;
-      align-items:start;
+      display:block;
     }
-    .maintenance-grid.new-only{
-      grid-template-columns:1fr;
-    }
-    .maintenance-grid.new-only .maintenance-form-card{
+    .maintenance-new-form-host{
       width:100%;
+    }
+    .maintenance-new-form-host .maintenance-form-card{
+      max-width:none;
     }
     .maintenance-subnav{
       display:flex;
@@ -2282,12 +2280,15 @@
     }
     .maintenance-order-card{
       width:100%;
+      display:grid;
+      grid-template-columns:minmax(0, 1fr) auto;
+      gap:16px;
+      align-items:center;
       text-align:left;
       border:1px solid #dbe4ef;
       border-radius:18px;
       padding:14px;
       background:#fff;
-      cursor:pointer;
       transition:background .18s ease, border-color .18s ease, transform .18s ease;
     }
     .maintenance-order-card:hover,
@@ -2306,6 +2307,19 @@
       color:#667085;
       font-size:13px;
       line-height:1.4;
+    }
+    .maintenance-order-card-actions{
+      display:flex;
+      flex-direction:column;
+      align-items:flex-end;
+      gap:10px;
+      min-width:170px;
+    }
+    .maintenance-order-card-actions .row{
+      justify-content:flex-end;
+    }
+    .maintenance-order-card-actions .btn{
+      min-width:150px;
     }
     .maintenance-status{
       display:inline-flex;
@@ -2427,9 +2441,60 @@
       background:#fff;
       margin-top:8px;
     }
+    .maintenance-order-modal{
+      width:min(1180px, 100%);
+      max-height:calc(100dvh - 24px);
+      border-radius:24px;
+    }
+    .maintenance-order-modal .modal-head{
+      padding:16px 18px;
+      background:linear-gradient(135deg, #101828, #1d2939 68%, #66531f);
+      color:#fff;
+    }
+    .maintenance-order-modal .modal-head h3{
+      font-size:17px;
+      line-height:1.3;
+    }
+    .maintenance-order-modal .modal-head .muted{
+      color:#d0d5dd;
+    }
+    .maintenance-order-modal .modal-head .btn{
+      border-color:rgba(255,255,255,.3);
+      background:rgba(255,255,255,.1);
+      color:#fff;
+    }
+    .maintenance-order-modal .modal-head .btn:hover{
+      background:rgba(255,255,255,.18);
+      color:#fff;
+    }
+    .maintenance-order-modal-head-actions{
+      display:flex;
+      align-items:center;
+      justify-content:flex-end;
+      gap:10px;
+      flex-wrap:wrap;
+    }
+    .maintenance-order-modal .modal-body{
+      padding:0;
+      background:#f3f6fa;
+    }
+    .maintenance-order-modal-layout{
+      display:grid;
+      grid-template-columns:minmax(360px, .9fr) minmax(0, 1.1fr);
+      gap:16px;
+      align-items:start;
+      padding:16px;
+    }
+    .maintenance-order-modal .maintenance-form-card{
+      border:1px solid #dbe4ef;
+      box-shadow:0 12px 32px rgba(15,23,42,.06);
+    }
+    .maintenance-order-modal .maintenance-detail-panel{
+      box-shadow:0 8px 24px rgba(15,23,42,.045);
+    }
     @media (max-width: 1080px){
-      .maintenance-grid,
       .maintenance-dashboard-grid{grid-template-columns:1fr}
+      .maintenance-order-modal-layout{grid-template-columns:1fr}
     }
     @media (max-width: 760px){
       .maintenance-form-grid,
@@ -2438,6 +2503,22 @@
       .maintenance-mini-form{grid-template-columns:1fr}
       .tenant-registration-card,
       .tradie-card{grid-template-columns:1fr}
+      .maintenance-order-card{grid-template-columns:1fr}
+      .maintenance-order-card-actions{
+        min-width:0;
+        align-items:stretch;
+      }
+      .maintenance-order-card-actions .row{justify-content:flex-start}
+      .maintenance-order-card-actions .btn{width:100%}
+      .maintenance-order-modal{
+        max-height:100dvh;
+        height:100dvh;
+        border-radius:0;
+      }
+      #maintenanceOrderModal{padding:0}
+      .maintenance-order-modal-layout{padding:10px}
+      .maintenance-order-modal .modal-head{align-items:flex-start}
+      .maintenance-order-modal-head-actions{justify-content:flex-start}
     }
     .ticket-meta{
       display:flex;
@@ -5098,17 +5179,20 @@
 
                 <div id="maintenanceWorkView"
                   class="maintenance-view maintenance-grid hidden">
-                  <div id="maintenanceFormCard"
-                    class="card maintenance-form-card">
+                  <div id="maintenanceNewFormHost"
+                    class="maintenance-new-form-host">
+                    <div id="maintenanceFormCard"
+                      class="card maintenance-form-card">
                     <div class="row space">
                       <div>
                         <p class="panel-title" id="maintenanceFormTitle">New
                           Maintenance Order</p>
-                        <p class="panel-sub">Create the job once, then update it
+                        <p class="panel-sub" id="maintenanceFormSubtitle">Create the job once, then update it
                           as approval, quotes, tradies, and completion move
                           forward.</p>
                       </div>
-                      <button class="btn" onclick="resetMaintenanceForm()">New
+                      <button class="btn" id="maintenanceFormNewButton"
+                        onclick="resetMaintenanceForm()">New
                         Order</button>
                     </div>
                     <input type="hidden" id="maintenanceOrderId" />
@@ -5227,9 +5311,11 @@
                       </div>
                     </div>
                     <div class="row maintenance-form-actions">
-                      <button class="btn primary"
-                        onclick="saveMaintenanceOrder()">Save Order</button>
-                      <button class="btn" onclick="resetMaintenanceForm()">Clear</button>
+                      <button class="btn primary" id="maintenanceSaveButton"
+                        onclick="saveMaintenanceOrder()">Create Order</button>
+                      <button class="btn" id="maintenanceSecondaryButton"
+                        onclick="cancelMaintenanceForm()">Clear</button>
+                    </div>
                     </div>
                   </div>
 
@@ -5238,8 +5324,8 @@
                       <div class="row space">
                         <div>
                           <p class="panel-title">Maintenance Queue</p>
-                          <p class="panel-sub">Filter work by status, property,
-                            owner, tenant, tradie, or issue.</p>
+                          <p class="panel-sub">Filter the queue, then use Manage
+                            Request to edit details or continue the workflow.</p>
                         </div>
                         <button class="btn"
                           onclick="loadMaintenanceDashboard(1)">Refresh</button>
@@ -5285,20 +5371,6 @@
                       </div>
                     </div>
 
-                    <div class="maintenance-detail-panel">
-                      <div class="row space">
-                        <div>
-                          <h4 id="maintenanceDetailTitle">Select a maintenance
-                            order</h4>
-                          <p class="small muted" id="maintenanceDetailSub">
-                            Details and workflow actions will appear here.</p>
-                        </div>
-                        <span id="maintenanceDetailStatus"
-                          class="maintenance-status">No Job</span>
-                      </div>
-                      <div id="maintenanceDetailBody"
-                        class="maintenance-detail"></div>
-                    </div>
                   </div>
                 </div>
 
@@ -6873,6 +6945,33 @@
       </div>
     </div>
 
+    <div class="modal-backdrop hidden" id="maintenanceOrderModal"
+      role="dialog" aria-modal="true"
+      aria-labelledby="maintenanceDetailTitle">
+      <div class="modal maintenance-order-modal">
+        <div class="modal-head">
+          <div>
+            <h3 id="maintenanceDetailTitle">Maintenance Request</h3>
+            <div class="small muted" id="maintenanceDetailSub"
+              style="margin-top:4px">Loading request details...</div>
+          </div>
+          <div class="maintenance-order-modal-head-actions">
+            <span id="maintenanceDetailStatus"
+              class="maintenance-status">Loading</span>
+            <button class="btn ghost"
+              onclick="closeMaintenanceOrderModal()">Close</button>
+          </div>
+        </div>
+        <div class="modal-body">
+          <div class="maintenance-order-modal-layout">
+            <div id="maintenanceModalFormHost"></div>
+            <div id="maintenanceDetailBody"
+              class="maintenance-detail"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="modal-backdrop hidden" id="maintenanceEmailDraftModal">
       <div class="modal">
         <div class="modal-head">
@@ -6921,7 +7020,7 @@
       </div>
     </div>
 
-    <script src="/static/app.js?v=24"></script>
+    <script src="/static/app.js?v=25"></script>
 
     <script>
   // Wire segmented status buttons to existing tab logic

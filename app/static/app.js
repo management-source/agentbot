@@ -2694,6 +2694,9 @@ function formatDateShort(dt) {
 
 function switchDashboardTab(tab) {
     const requestedTab = ["portal", "notifications", "myspace", "maintenance", "rent", "lease_renewals", "compliance", "coverage", "compliance_providers", "properties", "team", "activity", "system", "inbox"].includes(tab) ? tab : "portal";
+    if (requestedTab !== "maintenance" && maintenanceOrderModalIsOpen()) {
+        closeMaintenanceOrderModal();
+    }
     if (!canAccessPage(requestedTab)) {
         alert("This page is not assigned to your role.");
         currentDashboardTab = firstAccessiblePage();
@@ -2938,6 +2941,33 @@ function maintenanceMoney(value) {
     return amount.toLocaleString(undefined, { style: "currency", currency: "AUD" });
 }
 
+function moveMaintenanceFormTo(hostId) {
+    const form = document.getElementById("maintenanceFormCard");
+    const host = document.getElementById(hostId);
+    if (form && host && form.parentElement !== host) host.appendChild(form);
+}
+
+function maintenanceOrderModalIsOpen() {
+    const modal = document.getElementById("maintenanceOrderModal");
+    return Boolean(modal && !modal.classList.contains("hidden"));
+}
+
+function closeMaintenanceOrderModal() {
+    const modal = document.getElementById("maintenanceOrderModal");
+    if (modal) modal.classList.add("hidden");
+    moveMaintenanceFormTo("maintenanceNewFormHost");
+    selectedMaintenanceOrderId = null;
+    renderMaintenanceList(Object.values(maintenanceOrdersCache));
+}
+
+function cancelMaintenanceForm() {
+    if (maintenanceOrderModalIsOpen()) {
+        closeMaintenanceOrderModal();
+        return;
+    }
+    resetMaintenanceForm();
+}
+
 function switchMaintenanceView(mode = "dashboard") {
     const view = ["dashboard", "new", "active", "complete", "tenants", "tradies"].includes(mode) ? mode : "dashboard";
     maintenanceViewMode = view;
@@ -2946,7 +2976,7 @@ function switchMaintenanceView(mode = "dashboard") {
     });
     const dashboard = document.getElementById("maintenanceDashboardView");
     const work = document.getElementById("maintenanceWorkView");
-    const form = document.getElementById("maintenanceFormCard");
+    const formHost = document.getElementById("maintenanceNewFormHost");
     const queue = document.getElementById("maintenanceQueueView");
     const tenantView = document.getElementById("maintenanceTenantRegistrationsView");
     const tradieView = document.getElementById("maintenanceTradiesView");
@@ -2954,8 +2984,8 @@ function switchMaintenanceView(mode = "dashboard") {
     [dashboard, work, tenantView, tradieView].forEach((el) => {
         if (el) el.classList.add("hidden");
     });
-    if (work) work.classList.remove("new-only");
-    if (form) form.classList.remove("hidden");
+    closeMaintenanceOrderModal();
+    if (formHost) formHost.classList.add("hidden");
     if (queue) queue.classList.remove("hidden");
 
     if (view === "dashboard") {
@@ -2977,8 +3007,8 @@ function switchMaintenanceView(mode = "dashboard") {
     if (work) work.classList.remove("hidden");
     if (view === "new") {
         resetMaintenanceForm();
+        if (formHost) formHost.classList.remove("hidden");
         if (queue) queue.classList.add("hidden");
-        if (work) work.classList.add("new-only");
         return;
     }
 
@@ -3075,6 +3105,7 @@ async function openMaintenanceForProperty(propertyId) {
         return;
     }
     switchDashboardTab("maintenance");
+    switchMaintenanceView("new");
     applyPropertyContactsToMaintenance(property, true);
     const title = document.getElementById("maintenanceTitle");
     if (title && !String(title.value || "").trim()) title.focus();
@@ -3115,6 +3146,7 @@ function maintenanceFormPayload() {
 
 function resetMaintenanceForm() {
     selectedMaintenanceOrderId = null;
+    moveMaintenanceFormTo("maintenanceNewFormHost");
     const ids = [
         "maintenanceOrderId", "maintenancePropertyId", "maintenancePropertySearch", "maintenanceTitle",
         "maintenanceDescription", "maintenanceAccessNotes", "maintenanceOwnerName", "maintenanceOwnerEmail",
@@ -3132,7 +3164,15 @@ function resetMaintenanceForm() {
     if (priority) priority.value = "normal";
     renderMaintenanceAssigneeOptions("");
     const title = document.getElementById("maintenanceFormTitle");
+    const subtitle = document.getElementById("maintenanceFormSubtitle");
     if (title) title.textContent = "New Maintenance Order";
+    if (subtitle) subtitle.textContent = "Create the job once, then update it as approval, quotes, tradies, and completion move forward.";
+    const newButton = document.getElementById("maintenanceFormNewButton");
+    const saveButton = document.getElementById("maintenanceSaveButton");
+    const secondaryButton = document.getElementById("maintenanceSecondaryButton");
+    if (newButton) newButton.classList.remove("hidden");
+    if (saveButton) saveButton.textContent = "Create Order";
+    if (secondaryButton) secondaryButton.textContent = "Clear";
 }
 
 function fillMaintenanceForm(order) {
@@ -3165,7 +3205,15 @@ function fillMaintenanceForm(order) {
     setVal("maintenanceQuoteNotes", order.quote_notes || order.owner_decision_notes || order.completion_notes || "");
     renderMaintenanceAssigneeOptions(order.assignee_user_id || "");
     const title = document.getElementById("maintenanceFormTitle");
-    if (title) title.textContent = `Edit Maintenance Order #${order.id}`;
+    const subtitle = document.getElementById("maintenanceFormSubtitle");
+    if (title) title.textContent = "Edit Request Details";
+    if (subtitle) subtitle.textContent = "Update the request fields here, then continue the workflow alongside them.";
+    const newButton = document.getElementById("maintenanceFormNewButton");
+    const saveButton = document.getElementById("maintenanceSaveButton");
+    const secondaryButton = document.getElementById("maintenanceSecondaryButton");
+    if (newButton) newButton.classList.add("hidden");
+    if (saveButton) saveButton.textContent = "Save Changes";
+    if (secondaryButton) secondaryButton.textContent = "Close";
 }
 
 async function saveMaintenanceOrder() {
@@ -3192,9 +3240,10 @@ async function saveMaintenanceOrder() {
     selectedMaintenanceOrderId = order.id;
     fillMaintenanceForm(order);
     renderMaintenanceDetail(order);
-    if (maintenanceViewMode === "new") {
+    if (!id) {
         await loadNotifications();
         switchMaintenanceView("active");
+        await openMaintenanceOrder(order.id);
         return;
     }
     await loadMaintenanceDashboard(currentMaintenancePage || 1);
@@ -3223,17 +3272,21 @@ function renderMaintenanceList(items) {
         return;
     }
     list.innerHTML = items.map((item) => `
-      <button class="maintenance-order-card ${Number(selectedMaintenanceOrderId) === Number(item.id) ? "active" : ""}" type="button" onclick="openMaintenanceOrder(${item.id})">
-        <div class="row space">
+      <article class="maintenance-order-card ${Number(selectedMaintenanceOrderId) === Number(item.id) ? "active" : ""}">
+        <div>
           <h4>${escapeHtml(item.reference || `#${item.id}`)} ${escapeHtml(item.title || "Maintenance order")}</h4>
-          <div class="row" style="gap:6px;justify-content:flex-end">
+          <p>${escapeHtml(item.property_label || item.property_address || "-")}</p>
+          <p>${escapeHtml(item.category || "General")} - ${escapeHtml(item.priority || "normal")} - Updated ${escapeHtml(formatDateShort(item.updated_at))}</p>
+        </div>
+        <div class="maintenance-order-card-actions">
+          <div class="row" style="gap:6px;flex-wrap:wrap">
             ${item.info_request && item.info_request.required ? `<span class="maintenance-status wait">Info Required</span>` : ""}
             ${maintenanceSourceChip(item.source)}${maintenanceStatusChip(item.status)}
           </div>
+          <button class="btn primary" type="button"
+            onclick="openMaintenanceOrder(${item.id})">Manage Request</button>
         </div>
-        <p>${escapeHtml(item.property_label || item.property_address || "-")}</p>
-        <p>${escapeHtml(item.category || "General")} - ${escapeHtml(item.priority || "normal")} - Updated ${escapeHtml(formatDateShort(item.updated_at))}</p>
-      </button>
+      </article>
     `).join("");
 }
 
@@ -3470,11 +3523,6 @@ async function loadMaintenanceDashboard(page = null) {
     const btnNext = document.getElementById("maintenanceBtnNext");
     if (btnPrev) btnPrev.disabled = Number(data.page || 1) <= 1;
     if (btnNext) btnNext.disabled = !Boolean(data.has_more);
-    if (!selectedMaintenanceOrderId && items[0]) {
-        openMaintenanceOrder(items[0].id);
-    } else if (selectedMaintenanceOrderId) {
-        renderMaintenanceList(items);
-    }
 }
 
 function prevMaintenancePage() {
@@ -3490,12 +3538,33 @@ function nextMaintenancePage() {
 
 async function openMaintenanceOrder(orderId) {
     selectedMaintenanceOrderId = orderId;
+    const modal = document.getElementById("maintenanceOrderModal");
+    const title = document.getElementById("maintenanceDetailTitle");
+    const sub = document.getElementById("maintenanceDetailSub");
+    const status = document.getElementById("maintenanceDetailStatus");
+    const body = document.getElementById("maintenanceDetailBody");
+    if (title) title.textContent = "Loading maintenance request...";
+    if (sub) sub.textContent = "Please wait while the latest details are loaded.";
+    if (status) {
+        status.className = "maintenance-status";
+        status.textContent = "Loading";
+    }
+    if (body) body.innerHTML = `<div class="maintenance-detail-panel"><div class="small muted">Loading workflow and activity...</div></div>`;
+    if (modal) {
+        modal.classList.remove("hidden");
+        const modalBody = modal.querySelector(".modal-body");
+        if (modalBody) modalBody.scrollTop = 0;
+    }
+    renderMaintenanceList(Object.values(maintenanceOrdersCache));
     const r = await apiFetch(`/maintenance/orders/${orderId}`);
     if (!r.ok) {
+        closeMaintenanceOrderModal();
         alert(`Failed to open maintenance order: ${await extractErrorMessage(r)}`);
         return;
     }
     const order = await r.json();
+    if (!maintenanceOrderModalIsOpen() || Number(selectedMaintenanceOrderId) !== Number(orderId)) return;
+    moveMaintenanceFormTo("maintenanceModalFormHost");
     fillMaintenanceForm(order);
     renderMaintenanceDetail(order);
     renderMaintenanceList(Object.values(maintenanceOrdersCache));
@@ -3662,21 +3731,8 @@ async function deleteMaintenanceOrder(orderId) {
         alert(`Failed to delete maintenance order: ${await extractErrorMessage(r)}`);
         return;
     }
-    selectedMaintenanceOrderId = null;
+    closeMaintenanceOrderModal();
     resetMaintenanceForm();
-    const title = document.getElementById("maintenanceDetailTitle");
-    const sub = document.getElementById("maintenanceDetailSub");
-    const status = document.getElementById("maintenanceDetailStatus");
-    const body = document.getElementById("maintenanceDetailBody");
-    if (title) title.textContent = "Select an order";
-    if (sub) sub.textContent = "Create or choose a maintenance order to manage the workflow.";
-    if (status) {
-        status.className = "maintenance-status";
-        status.textContent = "-";
-    }
-    if (body) {
-        body.innerHTML = `<div class="ticket-empty"><strong>Maintenance order deleted</strong><div class="small muted" style="margin-top:6px">Choose another order or create a new one.</div></div>`;
-    }
     currentMaintenancePage = 1;
     await loadMaintenanceDashboard(1);
     await loadNotifications();
@@ -8067,6 +8123,20 @@ window.addEventListener("load", async () => {
             if (!panel.contains(ev.target) && !bell.contains(ev.target)) {
                 panel.classList.remove("show");
             }
+        }
+    });
+
+    const maintenanceOrderModal = document.getElementById("maintenanceOrderModal");
+    if (maintenanceOrderModal) {
+        maintenanceOrderModal.addEventListener("click", (ev) => {
+            if (ev.target === maintenanceOrderModal) closeMaintenanceOrderModal();
+        });
+    }
+    document.addEventListener("keydown", (ev) => {
+        const openModals = Array.from(document.querySelectorAll(".modal-backdrop:not(.hidden)"));
+        const topModal = openModals[openModals.length - 1];
+        if (ev.key === "Escape" && topModal?.id === "maintenanceOrderModal") {
+            closeMaintenanceOrderModal();
         }
     });
 
