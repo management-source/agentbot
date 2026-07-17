@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, or_
@@ -14,6 +14,7 @@ from app.routers.user_auth import _get_role_page_access, _role_key
 
 
 router = APIRouter(prefix="/activity-log", tags=["activity-log"])
+ACTIVITY_WINDOW_DAYS = 7
 
 
 def _require_activity_access(user: User, db: Session) -> None:
@@ -33,6 +34,8 @@ def _parse_date(value: str | None, *, end_of_day: bool = False) -> datetime | No
         if end_of_day:
             return parsed.replace(hour=23, minute=59, second=59, microsecond=999999)
         return parsed.replace(hour=0, minute=0, second=0, microsecond=0)
+    if parsed.tzinfo:
+        return parsed.astimezone(timezone.utc).replace(tzinfo=None)
     return parsed
 
 
@@ -44,6 +47,13 @@ def _detail_payload(raw: str | None) -> dict:
     except json.JSONDecodeError:
         return {"detail": raw}
     return parsed if isinstance(parsed, dict) else {"detail": parsed}
+
+
+def _utc_iso(value: datetime | None) -> str | None:
+    if not value:
+        return None
+    aware = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    return aware.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def _activity_payload(row: ActivityLog) -> dict:
@@ -69,7 +79,7 @@ def _activity_payload(row: ActivityLog) -> dict:
         "ip_address": row.ip_address,
         "user_agent": row.user_agent,
         "detail": _detail_payload(row.detail),
-        "created_at": row.created_at.isoformat() if row.created_at else None,
+        "created_at": _utc_iso(row.created_at),
     }
 
 
@@ -101,10 +111,13 @@ def list_activity_log(
     if action:
         filtered = filtered.filter(ActivityLog.action.ilike(f"%{action.strip()}%"))
 
+    now = datetime.utcnow()
+    activity_cutoff = now - timedelta(days=ACTIVITY_WINDOW_DAYS)
     start_dt = _parse_date(start)
     end_dt = _parse_date(end, end_of_day=True)
-    if start_dt:
-        filtered = filtered.filter(ActivityLog.created_at >= start_dt)
+    if not start_dt or start_dt < activity_cutoff:
+        start_dt = activity_cutoff
+    filtered = filtered.filter(ActivityLog.created_at >= start_dt)
     if end_dt:
         filtered = filtered.filter(ActivityLog.created_at <= end_dt)
 
@@ -134,10 +147,9 @@ def list_activity_log(
         .all()
     )
 
-    now = datetime.utcnow()
     today = now.replace(hour=0, minute=0, second=0, microsecond=0)
     yesterday = now - timedelta(hours=24)
-    summary_base = base
+    summary_base = base.filter(ActivityLog.created_at >= activity_cutoff)
     if mailbox:
         summary_base = summary_base.filter(ActivityLog.mailbox == mailbox.strip().lower())
 
@@ -156,6 +168,7 @@ def list_activity_log(
         "page": page,
         "page_size": page_size,
         "has_more": (page * page_size) < total,
+        "window_days": ACTIVITY_WINDOW_DAYS,
         "summary": {
             "today": summary_base.filter(ActivityLog.created_at >= today).count(),
             "last_24h": summary_base.filter(ActivityLog.created_at >= yesterday).count(),

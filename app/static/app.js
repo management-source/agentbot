@@ -2329,7 +2329,14 @@ function activityQueryParams(page = currentActivityPage) {
 
 function activityPaginationItems(page, totalPages) {
     const total = Math.max(Number(totalPages || 1), 1);
-    return Array.from({ length: total }, (_, index) => index + 1);
+    const current = Math.min(Math.max(Number(page || 1), 1), total);
+    if (total <= 7) return Array.from({ length: total }, (_, index) => index + 1);
+    const items = new Set([1, total, current - 1, current, current + 1]);
+    if (current <= 3) [2, 3, 4].forEach((item) => items.add(item));
+    if (current >= total - 2) [total - 3, total - 2, total - 1].forEach((item) => items.add(item));
+    return Array.from(items)
+        .filter((item) => item >= 1 && item <= total)
+        .sort((a, b) => a - b);
 }
 
 function renderActivityPagination(data = {}) {
@@ -2345,14 +2352,20 @@ function renderActivityPagination(data = {}) {
     activityTotalPages = totalPages;
     currentActivityPage = page;
 
-    if (pageInfo) pageInfo.textContent = `Page ${page} of ${totalPages} - ${total} recorded actions`;
+    const windowDays = Number(data.window_days || 7);
+    if (pageInfo) pageInfo.textContent = `Last ${windowDays} days - Page ${page} of ${totalPages} - ${total} recorded actions`;
     if (prevBtn) prevBtn.disabled = page <= 1;
     if (nextBtn) nextBtn.disabled = page >= totalPages || !data.has_more;
     if (!pageNumbers) return;
+    if (totalPages <= 1) {
+        pageNumbers.innerHTML = "";
+        return;
+    }
 
-    pageNumbers.innerHTML = activityPaginationItems(page, totalPages).map((item) => {
+    pageNumbers.innerHTML = activityPaginationItems(page, totalPages).map((item, index, arr) => {
         const isActive = Number(item) === page;
-        return `
+        const gap = index > 0 && item - arr[index - 1] > 1 ? `<span class="activity-page-gap">...</span>` : "";
+        return `${gap}
           <button class="activity-page-btn ${isActive ? "active" : ""}" type="button" onclick="goActivityPage(${Number(item)})" ${isActive ? 'aria-current="page"' : ""}>
             ${Number(item)}
           </button>
@@ -2368,7 +2381,7 @@ function renderActivityLog(data = {}) {
     if (!list) return;
     const items = Array.isArray(data.items) ? data.items : [];
     if (!items.length) {
-        list.innerHTML = `<div class="ticket-empty"><strong>No activity found</strong><div class="small muted" style="margin-top:6px">Try clearing filters or perform a platform action to create the first record.</div></div>`;
+        list.innerHTML = `<div class="ticket-empty"><strong>No activity found in the last 7 days</strong><div class="small muted" style="margin-top:6px">Try clearing filters or perform a platform action to create the first record.</div></div>`;
         return;
     }
     list.innerHTML = items.map((item) => {
@@ -2382,7 +2395,7 @@ function renderActivityLog(data = {}) {
               <h3>${escapeHtml(item.action || "Activity recorded")}</h3>
               <p>${escapeHtml(activityActorLabel(item))}${target ? ` worked on ${escapeHtml(target)}.` : " completed a platform action."}</p>
               <div class="activity-meta">
-                <span>${escapeHtml(formatDate(item.created_at))}</span>
+                <span>${escapeHtml(formatActivityDate(item.created_at))}</span>
               </div>
             </div>
             <div class="activity-row-side">
@@ -2639,6 +2652,38 @@ async function flushDatabase() {
 function formatDate(dt) {
     if (!dt) return "-";
     try { return new Date(dt).toLocaleString(); } catch { return dt; }
+}
+const ACTIVITY_LOG_TIME_ZONE = "Australia/Melbourne";
+
+function parseUtcDateTime(dt) {
+    if (!dt) return null;
+    if (typeof dt === "string") {
+        const value = dt.trim();
+        if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(value) && !/(Z|[+-]\d{2}:?\d{2})$/.test(value)) {
+            return new Date(`${value}Z`);
+        }
+    }
+    return new Date(dt);
+}
+
+function formatActivityDate(dt) {
+    const parsed = parseUtcDateTime(dt);
+    if (!parsed || Number.isNaN(parsed.getTime())) return dt || "-";
+    try {
+        return new Intl.DateTimeFormat("en-AU", {
+            timeZone: ACTIVITY_LOG_TIME_ZONE,
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+            hour12: true,
+            timeZoneName: "short",
+        }).format(parsed);
+    } catch {
+        return parsed.toLocaleString();
+    }
 }
 function formatDateShort(dt) {
     if (!dt) return "-";

@@ -2990,28 +2990,29 @@
     }
     .activity-filter-grid .field{min-width:0}
     .activity-log-card{
-      padding:20px;
+      padding:16px;
     }
     .activity-pagination{
       display:flex;
       align-items:center;
       justify-content:flex-end;
       gap:8px;
-      flex-wrap:wrap;
+      flex-wrap:nowrap;
     }
     .activity-page-numbers{
       display:flex;
       align-items:center;
       justify-content:flex-end;
       gap:6px;
-      flex-wrap:wrap;
-      max-width:min(580px, 100%);
+      flex-wrap:nowrap;
+      max-width:min(300px, 100%);
+      overflow:hidden;
     }
     .activity-page-btn{
-      min-width:34px;
-      height:34px;
-      padding:0 10px;
-      border-radius:12px;
+      min-width:30px;
+      height:30px;
+      padding:0 9px;
+      border-radius:10px;
       border:1px solid #dbe4ef;
       background:#fff;
       color:#475467;
@@ -3033,17 +3034,17 @@
     }
     .activity-list{
       display:grid;
-      gap:8px;
-      margin-top:16px;
+      gap:6px;
+      margin-top:12px;
     }
     .activity-row{
       display:grid;
-      grid-template-columns:44px minmax(0, 1fr) auto;
-      gap:12px;
+      grid-template-columns:34px minmax(0, 1fr) auto;
+      gap:10px;
       align-items:center;
-      padding:12px 14px;
+      padding:9px 11px;
       border:1px solid #edf1f6;
-      border-radius:18px;
+      border-radius:14px;
       background:
         radial-gradient(circle at top right, rgba(201,162,70,.08), transparent 28%),
         #fff;
@@ -3055,9 +3056,9 @@
       transform:translateY(-1px);
     }
     .activity-avatar{
-      width:40px;
-      height:40px;
-      border-radius:14px;
+      width:32px;
+      height:32px;
+      border-radius:11px;
       object-fit:cover;
       border:1px solid #dbe4ef;
       background:#101828;
@@ -3065,13 +3066,13 @@
       display:inline-flex;
       align-items:center;
       justify-content:center;
-      font-size:12px;
+      font-size:11px;
       font-weight:900;
       box-shadow:0 10px 22px rgba(15,23,42,.10);
     }
     .activity-avatar-wrap{
-      width:40px;
-      height:40px;
+      width:32px;
+      height:32px;
       display:inline-flex;
       align-items:center;
       justify-content:center;
@@ -3082,33 +3083,33 @@
     .activity-badge{
       display:inline-flex;
       width:max-content;
-      padding:4px 8px;
+      padding:3px 7px;
       border-radius:999px;
       background:#f8fafc;
       border:1px solid #dbe4ef;
       color:#475467;
-      font-size:10px;
+      font-size:9px;
       font-weight:900;
       text-transform:uppercase;
       letter-spacing:.07em;
     }
     .activity-row h3{
-      margin:5px 0 0;
+      margin:3px 0 0;
       color:#101828;
-      font-size:15px;
+      font-size:14px;
       letter-spacing:-.02em;
     }
     .activity-row p{
-      margin:3px 0 0;
+      margin:2px 0 0;
       color:#475467;
-      font-size:12px;
+      font-size:11px;
       line-height:1.35;
     }
     .activity-meta{
       display:flex;
       flex-wrap:wrap;
       gap:6px;
-      margin-top:7px;
+      margin-top:5px;
     }
     .activity-meta span{
       padding:4px 8px;
@@ -3135,10 +3136,10 @@
       display:inline-flex;
       align-items:center;
       justify-content:center;
-      min-height:28px;
-      padding:5px 10px;
+      min-height:24px;
+      padding:4px 8px;
       border-radius:999px;
-      font-size:11px;
+      font-size:10px;
       font-weight:900;
     }
     .activity-status.success{background:rgba(22,163,74,.10);color:#166534;border:1px solid rgba(22,163,74,.22)}
@@ -6487,7 +6488,7 @@
                     <div class="page-banner-actions">
                       <span class="chip">Staff accountability</span>
                       <span class="chip">Platform changes</span>
-                      <span class="chip">Security events</span>
+                      <span class="chip">Last 7 days</span>
                     </div>
                   </div>
 
@@ -6508,8 +6509,8 @@
 
                     <section class="activity-card">
                       <h3>Filters</h3>
-                      <p>Find an action by staff member, workspace, mailbox,
-                        date, request path, or keyword.</p>
+                      <p>Find an action from the last 7 days by staff member,
+                        workspace, mailbox, request path, or keyword.</p>
                       <div class="activity-filter-grid">
                         <div class="field">
                           <div class="label">Search</div>
@@ -6530,11 +6531,11 @@
                             placeholder="admin@donspremier.com.au" />
                         </div>
                         <div class="field">
-                          <div class="label">From</div>
+                          <div class="label">From within 7 days</div>
                           <input type="date" id="activityStartDate" />
                         </div>
                         <div class="field">
-                          <div class="label">To</div>
+                          <div class="label">To within 7 days</div>
                           <input type="date" id="activityEndDate" />
                         </div>
                       </div>
