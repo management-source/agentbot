@@ -4171,6 +4171,71 @@
       background:rgba(255,255,255,.75);
       box-shadow:0 8px 22px rgba(15,23,42,.045);
     }
+
+    /* Monthly landlord report builder */
+    .landlord-report-shell{display:grid;gap:18px;margin-top:18px}
+    .landlord-report-layout{display:grid;grid-template-columns:minmax(420px,.92fr) minmax(520px,1.08fr);gap:18px;align-items:start}
+    .landlord-report-config{display:grid;gap:16px;min-width:0}
+    .landlord-report-card{padding:20px;border:1px solid #dbe4ef;border-radius:22px;background:#fff;box-shadow:0 10px 28px rgba(15,23,42,.055)}
+    .landlord-report-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:16px}
+    .landlord-report-card-head h3{margin:0;color:#101828;font-size:17px;letter-spacing:-.02em}
+    .landlord-report-card-head p{margin:5px 0 0;color:#667085;font-size:12px;line-height:1.5}
+    .landlord-report-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px}
+    .landlord-report-form-grid .field{min-width:0;margin:0}
+    .landlord-report-form-grid .wide{grid-column:1/-1}
+    .landlord-report-form-grid input,.landlord-report-form-grid select,.landlord-report-form-grid textarea{width:100%;min-height:42px}
+    .landlord-report-form-grid textarea{min-height:88px;resize:vertical}
+    .landlord-report-period-custom{display:grid;grid-template-columns:1fr 1fr;gap:10px;grid-column:1/-1}
+    .landlord-report-toggle-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:14px}
+    .landlord-report-toggle{display:flex;align-items:flex-start;gap:9px;min-height:54px;padding:11px;border:1px solid #dbe4ef;border-radius:15px;background:#f9fafb;color:#344054;font-size:12px;font-weight:750;line-height:1.35;cursor:pointer}
+    .landlord-report-toggle input{width:17px;height:17px;margin:1px 0 0;accent-color:#9a7820;flex:0 0 auto}
+    .landlord-report-toggle.internal{border-color:#e7d8b0;background:#fffaf0}
+    .landlord-report-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+    .landlord-report-toolbar .row{gap:7px}
+    .landlord-report-toolbar .btn{min-height:34px;padding:7px 11px;font-size:11px}
+    .landlord-report-section-list{display:grid;gap:8px;max-height:530px;overflow:auto;padding-right:4px}
+    .landlord-report-section{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:10px;padding:11px 10px;border:1px solid #dbe4ef;border-radius:14px;background:#fff;transition:border-color .2s ease,background .2s ease}
+    .landlord-report-section:has(input:checked){border-color:#d3b765;background:#fffaf0}
+    .landlord-report-section input{width:18px;height:18px;accent-color:#9a7820}
+    .landlord-report-section label{min-width:0;cursor:pointer}
+    .landlord-report-section strong{display:block;color:#101828;font-size:12px;line-height:1.35}
+    .landlord-report-section small{display:block;margin-top:3px;color:#667085;font-size:10px;line-height:1.25}
+    .landlord-report-order{display:flex;gap:3px}
+    .landlord-report-order button{display:grid;place-items:center;width:27px;height:27px;padding:0;border:1px solid #dbe4ef;border-radius:9px;background:#f8fafc;color:#344054;font-size:13px;font-weight:900;cursor:pointer}
+    .landlord-report-order button:disabled{opacity:.35;cursor:not-allowed}
+    .landlord-report-note-editor{display:grid;grid-template-columns:minmax(150px,.42fr) minmax(220px,1fr);gap:10px;margin-top:14px;padding-top:14px;border-top:1px solid #e5e9ef}
+    .landlord-report-note-editor textarea{min-height:72px}
+    .landlord-report-source-summary{display:flex;flex-wrap:wrap;gap:7px;margin:0 0 14px}
+    .landlord-report-source-summary span{padding:6px 9px;border:1px solid #dbe4ef;border-radius:999px;background:#f8fafc;color:#475467;font-size:10px;font-weight:800}
+    .landlord-report-activity-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px;padding:14px;border:1px solid #e4e8ee;border-radius:16px;background:#f8fafc}
+    .landlord-report-activity-form .wide{grid-column:1/-1}
+    .landlord-report-activity-form textarea{min-height:76px}
+    .landlord-report-activity-list{display:grid;gap:8px;margin-top:12px}
+    .landlord-report-activity{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;padding:12px;border:1px solid #dbe4ef;border-radius:14px;background:#fff}
+    .landlord-report-activity strong{display:block;color:#101828;font-size:12px}
+    .landlord-report-activity p{margin:5px 0 0;color:#667085;font-size:11px;line-height:1.45}
+    .landlord-report-activity-actions{display:flex;align-items:center;gap:5px}
+    .landlord-report-activity-actions button{min-height:31px;padding:5px 9px;font-size:10px}
+    .landlord-report-photo-list{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .landlord-report-photo{display:flex;align-items:flex-start;gap:8px;padding:10px;border:1px solid #dbe4ef;border-radius:13px;background:#f9fafb;font-size:11px;line-height:1.35;cursor:pointer}
+    .landlord-report-photo input{margin-top:2px;accent-color:#9a7820}
+    .landlord-report-preview-column{position:sticky;top:12px;display:grid;gap:10px;min-width:0}
+    .landlord-report-preview-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px;border:1px solid rgba(201,162,70,.35);border-radius:18px;background:linear-gradient(135deg,#111827,#5e4a1b);color:#fff;box-shadow:0 12px 28px rgba(15,23,42,.15)}
+    .landlord-report-preview-bar strong{font-size:13px}.landlord-report-preview-bar small{display:block;margin-top:3px;color:#d5dbe5;font-size:10px}
+    .landlord-report-preview-actions{display:flex;gap:7px;flex-wrap:wrap;justify-content:flex-end}
+    .landlord-report-preview-actions .btn{min-height:35px;padding:7px 11px;font-size:11px;background:#fff}
+    .landlord-report-preview-actions .btn.primary{background:linear-gradient(135deg,#a68025,#d2b45d);border-color:#d2b45d;color:#111827}
+    .landlord-report-preview{min-height:760px;max-height:calc(100vh - 205px);overflow:auto;padding:20px;border:1px solid #dbe4ef;border-radius:22px;background:radial-gradient(circle at 15% 5%,rgba(201,162,70,.12),transparent 25%),#e9edf3}
+    .landlord-report-placeholder{display:grid;place-items:center;min-height:680px;padding:40px;text-align:center;color:#667085}
+    .landlord-report-placeholder img{width:92px;height:92px;object-fit:contain;filter:grayscale(1);opacity:.45}
+    .landlord-report-placeholder strong{display:block;margin-top:18px;color:#344054;font-size:17px}
+    .landlord-report-placeholder p{max-width:390px;margin:7px auto 0;font-size:12px;line-height:1.55}
+    .landlord-report-message{display:none;padding:11px 13px;border:1px solid #f1c1c1;border-radius:13px;background:#fff2f2;color:#9d2b2b;font-size:12px;line-height:1.45}
+    .landlord-report-message.show{display:block}.landlord-report-message.success{border-color:#a9dbc3;background:#eefaf4;color:#166c49}.landlord-report-message.info{border-color:#d9c58d;background:#fffaf0;color:#735817}
+    .landlord-report-limitations{margin-top:12px;padding:12px 14px;border-left:4px solid #b58b2a;background:#fffaf0;color:#66521c;font-size:11px;line-height:1.5}
+    .landlord-report-empty{padding:13px;border:1px dashed #cfd6df;border-radius:13px;color:#667085;text-align:center;font-size:11px}
+    @media(max-width:1250px){.landlord-report-layout{grid-template-columns:1fr}.landlord-report-preview-column{position:static}.landlord-report-preview{max-height:none}.landlord-report-placeholder{min-height:360px}}
+    @media(max-width:720px){.landlord-report-card{padding:15px}.landlord-report-form-grid,.landlord-report-toggle-grid,.landlord-report-period-custom,.landlord-report-activity-form,.landlord-report-photo-list,.landlord-report-note-editor{grid-template-columns:1fr}.landlord-report-form-grid .wide,.landlord-report-activity-form .wide{grid-column:auto}.landlord-report-preview-bar{align-items:flex-start;flex-direction:column}.landlord-report-preview-actions{width:100%;justify-content:flex-start}.landlord-report-preview{padding:8px}.landlord-report-section{grid-template-columns:auto minmax(0,1fr)}.landlord-report-order{grid-column:2}.landlord-report-layout{display:block}.landlord-report-preview-column{margin-top:16px}}
     @media (max-width: 720px){
       .page-banner,
       .hub-hero.page-banner,
@@ -4408,6 +4473,14 @@
                 onclick="switchDashboardTab('lease_renewals'); switchLeaseRenewalView('report')">Report</button>
             </div>
           </div>
+          <a id="navLandlordReports" href="javascript:void(0)"
+            onclick="switchDashboardTab('landlord_reports')"
+            title="Monthly Landlord Report"><span
+              class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path
+                  d="M5 3h11l3 3v15H5z"></path><path d="M15 3v4h4"></path><path
+                  d="M8 11h8"></path><path d="M8 15h8"></path><path
+                  d="M8 19h5"></path></svg></span><span
+              class="nav-label">Landlord Reports</span></a>
           <div class="side-nav-group subnav-collapsed" id="complianceNavGroup"
             data-side-subnav-group="compliance">
             <div class="side-nav-row">
@@ -4670,6 +4743,14 @@
                     <p>Track renewal due dates, signatures, rent review
                       details, follow-ups, and portfolio reports.</p>
                     <div class="tile-action">Track renewals</div>
+                  </div>
+                  <div class="hub-tile" data-page-tile="landlord_reports"
+                    onclick="switchDashboardTab('landlord_reports')">
+                    <div class="tile-mark"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h11l3 3v15H5z"></path><path d="M15 3v4h4"></path><path d="M8 11h8"></path><path d="M8 15h8"></path><path d="M8 19h5"></path></svg></div>
+                    <h3>Monthly Landlord Report</h3>
+                    <p>Build a branded property report from live tenancy,
+                      maintenance, lease, rent, and compliance records.</p>
+                    <div class="tile-action">Build report</div>
                   </div>
                   <div class="hub-tile" data-page-tile="compliance"
                     onclick="switchDashboardTab('compliance')">
@@ -5628,6 +5709,144 @@
                     onclick="prevRentPage()">Prev</button>
                   <button class="btn" id="rentBtnNext"
                     onclick="nextRentPage()">Next</button>
+                </div>
+              </div>
+
+              <div id="landlordReportsPanel" class="hidden">
+                <div class="page-banner">
+                  <div class="page-banner-kicker">Owner Reporting Studio</div>
+                  <h2>Monthly Landlord Report</h2>
+                  <p>Create a polished owner-facing A4 report from the selected property's live portal records, with deliberate control over every included section and note.</p>
+                  <div class="page-banner-actions">
+                    <span class="chip">Live property data</span>
+                    <span class="chip">Privacy controlled</span>
+                    <span class="chip">A4 PDF</span>
+                    <span class="chip">Black, white and gold</span>
+                  </div>
+                </div>
+
+                <div class="landlord-report-shell">
+                  <div class="landlord-report-layout">
+                    <div class="landlord-report-config">
+                      <section class="landlord-report-card" aria-labelledby="landlordReportDetailsHeading">
+                        <div class="landlord-report-card-head">
+                          <div><h3 id="landlordReportDetailsHeading">Report details</h3><p>Select the property and reporting period first. Linked records will load automatically.</p></div>
+                        </div>
+                        <div class="landlord-report-form-grid">
+                          <div class="field wide">
+                            <label class="label" for="landlordReportPropertySearch">Property</label>
+                            <input id="landlordReportPropertySearch" type="text" list="landlordReportPropertyOptions" placeholder="Search and select a managed property..." autocomplete="off" />
+                            <input id="landlordReportPropertyId" type="hidden" />
+                            <datalist id="landlordReportPropertyOptions"></datalist>
+                          </div>
+                          <div class="field">
+                            <label class="label" for="landlordReportPeriodMode">Reporting period</label>
+                            <select id="landlordReportPeriodMode" onchange="landlordReportPeriodModeChanged()">
+                              <option value="month">Month and year</option>
+                              <option value="custom">Custom date range</option>
+                            </select>
+                          </div>
+                          <div class="field" id="landlordReportMonthField">
+                            <label class="label" for="landlordReportMonth">Month and year</label>
+                            <input id="landlordReportMonth" type="month" />
+                          </div>
+                          <div class="landlord-report-period-custom hidden" id="landlordReportCustomPeriod">
+                            <div class="field"><label class="label" for="landlordReportStartDate">Start date</label><input id="landlordReportStartDate" type="date" /></div>
+                            <div class="field"><label class="label" for="landlordReportEndDate">End date</label><input id="landlordReportEndDate" type="date" /></div>
+                          </div>
+                          <div class="field">
+                            <label class="label" for="landlordReportLandlordName">Landlord name</label>
+                            <input id="landlordReportLandlordName" type="text" maxlength="500" placeholder="Loaded from property" />
+                          </div>
+                          <div class="field">
+                            <label class="label" for="landlordReportManager">Property manager</label>
+                            <select id="landlordReportManager"><option value="">Select property manager</option></select>
+                          </div>
+                          <div class="field">
+                            <label class="label" for="landlordReportPreparedDate">Report prepared date</label>
+                            <input id="landlordReportPreparedDate" type="date" />
+                          </div>
+                          <div class="field wide">
+                            <label class="label" for="landlordReportIntro">Optional introductory message</label>
+                            <textarea id="landlordReportIntro" maxlength="6000" placeholder="A short landlord-facing introduction..."></textarea>
+                          </div>
+                          <div class="field wide">
+                            <label class="label" for="landlordReportOverallSummary">Optional overall property summary</label>
+                            <textarea id="landlordReportOverallSummary" maxlength="6000" placeholder="Summarise condition, performance, key outcomes, or priorities..."></textarea>
+                          </div>
+                        </div>
+                        <div class="landlord-report-toggle-grid">
+                          <label class="landlord-report-toggle"><input id="landlordReportIncludeEmpty" type="checkbox" /><span>Include selected sections with no activity</span></label>
+                          <label class="landlord-report-toggle"><input id="landlordReportIncludePhotos" type="checkbox" checked /><span>Include supporting photos</span></label>
+                          <label class="landlord-report-toggle"><input id="landlordReportIncludeFinancial" type="checkbox" checked /><span>Include available financial figures</span></label>
+                          <label class="landlord-report-toggle internal"><input id="landlordReportIncludeInternal" type="checkbox" /><span>Include internal notes intentionally</span></label>
+                        </div>
+                      </section>
+
+                      <section class="landlord-report-card" aria-labelledby="landlordReportSectionsHeading">
+                        <div class="landlord-report-card-head"><div><h3 id="landlordReportSectionsHeading">Report sections</h3><p>Only checked, non-empty sections appear in the PDF and contents page.</p></div></div>
+                        <div class="landlord-report-source-summary" id="landlordReportSourceSummary"></div>
+                        <div class="landlord-report-toolbar">
+                          <span class="small muted" id="landlordReportSectionCount">Select a property to load sections.</span>
+                          <div class="row">
+                            <button class="btn" type="button" onclick="landlordReportSelectAll()">Select All</button>
+                            <button class="btn" type="button" onclick="landlordReportClearAll()">Clear All</button>
+                            <button class="btn hidden" id="landlordReportSaveDefaults" type="button" onclick="saveLandlordReportDefaults()">Save Defaults</button>
+                          </div>
+                        </div>
+                        <div class="landlord-report-section-list" id="landlordReportSectionList" role="group" aria-label="Sections to include">
+                          <div class="landlord-report-empty">Sections load after a property is selected.</div>
+                        </div>
+                        <div class="landlord-report-note-editor">
+                          <div class="field"><label class="label" for="landlordReportNoteSection">Section note</label><select id="landlordReportNoteSection" onchange="showLandlordReportSectionNote()"><option value="">Choose section</option></select></div>
+                          <div class="field"><label class="label" for="landlordReportSectionNote">Landlord-facing note for this section</label><textarea id="landlordReportSectionNote" maxlength="6000" oninput="updateLandlordReportSectionNote()" placeholder="Optional note..."></textarea></div>
+                        </div>
+                      </section>
+
+                      <section class="landlord-report-card" aria-labelledby="landlordReportActivitiesHeading">
+                        <div class="landlord-report-card-head"><div><h3 id="landlordReportActivitiesHeading">Report-only activities</h3><p>Add verified details that are not stored elsewhere. These entries never overwrite source records.</p></div></div>
+                        <div class="landlord-report-activity-form">
+                          <div class="field"><label class="label" for="landlordReportActivitySection">Report section</label><select id="landlordReportActivitySection"></select></div>
+                          <div class="field"><label class="label" for="landlordReportActivityDate">Activity date</label><input id="landlordReportActivityDate" type="date" /></div>
+                          <div class="field wide"><label class="label" for="landlordReportActivityTitle">Activity title</label><input id="landlordReportActivityTitle" type="text" maxlength="240" placeholder="e.g. Routine inspection completed" /></div>
+                          <div class="field"><label class="label" for="landlordReportActivityStatus">Status</label><select id="landlordReportActivityStatus"><option value="completed">Completed</option><option value="in_progress">In progress</option><option value="awaiting_landlord_approval">Awaiting landlord approval</option><option value="scheduled">Scheduled</option></select></div>
+                          <div class="field"><label class="label" for="landlordReportActivityCategory">Category</label><input id="landlordReportActivityCategory" type="text" maxlength="160" /></div>
+                          <div class="field"><label class="label" for="landlordReportActivityContractor">Contractor / provider</label><input id="landlordReportActivityContractor" type="text" maxlength="200" /></div>
+                          <div class="field"><label class="label" for="landlordReportActivityAmount">Amount (AUD)</label><input id="landlordReportActivityAmount" type="number" step="0.01" min="0" /></div>
+                          <div class="field wide"><label class="label" for="landlordReportActivityDescription">Landlord-facing description</label><textarea id="landlordReportActivityDescription" maxlength="5000"></textarea></div>
+                          <div class="field wide"><label class="label" for="landlordReportActivityAction">Action required from landlord</label><textarea id="landlordReportActivityAction" maxlength="2500"></textarea></div>
+                          <label class="landlord-report-toggle internal wide"><input id="landlordReportActivityInternal" type="checkbox" /><span>Mark this activity internal. It is excluded unless internal notes are enabled.</span></label>
+                          <div class="row wide"><button class="btn primary" id="landlordReportActivitySave" type="button" onclick="saveLandlordReportActivity()">Add Activity</button><button class="btn hidden" id="landlordReportActivityCancel" type="button" onclick="resetLandlordReportActivityForm()">Cancel Edit</button></div>
+                        </div>
+                        <div class="landlord-report-activity-list" id="landlordReportActivityList"><div class="landlord-report-empty">No report-only activities added.</div></div>
+                      </section>
+
+                      <section class="landlord-report-card" id="landlordReportPhotosCard" aria-labelledby="landlordReportPhotosHeading">
+                        <div class="landlord-report-card-head"><div><h3 id="landlordReportPhotosHeading">Supporting photos</h3><p>Select existing property maintenance photos and optionally choose a cover image.</p></div></div>
+                        <div class="field" style="margin-bottom:12px"><label class="label" for="landlordReportHeroPhoto">Cover hero image</label><select id="landlordReportHeroPhoto"><option value="">No cover image</option></select></div>
+                        <div class="landlord-report-photo-list" id="landlordReportPhotoList"><div class="landlord-report-empty" style="grid-column:1/-1">No reportable photos loaded.</div></div>
+                      </section>
+
+                      <section class="landlord-report-card">
+                        <div class="field"><label class="label" for="landlordReportAdditionalNotes">Additional landlord-facing notes</label><textarea id="landlordReportAdditionalNotes" maxlength="10000" style="width:100%;min-height:110px" placeholder="Optional closing notes..."></textarea></div>
+                        <div class="landlord-report-limitations hidden" id="landlordReportLimitations"></div>
+                      </section>
+                    </div>
+
+                    <aside class="landlord-report-preview-column" aria-label="Report preview">
+                      <div class="landlord-report-preview-bar">
+                        <div><strong>PDF preview</strong><small id="landlordReportPreviewMeta">Choose a property and reporting period.</small></div>
+                        <div class="landlord-report-preview-actions">
+                          <button class="btn" type="button" onclick="previewLandlordReport(true)">Refresh Preview</button>
+                          <button class="btn primary" id="landlordReportDownloadBtn" type="button" onclick="downloadLandlordReport()">Generate PDF</button>
+                        </div>
+                      </div>
+                      <div class="landlord-report-message" id="landlordReportMessage" role="status" aria-live="polite"></div>
+                      <div class="landlord-report-preview" id="landlordReportPreview">
+                        <div class="landlord-report-placeholder"><div><img src="/static/dons_premier_transparent_v2.png" alt="" /><strong>Your report preview will appear here</strong><p>Select a managed property, choose the sections, and add any landlord-facing notes. The preview updates as the report changes.</p></div></div>
+                      </div>
+                    </aside>
+                  </div>
                 </div>
               </div>
 
@@ -7020,7 +7239,7 @@
       </div>
     </div>
 
-    <script src="/static/app.js?v=25"></script>
+    <script src="/static/app.js?v=26"></script>
 
     <script>
   // Wire segmented status buttons to existing tab logic

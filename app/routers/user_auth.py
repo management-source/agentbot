@@ -2,17 +2,18 @@ from __future__ import annotations
 
 import base64
 import hashlib
-import imghdr
 import json
 import logging
 import re
 import secrets
 from datetime import datetime, timedelta
 from email.message import EmailMessage
+from io import BytesIO
 from pathlib import Path
 
 import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from PIL import Image, UnidentifiedImageError
 from pydantic import BaseModel, EmailStr
 from sqlalchemy import and_, func
 from sqlalchemy.orm import Session
@@ -81,6 +82,12 @@ PAGE_REGISTRY = [
         "section": "Operations",
     },
     {
+        "id": "landlord_reports",
+        "label": "Monthly Landlord Report",
+        "description": "Build, preview, and download branded monthly property reports for landlords.",
+        "section": "Operations",
+    },
+    {
         "id": "compliance",
         "label": "Compliance",
         "description": "Create and maintain compliance records for managed properties.",
@@ -127,10 +134,10 @@ PAGE_REGISTRY = [
 
 
 DEFAULT_ROLE_PAGE_ACCESS = {
-    UserRole.ADMIN.value: ["portal", "notifications", "myspace", "inbox", "maintenance", "rent", "lease_renewals", "compliance", "coverage", "compliance_providers", "properties", "team", "activity", "system"],
-    UserRole.PM.value: ["portal", "notifications", "myspace", "inbox", "maintenance", "rent", "lease_renewals", "compliance", "coverage", "compliance_providers", "properties", "team", "activity", "system"],
+    UserRole.ADMIN.value: ["portal", "notifications", "myspace", "inbox", "maintenance", "rent", "lease_renewals", "landlord_reports", "compliance", "coverage", "compliance_providers", "properties", "team", "activity", "system"],
+    UserRole.PM.value: ["portal", "notifications", "myspace", "inbox", "maintenance", "rent", "lease_renewals", "landlord_reports", "compliance", "coverage", "compliance_providers", "properties", "team", "activity", "system"],
     UserRole.LEASING.value: ["portal", "notifications", "myspace", "inbox", "lease_renewals", "properties", "team"],
-    UserRole.SALES.value: ["portal", "notifications", "myspace", "inbox", "maintenance", "rent", "lease_renewals", "compliance", "coverage", "compliance_providers", "properties", "team", "activity", "system"],
+    UserRole.SALES.value: ["portal", "notifications", "myspace", "inbox", "maintenance", "rent", "lease_renewals", "landlord_reports", "compliance", "coverage", "compliance_providers", "properties", "team", "activity", "system"],
     UserRole.ACCOUNTS.value: ["portal", "notifications", "myspace", "inbox", "rent", "team"],
     UserRole.READONLY.value: ["portal", "notifications", "myspace", "team"],
 }
@@ -318,7 +325,7 @@ def _normalize_role_page_access(raw: dict | None) -> dict[str, list[str]]:
         default_selected = set(DEFAULT_ROLE_PAGE_ACCESS.get(key, ["portal"]))
         locked_pages = {str(page["id"]) for page in PAGE_REGISTRY if page.get("locked")}
         missing_default_pages = {
-            page_id for page_id in ("maintenance", "lease_renewals", "team", "activity", "compliance_providers", *locked_pages)
+            page_id for page_id in ("maintenance", "lease_renewals", "landlord_reports", "team", "activity", "compliance_providers", *locked_pages)
             if page_id in default_selected and page_id not in selected
         }
         if missing_default_pages and selected == (default_selected - missing_default_pages):
@@ -426,9 +433,14 @@ def _save_avatar(user_id: int, file: UploadFile) -> str:
     if len(raw) > MAX_AVATAR_BYTES:
         raise HTTPException(status_code=413, detail="Avatar exceeds 2MB limit.")
 
-    kind = imghdr.what(None, h=raw)
-    ext_map = {"jpeg": "jpg", "png": "png", "gif": "gif", "webp": "webp"}
-    ext = ext_map.get(kind or "")
+    try:
+        with Image.open(BytesIO(raw)) as image:
+            image.verify()
+            kind = str(image.format or "").upper()
+    except (OSError, UnidentifiedImageError):
+        kind = ""
+    ext_map = {"JPEG": "jpg", "PNG": "png", "GIF": "gif", "WEBP": "webp"}
+    ext = ext_map.get(kind)
     if not ext:
         raise HTTPException(status_code=400, detail="Unsupported image type. Use JPG, PNG, GIF, or WEBP.")
 

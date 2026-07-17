@@ -185,6 +185,20 @@ let leaseRenewalsLoadedOnce = false;
 let leaseRenewalViewMode = "dashboard";
 let selectedLeaseRenewalId = null;
 let leaseRenewalRecordsCache = {};
+let landlordReportLoadedOnce = false;
+let landlordReportContext = null;
+let landlordReportPropertyKey = "";
+let landlordReportSectionOrder = [];
+let landlordReportSelectedSections = new Set();
+let landlordReportSectionNotes = {};
+let landlordReportActivities = [];
+let landlordReportEditingActivityId = "";
+let landlordReportSelectedPhotoIds = new Set();
+let landlordReportPreviewTimer = null;
+let landlordReportContextTimer = null;
+let landlordReportContextRequest = 0;
+let landlordReportPreviewRequest = 0;
+let landlordReportEventsBound = false;
 let currentMaintenancePage = 1;
 let maintenanceLoadedOnce = false;
 let selectedMaintenanceOrderId = null;
@@ -260,6 +274,11 @@ function updateSyncContextUI() {
     if (currentDashboardTab === "lease_renewals") {
         if (viewBadge) viewBadge.textContent = "Lease Renewals";
         if (info) info.textContent = "Inbox sync controls are hidden while you are managing lease renewal tracking.";
+        return;
+    }
+    if (currentDashboardTab === "landlord_reports") {
+        if (viewBadge) viewBadge.textContent = "Landlord Reports";
+        if (info) info.textContent = "Inbox sync controls are hidden while you are preparing a monthly landlord report.";
         return;
     }
     if (currentDashboardTab === "maintenance") {
@@ -663,6 +682,7 @@ async function initMailboxes() {
             leaseRenewalTotalPages = 1;
             selectedLeaseRenewalId = null;
             leaseRenewalRecordsCache = {};
+            resetLandlordReportBuilder();
             maintenanceLoadedOnce = false;
             propertiesLoadedOnce = false;
             complianceLoadedOnce = false;
@@ -698,7 +718,9 @@ async function initMailboxes() {
             if (currentDashboardTab === "compliance_providers") {
                 loadComplianceProviders(true);
             }
-            refreshPropertyOptions();
+            refreshPropertyOptions().then(() => {
+                if (currentDashboardTab === "landlord_reports") initLandlordReportBuilder();
+            });
             refreshGoogleStatus();
             loadNotifications();
         });
@@ -1523,14 +1545,14 @@ const USER_ROLE_ACCESS = {
         optionLabel: "Administrator",
         defaultAdminAccess: true,
         summary: "Full control over the portal, system users, settings, and all operational workspaces.",
-        access: ["Portal Hub", "My Space", "Email Manager", "Maintenance", "Rent Tracker", "Lease Renewals", "Compliance", "Compliance Report", "Compliance Providers", "Properties", "Our Team", "Activity Log", "System"],
+        access: ["Portal Hub", "My Space", "Email Manager", "Maintenance", "Rent Tracker", "Lease Renewals", "Monthly Landlord Report", "Compliance", "Compliance Report", "Compliance Providers", "Properties", "Our Team", "Activity Log", "System"],
     },
     PM: {
         label: "Property Manager",
         optionLabel: "Property Manager",
         defaultAdminAccess: true,
         summary: "Property management access for inbox triage, maintenance, compliance, rent, and property work.",
-        access: ["Portal Hub", "My Space", "Email Manager", "Maintenance", "Rent Tracker", "Lease Renewals", "Compliance", "Compliance Report", "Compliance Providers", "Properties", "Our Team", "Activity Log", "System"],
+        access: ["Portal Hub", "My Space", "Email Manager", "Maintenance", "Rent Tracker", "Lease Renewals", "Monthly Landlord Report", "Compliance", "Compliance Report", "Compliance Providers", "Properties", "Our Team", "Activity Log", "System"],
     },
     LEASING: {
         label: "Marketing Advisor",
@@ -1543,7 +1565,7 @@ const USER_ROLE_ACCESS = {
         optionLabel: "Director",
         defaultAdminAccess: true,
         summary: "Director-level access across the core portal workspaces.",
-        access: ["Portal Hub", "My Space", "Email Manager", "Maintenance", "Rent Tracker", "Lease Renewals", "Compliance", "Compliance Report", "Compliance Providers", "Properties", "Our Team", "Activity Log", "System"],
+        access: ["Portal Hub", "My Space", "Email Manager", "Maintenance", "Rent Tracker", "Lease Renewals", "Monthly Landlord Report", "Compliance", "Compliance Report", "Compliance Providers", "Properties", "Our Team", "Activity Log", "System"],
     },
     ACCOUNTS: {
         label: "Administrative Assistant",
@@ -1570,6 +1592,7 @@ const FALLBACK_PAGE_REGISTRY = [
     { id: "maintenance", label: "Maintenance", description: "Maintenance orders, owner approvals, quotes, tradie arrangements, and completion tracking.", section: "Operations" },
     { id: "rent", label: "Rent Tracker", description: "Rent tracking and reports.", section: "Operations" },
     { id: "lease_renewals", label: "Lease Renewals", description: "Lease renewal dates, signatures, rent review tracking, follow-ups, and reporting.", section: "Operations" },
+    { id: "landlord_reports", label: "Monthly Landlord Report", description: "Owner-facing monthly property reports and branded PDF generation.", section: "Operations" },
     { id: "compliance", label: "Compliance", description: "Compliance records and due dates.", section: "Compliance" },
     { id: "coverage", label: "Compliance Report", description: "Missing and incomplete compliance checks.", section: "Compliance" },
     { id: "compliance_providers", label: "Compliance Providers", description: "Reusable provider contacts for compliance records.", section: "Compliance" },
@@ -1694,6 +1717,7 @@ function applyPageVisibility() {
         maintenance: "navMaintenance",
         rent: "navRentTracker",
         lease_renewals: "navLeaseRenewals",
+        landlord_reports: "navLandlordReports",
         compliance: "navCompliance",
         coverage: "navComplianceCoverage",
         compliance_providers: "navComplianceProviders",
@@ -2693,7 +2717,7 @@ function formatDateShort(dt) {
 }
 
 function switchDashboardTab(tab) {
-    const requestedTab = ["portal", "notifications", "myspace", "maintenance", "rent", "lease_renewals", "compliance", "coverage", "compliance_providers", "properties", "team", "activity", "system", "inbox"].includes(tab) ? tab : "portal";
+    const requestedTab = ["portal", "notifications", "myspace", "maintenance", "rent", "lease_renewals", "landlord_reports", "compliance", "coverage", "compliance_providers", "properties", "team", "activity", "system", "inbox"].includes(tab) ? tab : "portal";
     if (requestedTab !== "maintenance" && maintenanceOrderModalIsOpen()) {
         closeMaintenanceOrderModal();
     }
@@ -2711,6 +2735,7 @@ function switchDashboardTab(tab) {
         maintenance: ["Maintenance", "Create, approve, quote, schedule, and complete property maintenance orders."],
         rent: ["Rent Tracker", "Track rental due dates, payments, arrears, and yearly rent reporting."],
         lease_renewals: ["Lease Renewals", "Track renewal due dates, signatures, rent review details, follow-ups, and portfolio reporting."],
+        landlord_reports: ["Monthly Landlord Report", "Prepare a branded owner report from live property records and verified report-only notes."],
         compliance: ["Compliance", "Create and update compliance records with calculated due dates."],
         coverage: ["Compliance Report", "Review missing and incomplete MRS, Smoke, Gas, and Electrical checks."],
         compliance_providers: ["Compliance Providers", "Manage reusable provider contacts for compliance records."],
@@ -2731,6 +2756,7 @@ function switchDashboardTab(tab) {
     const maintenancePanel = document.getElementById("maintenancePanel");
     const rentPanel = document.getElementById("rentPanel");
     const leaseRenewalsPanel = document.getElementById("leaseRenewalsPanel");
+    const landlordReportsPanel = document.getElementById("landlordReportsPanel");
     const propertiesPanel = document.getElementById("propertiesPanel");
     const teamPanel = document.getElementById("teamPanel");
     const activityPanel = document.getElementById("activityPanel");
@@ -2744,6 +2770,7 @@ function switchDashboardTab(tab) {
     const navPortal = document.getElementById("navPortal");
     const navRent = document.getElementById("navRentTracker");
     const navLeaseRenewals = document.getElementById("navLeaseRenewals");
+    const navLandlordReports = document.getElementById("navLandlordReports");
     const navProperties = document.getElementById("navProperties");
     const navTeam = document.getElementById("navTeam");
     const navActivity = document.getElementById("navActivity");
@@ -2760,6 +2787,7 @@ function switchDashboardTab(tab) {
     if (maintenancePanel) maintenancePanel.classList.toggle("hidden", currentDashboardTab !== "maintenance");
     if (rentPanel) rentPanel.classList.toggle("hidden", currentDashboardTab !== "rent");
     if (leaseRenewalsPanel) leaseRenewalsPanel.classList.toggle("hidden", currentDashboardTab !== "lease_renewals");
+    if (landlordReportsPanel) landlordReportsPanel.classList.toggle("hidden", currentDashboardTab !== "landlord_reports");
     if (propertiesPanel) propertiesPanel.classList.toggle("hidden", currentDashboardTab !== "properties");
     if (teamPanel) teamPanel.classList.toggle("hidden", currentDashboardTab !== "team");
     if (activityPanel) activityPanel.classList.toggle("hidden", currentDashboardTab !== "activity");
@@ -2773,6 +2801,7 @@ function switchDashboardTab(tab) {
     if (navMaintenance) navMaintenance.classList.toggle("active", currentDashboardTab === "maintenance");
     if (navRent) navRent.classList.toggle("active", currentDashboardTab === "rent");
     if (navLeaseRenewals) navLeaseRenewals.classList.toggle("active", currentDashboardTab === "lease_renewals");
+    if (navLandlordReports) navLandlordReports.classList.toggle("active", currentDashboardTab === "landlord_reports");
     if (navProperties) navProperties.classList.toggle("active", currentDashboardTab === "properties");
     if (navTeam) navTeam.classList.toggle("active", currentDashboardTab === "team");
     if (navActivity) navActivity.classList.toggle("active", currentDashboardTab === "activity");
@@ -2794,6 +2823,7 @@ function switchDashboardTab(tab) {
         shell.classList.toggle("inbox-mode", currentDashboardTab === "inbox");
         shell.classList.toggle("maintenance-mode", currentDashboardTab === "maintenance");
         shell.classList.toggle("lease-renewals-mode", currentDashboardTab === "lease_renewals");
+        shell.classList.toggle("landlord-reports-mode", currentDashboardTab === "landlord_reports");
         shell.classList.toggle("portal-mode", currentDashboardTab === "portal");
         shell.classList.toggle("notifications-mode", currentDashboardTab === "notifications");
         shell.classList.toggle("myspace-mode", currentDashboardTab === "myspace");
@@ -2815,6 +2845,9 @@ function switchDashboardTab(tab) {
         refreshPropertyOptions();
         loadAssignableUsers();
         loadLeaseRenewals();
+    }
+    if (currentDashboardTab === "landlord_reports" && !landlordReportLoadedOnce) {
+        initLandlordReportBuilder();
     }
     if (currentDashboardTab === "maintenance" && !maintenanceLoadedOnce) {
         refreshPropertyOptions();
@@ -5033,16 +5066,21 @@ async function refreshPropertyOptions() {
     const leaseSearch = document.getElementById("leaseRenewalPropertySearch");
     const leaseHidden = document.getElementById("leaseRenewalPropertyId");
     const leaseList = document.getElementById("leaseRenewalPropertyOptions");
+    const landlordReportSearch = document.getElementById("landlordReportPropertySearch");
+    const landlordReportHidden = document.getElementById("landlordReportPropertyId");
+    const landlordReportList = document.getElementById("landlordReportPropertyOptions");
     try {
         const r = await apiFetch("/properties/options");
         if (!r.ok) {
             if (complianceList) complianceList.innerHTML = "";
             if (maintenanceList) maintenanceList.innerHTML = "";
             if (leaseList) leaseList.innerHTML = "";
+            if (landlordReportList) landlordReportList.innerHTML = "";
             renderAddressSuggestionOptions();
             if (hidden) hidden.value = "";
             if (maintenanceHidden) maintenanceHidden.value = "";
             if (leaseHidden) leaseHidden.value = "";
+            if (landlordReportHidden) landlordReportHidden.value = "";
             return;
         }
         const data = await r.json();
@@ -5066,6 +5104,7 @@ async function refreshPropertyOptions() {
         if (complianceList) complianceList.innerHTML = optionsHtml;
         if (maintenanceList) maintenanceList.innerHTML = optionsHtml;
         if (leaseList) leaseList.innerHTML = optionsHtml;
+        if (landlordReportList) landlordReportList.innerHTML = optionsHtml;
         renderAddressSuggestionOptions();
         if (search && hidden) {
             const match = resolvePropertySearchValue(search.value);
@@ -5079,14 +5118,20 @@ async function refreshPropertyOptions() {
             const match = resolvePropertySearchValue(leaseSearch.value);
             leaseHidden.value = match ? String(match.id) : "";
         }
+        if (landlordReportSearch && landlordReportHidden) {
+            const match = resolvePropertySearchValue(landlordReportSearch.value);
+            landlordReportHidden.value = match ? String(match.id) : "";
+        }
     } catch {
         if (complianceList) complianceList.innerHTML = "";
         if (maintenanceList) maintenanceList.innerHTML = "";
         if (leaseList) leaseList.innerHTML = "";
+        if (landlordReportList) landlordReportList.innerHTML = "";
         renderAddressSuggestionOptions();
         if (hidden) hidden.value = "";
         if (maintenanceHidden) maintenanceHidden.value = "";
         if (leaseHidden) leaseHidden.value = "";
+        if (landlordReportHidden) landlordReportHidden.value = "";
     }
 }
 
@@ -5096,6 +5141,643 @@ function resolvePropertySearchValue(value) {
     if (propertyOptionsByLabel[needle]) return propertyOptionsByLabel[needle];
     const matches = propertyOptionsCache.filter((p) => String(p.label || "").toLowerCase().includes(needle));
     return matches.length === 1 ? matches[0] : null;
+}
+
+function landlordReportMelbourneDate() {
+    const parts = new Intl.DateTimeFormat("en-AU", {
+        timeZone: "Australia/Melbourne",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+    }).formatToParts(new Date());
+    const values = Object.fromEntries(parts.filter((part) => part.type !== "literal").map((part) => [part.type, part.value]));
+    return `${values.year}-${values.month}-${values.day}`;
+}
+
+function landlordReportMonthRange(monthValue) {
+    const match = /^(\d{4})-(\d{2})$/.exec(String(monthValue || ""));
+    if (!match) return { startDate: "", endDate: "" };
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+    return {
+        startDate: `${match[1]}-${match[2]}-01`,
+        endDate: `${match[1]}-${match[2]}-${String(lastDay).padStart(2, "0")}`,
+    };
+}
+
+function landlordReportPeriod() {
+    const mode = document.getElementById("landlordReportPeriodMode")?.value || "month";
+    if (mode === "custom") {
+        return {
+            startDate: document.getElementById("landlordReportStartDate")?.value || "",
+            endDate: document.getElementById("landlordReportEndDate")?.value || "",
+        };
+    }
+    return landlordReportMonthRange(document.getElementById("landlordReportMonth")?.value || "");
+}
+
+function setLandlordReportMessage(message = "", type = "error") {
+    const element = document.getElementById("landlordReportMessage");
+    if (!element) return;
+    element.textContent = message;
+    element.className = `landlord-report-message${message ? " show" : ""}${type ? ` ${type}` : ""}`;
+}
+
+function setLandlordReportPreviewPlaceholder(title, detail) {
+    const preview = document.getElementById("landlordReportPreview");
+    if (!preview) return;
+    preview.innerHTML = `<div class="landlord-report-placeholder"><div><img src="/static/dons_premier_transparent_v2.png" alt="" /><strong>${escapeHtml(title)}</strong><p>${escapeHtml(detail)}</p></div></div>`;
+}
+
+function landlordReportPeriodModeChanged() {
+    const custom = document.getElementById("landlordReportPeriodMode")?.value === "custom";
+    document.getElementById("landlordReportMonthField")?.classList.toggle("hidden", custom);
+    document.getElementById("landlordReportCustomPeriod")?.classList.toggle("hidden", !custom);
+    scheduleLandlordReportContext();
+}
+
+function bindLandlordReportEvents() {
+    if (landlordReportEventsBound) return;
+    landlordReportEventsBound = true;
+    const propertySearch = document.getElementById("landlordReportPropertySearch");
+    const propertyChanged = () => {
+        const match = resolvePropertySearchValue(propertySearch?.value || "");
+        const hidden = document.getElementById("landlordReportPropertyId");
+        if (hidden) hidden.value = match ? String(match.id) : "";
+        if (match) scheduleLandlordReportContext();
+    };
+    propertySearch?.addEventListener("input", propertyChanged);
+    propertySearch?.addEventListener("change", propertyChanged);
+    ["landlordReportMonth", "landlordReportStartDate", "landlordReportEndDate"].forEach((id) => {
+        document.getElementById(id)?.addEventListener("change", scheduleLandlordReportContext);
+    });
+    [
+        "landlordReportLandlordName",
+        "landlordReportManager",
+        "landlordReportPreparedDate",
+        "landlordReportIntro",
+        "landlordReportOverallSummary",
+        "landlordReportAdditionalNotes",
+        "landlordReportIncludeEmpty",
+        "landlordReportIncludePhotos",
+        "landlordReportIncludeFinancial",
+        "landlordReportIncludeInternal",
+        "landlordReportHeroPhoto",
+    ].forEach((id) => {
+        const element = document.getElementById(id);
+        element?.addEventListener("input", scheduleLandlordReportPreview);
+        element?.addEventListener("change", scheduleLandlordReportPreview);
+    });
+}
+
+async function initLandlordReportBuilder() {
+    bindLandlordReportEvents();
+    const today = landlordReportMelbourneDate();
+    const month = today.slice(0, 7);
+    const monthInput = document.getElementById("landlordReportMonth");
+    const prepared = document.getElementById("landlordReportPreparedDate");
+    const activityDate = document.getElementById("landlordReportActivityDate");
+    if (monthInput && !monthInput.value) monthInput.value = month;
+    if (prepared && !prepared.value) prepared.value = today;
+    if (activityDate && !activityDate.value) activityDate.value = today;
+    landlordReportPeriodModeChanged();
+    if (!propertyOptionsCache.length) await refreshPropertyOptions();
+    landlordReportLoadedOnce = true;
+    const selected = resolvePropertySearchValue(document.getElementById("landlordReportPropertySearch")?.value || "");
+    if (selected) await loadLandlordReportContext();
+}
+
+function resetLandlordReportBuilder() {
+    landlordReportLoadedOnce = false;
+    landlordReportContext = null;
+    landlordReportPropertyKey = "";
+    landlordReportSectionOrder = [];
+    landlordReportSelectedSections = new Set();
+    landlordReportSectionNotes = {};
+    landlordReportActivities = [];
+    landlordReportEditingActivityId = "";
+    landlordReportSelectedPhotoIds = new Set();
+    landlordReportContextRequest += 1;
+    landlordReportPreviewRequest += 1;
+    if (landlordReportContextTimer) clearTimeout(landlordReportContextTimer);
+    if (landlordReportPreviewTimer) clearTimeout(landlordReportPreviewTimer);
+    landlordReportContextTimer = null;
+    landlordReportPreviewTimer = null;
+    const emptyValues = [
+        "landlordReportPropertySearch",
+        "landlordReportPropertyId",
+        "landlordReportLandlordName",
+        "landlordReportIntro",
+        "landlordReportOverallSummary",
+        "landlordReportAdditionalNotes",
+    ];
+    emptyValues.forEach((id) => {
+        const element = document.getElementById(id);
+        if (element) element.value = "";
+    });
+    const manager = document.getElementById("landlordReportManager");
+    if (manager) manager.innerHTML = '<option value="">Select property manager</option>';
+    const sections = document.getElementById("landlordReportSectionList");
+    if (sections) sections.innerHTML = '<div class="landlord-report-empty">Sections load after a property is selected.</div>';
+    const sourceSummary = document.getElementById("landlordReportSourceSummary");
+    if (sourceSummary) sourceSummary.innerHTML = "";
+    const counter = document.getElementById("landlordReportSectionCount");
+    if (counter) counter.textContent = "Select a property to load sections.";
+    const limitations = document.getElementById("landlordReportLimitations");
+    if (limitations) {
+        limitations.innerHTML = "";
+        limitations.classList.add("hidden");
+    }
+    renderLandlordReportActivities();
+    setLandlordReportMessage("", "");
+    setLandlordReportPreviewPlaceholder("Your report preview will appear here", "Select a managed property, choose the sections, and add any landlord-facing notes.");
+}
+
+function scheduleLandlordReportContext() {
+    if (landlordReportContextTimer) clearTimeout(landlordReportContextTimer);
+    landlordReportContextTimer = setTimeout(() => loadLandlordReportContext(), 260);
+}
+
+function landlordReportManagerOptions(selectedId) {
+    const manager = document.getElementById("landlordReportManager");
+    if (!manager) return;
+    const staff = Array.isArray(landlordReportContext?.staff) ? landlordReportContext.staff : [];
+    manager.innerHTML = [
+        '<option value="">Select property manager</option>',
+        ...staff.map((user) => {
+            const selected = String(user.id) === String(selectedId || "") ? " selected" : "";
+            const role = String(user.role || "").replaceAll("_", " ").toLowerCase();
+            const label = user.name || user.email || "Staff member";
+            return `<option value="${Number(user.id)}"${selected}>${escapeHtml(label)}${role ? ` (${escapeHtml(role)})` : ""}</option>`;
+        }),
+    ].join("");
+}
+
+function renderLandlordReportSourceSummary() {
+    const container = document.getElementById("landlordReportSourceSummary");
+    if (!container) return;
+    const summary = landlordReportContext?.source_summary;
+    if (!summary) {
+        container.innerHTML = "";
+        return;
+    }
+    const items = [
+        ["Maintenance", summary.maintenance_orders],
+        ["Rent records", summary.rent_records],
+        ["Compliance", summary.compliance_records],
+        ["Lease", summary.lease_record_available ? "Available" : "Not recorded"],
+        ["Photos", summary.supporting_photos],
+    ];
+    container.innerHTML = items.map(([label, value]) => `<span>${escapeHtml(label)}: ${escapeHtml(String(value ?? 0))}</span>`).join("");
+}
+
+function renderLandlordReportSections() {
+    const container = document.getElementById("landlordReportSectionList");
+    const definitions = Array.isArray(landlordReportContext?.sections) ? landlordReportContext.sections : [];
+    if (!container || !definitions.length) return;
+    const byId = Object.fromEntries(definitions.map((section) => [section.id, section]));
+    landlordReportSectionOrder = landlordReportSectionOrder.filter((id) => byId[id]);
+    definitions.forEach((section) => {
+        if (!landlordReportSectionOrder.includes(section.id)) landlordReportSectionOrder.push(section.id);
+    });
+    container.innerHTML = landlordReportSectionOrder.map((sectionId, index) => {
+        const section = byId[sectionId];
+        const checked = landlordReportSelectedSections.has(sectionId) ? " checked" : "";
+        return `<div class="landlord-report-section" data-report-section="${escapeHtml(sectionId)}">
+          <input id="landlordReportSection_${escapeHtml(sectionId)}" type="checkbox" data-section-id="${escapeHtml(sectionId)}"${checked} onchange="landlordReportSectionChanged()" />
+          <label for="landlordReportSection_${escapeHtml(sectionId)}"><strong>${escapeHtml(`${index + 1}. ${section.title}`)}</strong><small>${escapeHtml(section.source || "Report entry")}</small></label>
+          <div class="landlord-report-order" aria-label="Reorder ${escapeHtml(section.title)}">
+            <button type="button" title="Move section up" aria-label="Move ${escapeHtml(section.title)} up" onclick="moveLandlordReportSection('${escapeHtml(sectionId)}',-1)"${index === 0 ? " disabled" : ""}>&uarr;</button>
+            <button type="button" title="Move section down" aria-label="Move ${escapeHtml(section.title)} down" onclick="moveLandlordReportSection('${escapeHtml(sectionId)}',1)"${index === landlordReportSectionOrder.length - 1 ? " disabled" : ""}>&darr;</button>
+          </div>
+        </div>`;
+    }).join("");
+    renderLandlordReportSectionSelectors();
+    updateLandlordReportSectionCount();
+}
+
+function renderLandlordReportSectionSelectors() {
+    const definitions = Array.isArray(landlordReportContext?.sections) ? landlordReportContext.sections : [];
+    const ordered = landlordReportSectionOrder.map((id) => definitions.find((section) => section.id === id)).filter(Boolean);
+    const note = document.getElementById("landlordReportNoteSection");
+    const activity = document.getElementById("landlordReportActivitySection");
+    const noteSelected = note?.value || "";
+    const activitySelected = activity?.value || "";
+    const options = ordered.map((section) => `<option value="${escapeHtml(section.id)}">${escapeHtml(section.title)}</option>`).join("");
+    if (note) {
+        note.innerHTML = `<option value="">Choose section</option>${options}`;
+        if (ordered.some((section) => section.id === noteSelected)) note.value = noteSelected;
+    }
+    if (activity) {
+        activity.innerHTML = options;
+        if (ordered.some((section) => section.id === activitySelected)) activity.value = activitySelected;
+    }
+    showLandlordReportSectionNote();
+}
+
+function landlordReportReadSelection() {
+    landlordReportSelectedSections = new Set(
+        Array.from(document.querySelectorAll("#landlordReportSectionList input[data-section-id]:checked"))
+            .map((input) => input.dataset.sectionId)
+            .filter(Boolean)
+    );
+    return landlordReportSectionOrder.filter((id) => landlordReportSelectedSections.has(id));
+}
+
+function landlordReportSelectionAfterAction(sectionIds, action) {
+    return action === "clear" ? [] : Array.from(new Set(sectionIds || []));
+}
+
+function landlordReportSelectAll() {
+    const all = landlordReportSelectionAfterAction(landlordReportSectionOrder, "select");
+    landlordReportSelectedSections = new Set(all);
+    renderLandlordReportSections();
+    scheduleLandlordReportPreview();
+}
+
+function landlordReportClearAll() {
+    landlordReportSelectedSections = new Set(landlordReportSelectionAfterAction(landlordReportSectionOrder, "clear"));
+    renderLandlordReportSections();
+    setLandlordReportMessage("Select at least one section before previewing or generating the report.", "info");
+}
+
+function landlordReportSectionChanged() {
+    landlordReportReadSelection();
+    updateLandlordReportSectionCount();
+    scheduleLandlordReportPreview();
+}
+
+function updateLandlordReportSectionCount() {
+    const selected = landlordReportReadSelection().length;
+    const total = landlordReportSectionOrder.length;
+    const counter = document.getElementById("landlordReportSectionCount");
+    if (counter) counter.textContent = `${selected} of ${total} sections selected`;
+}
+
+function moveLandlordReportSection(sectionId, direction) {
+    landlordReportReadSelection();
+    const index = landlordReportSectionOrder.indexOf(sectionId);
+    const target = index + Number(direction || 0);
+    if (index < 0 || target < 0 || target >= landlordReportSectionOrder.length) return;
+    [landlordReportSectionOrder[index], landlordReportSectionOrder[target]] = [landlordReportSectionOrder[target], landlordReportSectionOrder[index]];
+    renderLandlordReportSections();
+    scheduleLandlordReportPreview();
+}
+
+function showLandlordReportSectionNote() {
+    const sectionId = document.getElementById("landlordReportNoteSection")?.value || "";
+    const note = document.getElementById("landlordReportSectionNote");
+    if (note) {
+        note.disabled = !sectionId;
+        note.value = sectionId ? (landlordReportSectionNotes[sectionId] || "") : "";
+    }
+}
+
+function updateLandlordReportSectionNote() {
+    const sectionId = document.getElementById("landlordReportNoteSection")?.value || "";
+    if (!sectionId) return;
+    const value = document.getElementById("landlordReportSectionNote")?.value || "";
+    if (value.trim()) landlordReportSectionNotes[sectionId] = value;
+    else delete landlordReportSectionNotes[sectionId];
+    scheduleLandlordReportPreview();
+}
+
+function renderLandlordReportPhotos(resetSelection = false) {
+    const photos = Array.isArray(landlordReportContext?.available_photos) ? landlordReportContext.available_photos : [];
+    const availableIds = new Set(photos.map((photo) => Number(photo.attachment_id)));
+    if (resetSelection) landlordReportSelectedPhotoIds = new Set(availableIds);
+    else landlordReportSelectedPhotoIds = new Set([...landlordReportSelectedPhotoIds].filter((id) => availableIds.has(Number(id))));
+    const container = document.getElementById("landlordReportPhotoList");
+    const hero = document.getElementById("landlordReportHeroPhoto");
+    if (container) {
+        container.innerHTML = photos.length
+            ? photos.map((photo) => {
+                const id = Number(photo.attachment_id);
+                return `<label class="landlord-report-photo"><input type="checkbox" data-report-photo-id="${id}"${landlordReportSelectedPhotoIds.has(id) ? " checked" : ""} onchange="landlordReportPhotoSelectionChanged()" /><span><strong>${escapeHtml(photo.caption || photo.filename || "Property photo")}</strong><br/><span class="muted">${escapeHtml(photo.date || "Date not recorded")}</span></span></label>`;
+            }).join("")
+            : '<div class="landlord-report-empty" style="grid-column:1/-1">No supported maintenance photos were recorded for this period.</div>';
+    }
+    if (hero) {
+        const previous = hero.value;
+        hero.innerHTML = '<option value="">No cover image</option>' + photos.map((photo) => `<option value="${Number(photo.attachment_id)}">${escapeHtml(photo.caption || photo.filename || "Property photo")}</option>`).join("");
+        if (photos.some((photo) => String(photo.attachment_id) === previous)) hero.value = previous;
+    }
+}
+
+function landlordReportPhotoSelectionChanged() {
+    landlordReportSelectedPhotoIds = new Set(
+        Array.from(document.querySelectorAll("#landlordReportPhotoList input[data-report-photo-id]:checked"))
+            .map((input) => Number(input.dataset.reportPhotoId))
+            .filter(Number.isFinite)
+    );
+    const hero = document.getElementById("landlordReportHeroPhoto");
+    if (hero?.value && !landlordReportSelectedPhotoIds.has(Number(hero.value))) hero.value = "";
+    scheduleLandlordReportPreview();
+}
+
+function landlordReportStatusLabel(value) {
+    const labels = {
+        completed: "Completed",
+        in_progress: "In progress",
+        awaiting_landlord_approval: "Awaiting landlord approval",
+        scheduled: "Scheduled",
+    };
+    return labels[value] || String(value || "In progress").replaceAll("_", " ");
+}
+
+function renderLandlordReportActivities() {
+    const container = document.getElementById("landlordReportActivityList");
+    if (!container) return;
+    const sections = Object.fromEntries((landlordReportContext?.sections || []).map((section) => [section.id, section.title]));
+    if (!landlordReportActivities.length) {
+        container.innerHTML = '<div class="landlord-report-empty">No report-only activities added.</div>';
+        return;
+    }
+    container.innerHTML = landlordReportActivities.map((item) => `<article class="landlord-report-activity"><div><strong>${escapeHtml(item.title)}</strong><p>${escapeHtml(sections[item.section_id] || item.section_id)} | ${escapeHtml(item.date || "No date")} | ${escapeHtml(landlordReportStatusLabel(item.status))}${item.internal ? " | Internal" : ""}</p></div><div class="landlord-report-activity-actions"><button class="btn" type="button" onclick="editLandlordReportActivity('${escapeHtml(item.id)}')">Edit</button><button class="btn danger" type="button" onclick="removeLandlordReportActivity('${escapeHtml(item.id)}')">Remove</button></div></article>`).join("");
+}
+
+function resetLandlordReportActivityForm() {
+    landlordReportEditingActivityId = "";
+    ["landlordReportActivityTitle", "landlordReportActivityCategory", "landlordReportActivityContractor", "landlordReportActivityAmount", "landlordReportActivityDescription", "landlordReportActivityAction"].forEach((id) => {
+        const element = document.getElementById(id);
+        if (element) element.value = "";
+    });
+    const status = document.getElementById("landlordReportActivityStatus");
+    const internal = document.getElementById("landlordReportActivityInternal");
+    const dateInput = document.getElementById("landlordReportActivityDate");
+    if (status) status.value = "completed";
+    if (internal) internal.checked = false;
+    if (dateInput) dateInput.value = landlordReportMelbourneDate();
+    const save = document.getElementById("landlordReportActivitySave");
+    if (save) save.textContent = "Add Activity";
+    document.getElementById("landlordReportActivityCancel")?.classList.add("hidden");
+}
+
+function saveLandlordReportActivity() {
+    const sectionId = document.getElementById("landlordReportActivitySection")?.value || "";
+    const title = String(document.getElementById("landlordReportActivityTitle")?.value || "").trim();
+    if (!sectionId || !title) {
+        setLandlordReportMessage("Choose a report section and add an activity title.", "error");
+        return;
+    }
+    const amountRaw = document.getElementById("landlordReportActivityAmount")?.value || "";
+    const existing = landlordReportActivities.find((item) => item.id === landlordReportEditingActivityId);
+    const item = {
+        id: existing?.id || `report-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        section_id: sectionId,
+        date: document.getElementById("landlordReportActivityDate")?.value || null,
+        title,
+        description: document.getElementById("landlordReportActivityDescription")?.value || null,
+        status: document.getElementById("landlordReportActivityStatus")?.value || "in_progress",
+        category: document.getElementById("landlordReportActivityCategory")?.value || null,
+        contractor: document.getElementById("landlordReportActivityContractor")?.value || null,
+        amount: amountRaw === "" ? null : Number(amountRaw),
+        landlord_action: document.getElementById("landlordReportActivityAction")?.value || null,
+        internal: !!document.getElementById("landlordReportActivityInternal")?.checked,
+    };
+    if (existing) landlordReportActivities = landlordReportActivities.map((entry) => entry.id === existing.id ? item : entry);
+    else landlordReportActivities.push(item);
+    landlordReportSelectedSections.add(sectionId);
+    renderLandlordReportSections();
+    renderLandlordReportActivities();
+    resetLandlordReportActivityForm();
+    setLandlordReportMessage("Report activity added. Source property records were not changed.", "success");
+    scheduleLandlordReportPreview();
+}
+
+function editLandlordReportActivity(activityId) {
+    const item = landlordReportActivities.find((entry) => entry.id === activityId);
+    if (!item) return;
+    landlordReportEditingActivityId = item.id;
+    const values = {
+        landlordReportActivitySection: item.section_id,
+        landlordReportActivityDate: item.date || "",
+        landlordReportActivityTitle: item.title || "",
+        landlordReportActivityStatus: item.status || "in_progress",
+        landlordReportActivityCategory: item.category || "",
+        landlordReportActivityContractor: item.contractor || "",
+        landlordReportActivityAmount: item.amount ?? "",
+        landlordReportActivityDescription: item.description || "",
+        landlordReportActivityAction: item.landlord_action || "",
+    };
+    Object.entries(values).forEach(([id, value]) => {
+        const element = document.getElementById(id);
+        if (element) element.value = value;
+    });
+    const internal = document.getElementById("landlordReportActivityInternal");
+    if (internal) internal.checked = !!item.internal;
+    const save = document.getElementById("landlordReportActivitySave");
+    if (save) save.textContent = "Update Activity";
+    document.getElementById("landlordReportActivityCancel")?.classList.remove("hidden");
+    document.getElementById("landlordReportActivitiesHeading")?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function removeLandlordReportActivity(activityId) {
+    const item = landlordReportActivities.find((entry) => entry.id === activityId);
+    if (!item || !confirm(`Remove "${item.title}" from this report?`)) return;
+    landlordReportActivities = landlordReportActivities.filter((entry) => entry.id !== activityId);
+    if (landlordReportEditingActivityId === activityId) resetLandlordReportActivityForm();
+    renderLandlordReportActivities();
+    scheduleLandlordReportPreview();
+}
+
+async function loadLandlordReportContext() {
+    const propertySearch = document.getElementById("landlordReportPropertySearch");
+    const property = resolvePropertySearchValue(propertySearch?.value || "");
+    const hidden = document.getElementById("landlordReportPropertyId");
+    if (hidden) hidden.value = property ? String(property.id) : "";
+    const period = landlordReportPeriod();
+    if (!property || !period.startDate || !period.endDate) return;
+    if (period.endDate < period.startDate) {
+        setLandlordReportMessage("The reporting end date must be on or after the start date.", "error");
+        return;
+    }
+    const requestId = ++landlordReportContextRequest;
+    setLandlordReportMessage("Loading linked property records...", "info");
+    setLandlordReportPreviewPlaceholder("Loading property records", "Maintenance, rent, lease, compliance, tenancy, and supporting photo records are being prepared.");
+    try {
+        const query = new URLSearchParams({
+            property_id: String(property.id),
+            start_date: period.startDate,
+            end_date: period.endDate,
+        });
+        const response = await apiFetch(`/landlord-reports/context?${query}`);
+        if (!response.ok) throw new Error(await extractErrorMessage(response));
+        const context = await response.json();
+        if (requestId !== landlordReportContextRequest) return;
+        const propertyChanged = landlordReportPropertyKey !== String(context.property?.id || property.id);
+        landlordReportContext = context;
+        landlordReportPropertyKey = String(context.property?.id || property.id);
+        if (propertyChanged) {
+            landlordReportActivities = [];
+            landlordReportSectionNotes = {};
+            landlordReportSectionOrder = (context.sections || []).map((section) => section.id);
+            landlordReportSelectedSections = new Set(context.default_sections || []);
+            resetLandlordReportActivityForm();
+        }
+        const landlord = document.getElementById("landlordReportLandlordName");
+        if (landlord && (propertyChanged || !landlord.value.trim())) landlord.value = context.suggested_landlord_name || "";
+        const currentManager = document.getElementById("landlordReportManager")?.value || "";
+        landlordReportManagerOptions(propertyChanged ? context.suggested_property_manager_id : currentManager || context.suggested_property_manager_id);
+        renderLandlordReportSourceSummary();
+        renderLandlordReportSections();
+        renderLandlordReportPhotos(propertyChanged);
+        renderLandlordReportActivities();
+        document.getElementById("landlordReportSaveDefaults")?.classList.toggle("hidden", !context.can_manage_defaults);
+        const limitations = document.getElementById("landlordReportLimitations");
+        if (limitations) {
+            limitations.classList.toggle("hidden", !(context.data_limitations || []).length);
+            limitations.innerHTML = `<strong>Data coverage</strong><br/>${(context.data_limitations || []).map(escapeHtml).join("<br/>")}`;
+        }
+        setLandlordReportMessage("", "");
+        await previewLandlordReport();
+    } catch (error) {
+        if (requestId !== landlordReportContextRequest) return;
+        landlordReportContext = null;
+        setLandlordReportMessage(error.message || "The property report data could not be loaded.", "error");
+        setLandlordReportPreviewPlaceholder("Report data unavailable", "Check the property and reporting period, then try again.");
+    }
+}
+
+function buildLandlordReportPayload(showErrors = true) {
+    const propertyId = Number(document.getElementById("landlordReportPropertyId")?.value || 0);
+    const period = landlordReportPeriod();
+    const selectedSections = landlordReportReadSelection();
+    const preparedDate = document.getElementById("landlordReportPreparedDate")?.value || "";
+    if (!propertyId || !period.startDate || !period.endDate || !preparedDate) {
+        if (showErrors) setLandlordReportMessage("Select a managed property, reporting period, and prepared date.", "error");
+        return null;
+    }
+    if (period.endDate < period.startDate) {
+        if (showErrors) setLandlordReportMessage("The reporting end date must be on or after the start date.", "error");
+        return null;
+    }
+    if (!selectedSections.length) {
+        if (showErrors) setLandlordReportMessage("Select at least one report section.", "info");
+        return null;
+    }
+    const selectedNotes = Object.fromEntries(Object.entries(landlordReportSectionNotes).filter(([sectionId, value]) => selectedSections.includes(sectionId) && String(value || "").trim()));
+    landlordReportPhotoSelectionChangedSilently();
+    return {
+        property_id: propertyId,
+        start_date: period.startDate,
+        end_date: period.endDate,
+        prepared_date: preparedDate,
+        landlord_name: document.getElementById("landlordReportLandlordName")?.value || null,
+        property_manager_id: Number(document.getElementById("landlordReportManager")?.value || 0) || null,
+        intro_message: document.getElementById("landlordReportIntro")?.value || null,
+        overall_summary: document.getElementById("landlordReportOverallSummary")?.value || null,
+        additional_notes: document.getElementById("landlordReportAdditionalNotes")?.value || null,
+        include_no_activity: !!document.getElementById("landlordReportIncludeEmpty")?.checked,
+        include_photos: !!document.getElementById("landlordReportIncludePhotos")?.checked,
+        include_financial: !!document.getElementById("landlordReportIncludeFinancial")?.checked,
+        include_internal_notes: !!document.getElementById("landlordReportIncludeInternal")?.checked,
+        selected_sections: selectedSections,
+        section_notes: selectedNotes,
+        manual_activities: landlordReportActivities,
+        photo_attachment_ids: [...landlordReportSelectedPhotoIds],
+        hero_photo_id: Number(document.getElementById("landlordReportHeroPhoto")?.value || 0) || null,
+    };
+}
+
+function landlordReportPhotoSelectionChangedSilently() {
+    landlordReportSelectedPhotoIds = new Set(
+        Array.from(document.querySelectorAll("#landlordReportPhotoList input[data-report-photo-id]:checked"))
+            .map((input) => Number(input.dataset.reportPhotoId))
+            .filter(Number.isFinite)
+    );
+}
+
+function scheduleLandlordReportPreview() {
+    if (!landlordReportContext || currentDashboardTab !== "landlord_reports") return;
+    if (landlordReportPreviewTimer) clearTimeout(landlordReportPreviewTimer);
+    landlordReportPreviewTimer = setTimeout(() => previewLandlordReport(), 480);
+}
+
+async function previewLandlordReport(showErrors = false) {
+    const payload = buildLandlordReportPayload(showErrors);
+    if (!payload) return;
+    const requestId = ++landlordReportPreviewRequest;
+    const meta = document.getElementById("landlordReportPreviewMeta");
+    if (meta) meta.textContent = "Updating preview...";
+    try {
+        const response = await apiFetch("/landlord-reports/preview", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+        });
+        if (!response.ok) throw new Error(await extractErrorMessage(response));
+        const result = await response.json();
+        if (requestId !== landlordReportPreviewRequest) return;
+        const preview = document.getElementById("landlordReportPreview");
+        if (preview) preview.innerHTML = result.html || "";
+        const excluded = Array.isArray(result.excluded_empty_sections) ? result.excluded_empty_sections.length : 0;
+        if (meta) meta.textContent = `${result.included_sections?.length || 0} sections included${excluded ? `, ${excluded} empty excluded` : ""}`;
+        setLandlordReportMessage("", "");
+    } catch (error) {
+        if (requestId !== landlordReportPreviewRequest) return;
+        if (meta) meta.textContent = "Preview could not be updated.";
+        setLandlordReportMessage(error.message || "The report preview could not be created.", "error");
+    }
+}
+
+async function downloadLandlordReport() {
+    const payload = buildLandlordReportPayload(true);
+    if (!payload) return;
+    const button = document.getElementById("landlordReportDownloadBtn");
+    const original = button?.textContent || "Generate PDF";
+    if (button) {
+        button.disabled = true;
+        button.textContent = "Generating...";
+    }
+    setLandlordReportMessage("Generating the final A4 PDF...", "info");
+    try {
+        const response = await apiFetch("/landlord-reports/pdf", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+        });
+        if (!response.ok) throw new Error(await extractErrorMessage(response));
+        const blob = await response.blob();
+        const disposition = response.headers.get("Content-Disposition") || "";
+        const filenameMatch = /filename="?([^";]+)"?/i.exec(disposition);
+        const fallback = `Monthly-Property-Report_${payload.start_date}_${payload.end_date}.pdf`;
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = filenameMatch?.[1] || fallback;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 30000);
+        setLandlordReportMessage("PDF generated successfully. You can regenerate it after making further changes.", "success");
+        if (button) button.textContent = "Regenerate PDF";
+    } catch (error) {
+        setLandlordReportMessage(error.message || "The PDF could not be generated. Please review the report and try again.", "error");
+        if (button) button.textContent = original;
+    } finally {
+        if (button) button.disabled = false;
+    }
+}
+
+async function saveLandlordReportDefaults() {
+    const selectedSections = landlordReportReadSelection();
+    if (!selectedSections.length) {
+        setLandlordReportMessage("Select at least one section before saving report defaults.", "info");
+        return;
+    }
+    try {
+        const response = await apiFetch("/landlord-reports/defaults", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ selected_sections: selectedSections }),
+        });
+        if (!response.ok) throw new Error(await extractErrorMessage(response));
+        setLandlordReportMessage("Default report sections saved for future reports.", "success");
+    } catch (error) {
+        setLandlordReportMessage(error.message || "Report defaults could not be saved.", "error");
+    }
 }
 
 const LEASE_RENEWAL_STATUSES = [
@@ -8057,6 +8739,7 @@ function logout() {
     leaseRenewalTotalPages = 1;
     selectedLeaseRenewalId = null;
     leaseRenewalRecordsCache = {};
+    resetLandlordReportBuilder();
     applyPageVisibility();
 
     const badge = document.getElementById("userBadge");

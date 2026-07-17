@@ -21,6 +21,7 @@ SKIP_EXACT_PATHS = {
     "/user-auth/login",
     "/user-auth/forgot-password",
     "/user-auth/reset-password",
+    "/landlord-reports/preview",
 }
 
 AREA_LABELS = {
@@ -32,6 +33,7 @@ AREA_LABELS = {
     "tenant": "Tenant Portal",
     "rent-tracker": "Rent Tracker",
     "lease-renewals": "Lease Renewals",
+    "landlord-reports": "Monthly Landlord Report",
     "properties": "Properties",
     "compliance": "Compliance",
     "my-space": "My Space",
@@ -47,6 +49,7 @@ ENTITY_LABELS = {
     "maintenance": "Maintenance",
     "rent-tracker": "Rent Item",
     "lease-renewals": "Lease Renewal",
+    "landlord-reports": "Landlord Report",
     "properties": "Property",
     "compliance": "Compliance",
     "my-space": "My Space",
@@ -176,6 +179,12 @@ def infer_activity(method: str, path: str) -> dict[str, str | None]:
             action = "Updated lease renewal status"
         elif tail == "notes":
             action = "Added lease renewal note"
+    elif root == "landlord-reports":
+        entity_type = "Landlord Report"
+        if tail == "pdf":
+            action = "Generated landlord report PDF"
+        elif tail == "defaults":
+            action = "Updated landlord report defaults"
     elif root == "my-space":
         entity_type = "My Space"
         if "staff-guides" in parts and method.upper() == "POST":

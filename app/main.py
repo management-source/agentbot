@@ -29,6 +29,7 @@ from app.routers import blacklist
 from app.routers import assets
 from app.routers import rent_tracker
 from app.routers import lease_renewals
+from app.routers import landlord_reports
 from app.routers import compliance
 from app.routers import properties
 from app.routers import my_space
@@ -285,6 +286,7 @@ app.include_router(app_settings.router, prefix="/settings", tags=["settings"])
 app.include_router(blacklist.router, prefix="/blacklist", tags=["blacklist"])
 app.include_router(rent_tracker.router, prefix="/rent-tracker", tags=["rent-tracker"])
 app.include_router(lease_renewals.router, prefix="/lease-renewals", tags=["lease-renewals"])
+app.include_router(landlord_reports.router)
 app.include_router(properties.router, prefix="/properties", tags=["properties"])
 app.include_router(compliance.router, prefix="/compliance", tags=["compliance"])
 app.include_router(my_space.router)

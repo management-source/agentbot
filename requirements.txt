@@ -39,3 +39,13 @@ passlib==1.7.4
 argon2-cffi>=23.1.0
 bcrypt==3.2.2
 python-multipart==0.0.9
+
+# Branded, searchable A4 landlord reports
+reportlab>=4.2,<5
+Pillow>=10.4,<13
+
+# PDF verification in the automated test suite
+pypdf>=5,<7
+
+# IANA timezones on Windows development hosts
+tzdata>=2024.1
