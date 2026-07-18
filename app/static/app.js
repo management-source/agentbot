@@ -26,12 +26,71 @@ let assignableUsers = [];
 let notificationItems = [];
 let latestNotificationData = {};
 let loginRecaptchaWidgetId = null;
+const STAFF_INACTIVITY_LIMIT_MS = 30 * 60 * 1000;
+const STAFF_ACTIVITY_KEY = "agent_last_activity_at";
+let inactivityCheckTimer = null;
+let lastActivityWriteAt = 0;
 
 window.onRecaptchaLoad = function () {
     ensureLoginRecaptcha().catch(() => {
         setLoginError("reCAPTCHA could not load. Please refresh and try again.");
     });
 };
+
+function setupLoginMotion() {
+    const screen = document.getElementById("loginScreen");
+    if (!screen || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    screen.addEventListener("pointermove", (event) => {
+        const rect = screen.getBoundingClientRect();
+        const x = Math.max(0, Math.min(100, ((event.clientX - rect.left) / rect.width) * 100));
+        const y = Math.max(0, Math.min(100, ((event.clientY - rect.top) / rect.height) * 100));
+        screen.style.setProperty("--pointer-x", `${x}%`);
+        screen.style.setProperty("--pointer-y", `${y}%`);
+        screen.style.setProperty("--orb-x", `${(x - 50) * 0.18}px`);
+        screen.style.setProperty("--orb-y", `${(y - 50) * 0.18}px`);
+    }, { passive: true });
+}
+
+function recordStaffActivity(force = false) {
+    if (!authToken) return;
+    const now = Date.now();
+    if (!force && now - lastActivityWriteAt < 15000) return;
+    lastActivityWriteAt = now;
+    localStorage.setItem(STAFF_ACTIVITY_KEY, String(now));
+}
+
+function stopInactivityGuard() {
+    if (inactivityCheckTimer) window.clearInterval(inactivityCheckTimer);
+    inactivityCheckTimer = null;
+}
+
+function checkStaffInactivity() {
+    if (!authToken) return;
+    const lastActivity = Number(localStorage.getItem(STAFF_ACTIVITY_KEY)) || Date.now();
+    if (Date.now() - lastActivity >= STAFF_INACTIVITY_LIMIT_MS) {
+        logout("Your session ended after 30 minutes of inactivity. Please sign in again.");
+    }
+}
+
+function startInactivityGuard(resetActivity = false) {
+    stopInactivityGuard();
+    if (resetActivity || !localStorage.getItem(STAFF_ACTIVITY_KEY)) recordStaffActivity(true);
+    inactivityCheckTimer = window.setInterval(checkStaffInactivity, 15000);
+    checkStaffInactivity();
+}
+
+["pointerdown", "keydown", "scroll", "touchstart"].forEach((eventName) => {
+    window.addEventListener(eventName, () => recordStaffActivity(), { passive: true });
+});
+window.addEventListener("storage", (event) => {
+    if (event.key === STAFF_ACTIVITY_KEY) checkStaffInactivity();
+    if (event.key === "agent_auth_token" && !event.newValue && authToken) {
+        logout("You were signed out in another browser tab.");
+    }
+});
+document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) checkStaffInactivity();
+});
 
 async function apiFetch(url, options = {}) {
     const opts = { ...options, headers: { ...(options.headers || {}) } };
@@ -8629,6 +8688,7 @@ async function ensureAuthenticated() {
     }
     currentUser = await r.json();
     hideLoginModal();
+    startInactivityGuard(false);
     await loadUsersCache();
     await loadCurrentPageAccess();
 
@@ -8703,6 +8763,7 @@ async function doLogin() {
         const j = await r.json();
         authToken = j.access_token;
         localStorage.setItem("agent_auth_token", authToken);
+        recordStaffActivity(true);
         hideLoginModal();
         await ensureAuthenticated();
         await initMailboxes();
@@ -8719,7 +8780,7 @@ async function doLogin() {
     }
 }
 
-function logout() {
+function logout(message = "") {
     try {
         if (authToken) {
             apiFetch("/user-auth/logout", { method: "POST" }).catch(() => {});
@@ -8729,7 +8790,9 @@ function logout() {
     }
     authToken = "";
     currentUser = null;
+    stopInactivityGuard();
     localStorage.removeItem("agent_auth_token");
+    localStorage.removeItem(STAFF_ACTIVITY_KEY);
     allowedPages = new Set(["portal"]);
     rolePagePermissions = {};
     teamLoadedOnce = false;
@@ -8768,9 +8831,11 @@ function logout() {
 
     resetLoginRecaptcha();
     showLoginModal();
+    if (message) setLoginError(message);
 }
 
 window.addEventListener("load", async () => {
+    setupLoginMotion();
     // Footer year
     const yearEl = document.getElementById("year");
     if (yearEl) yearEl.textContent = String(new Date().getFullYear());

@@ -4243,6 +4243,23 @@
       .team-hero.page-banner,
       .system-hero.page-banner{padding:22px;border-radius:22px}
     }
+    /* Futuristic black-and-gold staff login */
+    .login-screen{--pointer-x:50%;--pointer-y:50%;position:relative;isolation:isolate;overflow:hidden;display:flex;align-items:center;justify-content:center;padding:clamp(20px,4vw,64px);color:#f8f5ed;background:radial-gradient(circle at var(--pointer-x) var(--pointer-y),rgba(208,169,79,.20),transparent 26%),radial-gradient(circle at 12% 10%,rgba(213,176,87,.15),transparent 32%),linear-gradient(145deg,#050505 0%,#11100d 48%,#070706 100%)}
+    .login-screen::before{content:"";position:absolute;z-index:-2;width:min(72vw,900px);aspect-ratio:1;left:calc(var(--pointer-x) - min(36vw,450px));top:calc(var(--pointer-y) - min(36vw,450px));border-radius:50%;background:repeating-radial-gradient(circle,transparent 0 42px,rgba(213,176,87,.08) 43px 44px);transition:left .45s cubic-bezier(.2,.8,.2,1),top .45s cubic-bezier(.2,.8,.2,1);opacity:.7;pointer-events:none}
+    .login-screen::after{content:"";position:absolute;z-index:-1;inset:0;opacity:.35;background-image:linear-gradient(rgba(255,255,255,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.035) 1px,transparent 1px);background-size:48px 48px;mask-image:linear-gradient(to bottom,black,transparent 90%);pointer-events:none}
+    .login-orb{position:absolute;z-index:-1;border-radius:999px;border:1px solid rgba(220,185,100,.18);background:linear-gradient(145deg,rgba(217,178,84,.12),rgba(255,255,255,.015));box-shadow:inset 0 0 50px rgba(211,172,77,.05),0 0 80px rgba(0,0,0,.35);transform:translate3d(var(--orb-x,0),var(--orb-y,0),0);transition:transform .7s cubic-bezier(.2,.8,.2,1);pointer-events:none}
+    .login-orb-one{width:clamp(220px,34vw,540px);height:clamp(220px,34vw,540px);left:-12%;top:-18%}.login-orb-two{width:clamp(180px,26vw,400px);height:clamp(180px,26vw,400px);right:-8%;bottom:-16%}
+    .login-panel{width:min(1080px,100%);min-height:min(680px,calc(100dvh - clamp(40px,8vw,128px)));position:relative;display:grid;grid-template-columns:minmax(0,1.05fr) minmax(360px,.95fr);overflow:hidden;padding:0;border:1px solid rgba(226,193,112,.22);border-radius:clamp(24px,3vw,38px);background:linear-gradient(135deg,rgba(255,255,255,.095),rgba(255,255,255,.025));box-shadow:0 40px 100px rgba(0,0,0,.55),inset 0 1px rgba(255,255,255,.13);backdrop-filter:blur(24px) saturate(125%);-webkit-backdrop-filter:blur(24px) saturate(125%)}
+    .login-panel-inner{width:auto;margin:0;display:flex;flex-direction:column;justify-content:center;padding:clamp(32px,6vw,72px)}.login-panel-head{margin-bottom:clamp(32px,5vw,62px)}
+    .login-brand-lockup{display:inline-flex;align-items:center}.login-brand-line{width:42px;height:1px;background:#d4ac52;margin-right:14px}.login-brand-word{font-size:11px;font-weight:800;letter-spacing:.24em;text-transform:uppercase;color:#e1c477}
+    .login-mark-wrap{display:flex;align-items:center;justify-content:center;min-height:100%;padding:clamp(28px,5vw,64px);border-left:1px solid rgba(255,255,255,.08);background:radial-gradient(circle at 50% 42%,rgba(216,177,84,.16),transparent 36%),linear-gradient(145deg,rgba(0,0,0,.12),rgba(0,0,0,.38))}.login-mark{width:min(390px,88%);filter:drop-shadow(0 24px 35px rgba(0,0,0,.45))}
+    .login-kicker{color:#d7b35e}.login-copy h1{font-size:clamp(35px,4.5vw,58px);line-height:1.04;color:#fffdf7}.login-copy p{font-size:15px;color:rgba(247,242,229,.62)}.login-form-shell{width:100%;margin:38px 0 0}.login-field label{color:rgba(255,250,237,.72);font-weight:700}
+    .login-field input{border:1px solid rgba(255,255,255,.13);border-radius:14px;background:rgba(0,0,0,.22);padding:14px 15px;font-size:16px;color:#fff;box-shadow:inset 0 1px rgba(255,255,255,.04);outline:none;transition:border-color .2s,box-shadow .2s,background .2s}.login-field input::placeholder{color:rgba(255,255,255,.28)}.login-field input:focus{border-color:#d7b35e;background:rgba(0,0,0,.32);box-shadow:0 0 0 4px rgba(215,179,94,.12)}
+    .login-recaptcha-placeholder{border-color:rgba(215,179,94,.32);background:rgba(0,0,0,.18);color:rgba(255,255,255,.55)}.login-submit{border-radius:14px;padding:15px 22px;font-size:15px;font-weight:800;letter-spacing:.03em;color:#11100d;background:linear-gradient(135deg,#f1d991 0%,#c79b3e 52%,#e2bd64 100%);box-shadow:0 16px 34px rgba(199,155,62,.2),inset 0 1px rgba(255,255,255,.5);transition:transform .2s,filter .2s,box-shadow .2s}.login-submit:hover{filter:brightness(1.06);transform:translateY(-1px);box-shadow:0 20px 38px rgba(199,155,62,.27)}.login-submit:focus-visible{outline:3px solid rgba(255,255,255,.85);outline-offset:3px}.login-submit:disabled{cursor:wait;opacity:.7;transform:none}
+    .login-helper{color:rgba(255,255,255,.65)}.login-helper a{color:#e0be6c}.login-notice{color:rgba(255,255,255,.42)}.login-footer{position:absolute;left:clamp(32px,6vw,72px);bottom:24px;font-size:11px;color:rgba(255,255,255,.38)}.login-footer a{color:rgba(225,196,119,.75)}.login-hero{display:none}
+    @media(max-width:780px){.login-screen{padding:16px;align-items:flex-start;overflow:auto}.login-panel{grid-template-columns:1fr;min-height:calc(100dvh - 32px)}.login-panel-inner{padding:36px 24px 92px}.login-mark-wrap{order:-1;min-height:155px;padding:26px;border-left:0;border-bottom:1px solid rgba(255,255,255,.08)}.login-mark{width:min(280px,75%)}.login-panel-head{margin-bottom:28px}.login-footer{left:24px;right:24px;bottom:20px}}
+    @media(max-width:420px){.login-screen{padding:0}.login-panel{min-height:100dvh;border-radius:0;border-left:0;border-right:0}.login-panel-inner{padding:30px 20px 94px}.login-form{gap:15px}.login-footer{left:20px;right:20px;gap:10px}}
+    @media(prefers-reduced-motion:reduce){.login-screen::before,.login-orb,.login-submit{transition:none!important}}
   </style>
   </head>
 
@@ -4256,17 +4273,17 @@
       async defer></script>
     {% endif %}
     <section class="login-screen" id="loginScreen">
+      <div class="login-orb login-orb-one" aria-hidden="true"></div>
+      <div class="login-orb login-orb-two" aria-hidden="true"></div>
       <div class="login-panel">
         <div class="login-panel-inner">
           <div class="login-panel-head">
-            <img class="login-mark"
-              src="https://ik.imagekit.io/donspremier/Banner%20-%20Logo.png?updatedAt=1767844482007"
-              alt="Dons Premier Estate Agents" />
+            <div class="login-brand-lockup"><span class="login-brand-line"></span><span class="login-brand-word">Secure staff portal</span></div>
           </div>
           <div class="login-copy">
             <div class="login-kicker">Dons Premier Estate Agents Portal</div>
-            <h1>Welcome to your Portal</h1>
-            <p>Dons Premier Estate Agents - The Knights of Real Estate.</p>
+            <h1>Welcome back.</h1>
+            <p>Sign in to manage your workspace securely.</p>
           </div>
           <div class="login-form-shell">
             <form class="login-form"
@@ -4274,12 +4291,12 @@
               <div class="login-field">
                 <label for="loginEmail">Email</label>
                 <input type="email" id="loginEmail" autocomplete="username"
-                  inputmode="email" required />
+                  inputmode="email" placeholder="name@donspremier.com.au" required autofocus />
               </div>
               <div class="login-field">
                 <label for="loginPassword">Password</label>
                 <input type="password" id="loginPassword"
-                  autocomplete="current-password" required />
+                  autocomplete="current-password" placeholder="Enter your password" required />
               </div>
               <div
                 class="login-recaptcha-wrap{% if not app_config.recaptcha_enabled %} hidden{% endif %}">
@@ -4294,15 +4311,13 @@
               </div>
               {% endif %}
               <div class="error" id="loginError" style="display:none"></div>
-              <button class="login-submit" id="btnLogin" type="submit">Log
-                in</button>
+              <button class="login-submit" id="btnLogin" type="submit">Sign in securely</button>
             </form>
             <div class="login-helper">
               <a href="javascript:void(0)"
                 onclick="openForgotPasswordModal()">Forgot your password?</a>
             </div>
-            <div class="login-notice">Use your approved company email address
-              and password to access the system.</div>
+            <div class="login-notice">For your security, you’ll be signed out after 30 minutes of inactivity.</div>
           </div>
         </div>
         <div class="login-footer">
@@ -4310,6 +4325,11 @@
           <a href="javascript:void(0)">Legal</a>
           <span>By logging in, you agree to Dons Premier Estate Agents system
             access terms.</span>
+        </div>
+        <div class="login-mark-wrap">
+          <img class="login-mark"
+            src="https://ik.imagekit.io/donspremier/Banner%20-%20Logo.png?updatedAt=1767844482007"
+            alt="Dons Premier Estate Agents" />
         </div>
       </div>
       <div class="login-hero">
@@ -7239,7 +7259,7 @@
       </div>
     </div>
 
-    <script src="/static/app.js?v=26"></script>
+    <script src="/static/app.js?v=27"></script>
 
     <script>
   // Wire segmented status buttons to existing tab logic
