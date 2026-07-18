@@ -52,6 +52,8 @@ function setupLoginMotion() {
 }
 
 let binduBusy = false;
+let binduCurrentConversationId = null;
+let binduHistoryLoaded = false;
 
 function toggleBindu(forceOpen = null) {
     const panel = document.getElementById("binduPanel");
@@ -61,7 +63,10 @@ function toggleBindu(forceOpen = null) {
     panel.classList.toggle("hidden", !shouldOpen);
     panel.setAttribute("aria-hidden", String(!shouldOpen));
     launcher.setAttribute("aria-expanded", String(shouldOpen));
-    if (shouldOpen) setTimeout(() => document.getElementById("binduInput")?.focus(), 80);
+    if (shouldOpen) {
+        loadBinduHistory().catch(() => {});
+        setTimeout(() => document.getElementById("binduInput")?.focus(), 80);
+    }
 }
 
 function closeBindu() {
@@ -85,7 +90,7 @@ function appendBinduMessage(role, text, sources = []) {
             const button = document.createElement("button");
             button.type = "button";
             button.className = "bindu-source";
-            button.innerHTML = `<strong>${escapeHtml(source.title || "Portal record")}</strong><span>${escapeHtml(source.kind || source.page || "Source")}</span>`;
+            button.innerHTML = `<strong>${escapeHtml(source.title || "Portal record")}</strong><span>${escapeHtml(source.kind || source.page || "Source")}</span><span class="bindu-source-detail">${escapeHtml(source.detail || "Open source")}</span>`;
             button.addEventListener("click", () => openBinduSource(source));
             sourceList.appendChild(button);
         });
@@ -110,7 +115,101 @@ function showBinduTyping(show) {
 function openBinduSource(source) {
     const page = String(source?.page || "portal");
     closeBindu();
-    if (canAccessPage(page)) switchDashboardTab(page);
+    if (!canAccessPage(page)) return;
+    switchDashboardTab(page);
+    const recordId = source?.record_id;
+    if (page === "inbox" && recordId) setTimeout(() => openThread(String(recordId)), 250);
+    else if (page === "maintenance" && recordId) setTimeout(() => openMaintenanceOrder(Number(recordId)), 250);
+    else if (page === "lease_renewals" && recordId) setTimeout(() => openLeaseRenewalRecord(Number(recordId)), 250);
+}
+
+function binduWelcome() {
+    return '<div class="bindu-message assistant"><div class="bindu-bubble">Hi, I’m Bindu. I can find and summarise records you have permission to view. What can I help you find?</div></div>';
+}
+
+function newBinduConversation() {
+    binduCurrentConversationId = null;
+    const messages = document.getElementById("binduMessages");
+    if (messages) messages.innerHTML = binduWelcome();
+    toggleBinduHistory(false);
+    document.getElementById("binduInput")?.focus();
+    renderBinduHistorySelection();
+}
+
+function toggleBinduHistory(forceOpen = null) {
+    const history = document.getElementById("binduHistory");
+    if (!history) return;
+    const open = forceOpen === null ? history.classList.contains("hidden") : !!forceOpen;
+    history.classList.toggle("hidden", !open);
+    if (open) loadBinduHistory(true).catch(() => {});
+}
+
+function binduDateLabel(value) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(date);
+}
+
+function renderBinduHistorySelection() {
+    document.querySelectorAll(".bindu-history-item").forEach((item) => item.classList.toggle("active", Number(item.dataset.id) === Number(binduCurrentConversationId)));
+}
+
+async function loadBinduHistory(force = false) {
+    if (!authToken || (binduHistoryLoaded && !force)) return;
+    const list = document.getElementById("binduHistoryList");
+    if (list) list.innerHTML = '<div class="bindu-empty">Loading conversations…</div>';
+    const response = await apiFetch("/bindu/conversations");
+    if (!response.ok) throw new Error(await extractErrorMessage(response));
+    const conversations = await response.json();
+    binduHistoryLoaded = true;
+    if (!list) return;
+    if (!conversations.length) {
+        list.innerHTML = '<div class="bindu-empty">No saved conversations yet.<br>Start a new chat with Bindu.</div>';
+        return;
+    }
+    list.innerHTML = "";
+    conversations.forEach((conversation) => {
+        const row = document.createElement("div");
+        row.className = "bindu-history-item";
+        row.dataset.id = String(conversation.id);
+        const open = document.createElement("button");
+        open.type = "button";
+        open.className = "bindu-history-open";
+        open.innerHTML = `<strong>${escapeHtml(conversation.title || "Conversation")}</strong><span>${escapeHtml(binduDateLabel(conversation.updated_at))}</span>`;
+        open.addEventListener("click", () => openBinduConversation(conversation.id));
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "bindu-history-delete";
+        remove.title = "Delete conversation";
+        remove.setAttribute("aria-label", `Delete ${conversation.title || "conversation"}`);
+        remove.textContent = "×";
+        remove.addEventListener("click", () => deleteBinduConversation(conversation.id));
+        row.append(open, remove);
+        list.appendChild(row);
+    });
+    renderBinduHistorySelection();
+}
+
+async function openBinduConversation(conversationId) {
+    const response = await apiFetch(`/bindu/conversations/${Number(conversationId)}/messages`);
+    if (!response.ok) throw new Error(await extractErrorMessage(response));
+    const history = await response.json();
+    binduCurrentConversationId = Number(conversationId);
+    const messages = document.getElementById("binduMessages");
+    if (messages) messages.innerHTML = "";
+    history.forEach((message) => appendBinduMessage(message.role, message.content, message.sources || []));
+    if (!history.length && messages) messages.innerHTML = binduWelcome();
+    toggleBinduHistory(false);
+    renderBinduHistorySelection();
+}
+
+async function deleteBinduConversation(conversationId) {
+    if (!window.confirm("Delete this Bindu conversation? This cannot be undone.")) return;
+    const response = await apiFetch(`/bindu/conversations/${Number(conversationId)}`, { method: "DELETE" });
+    if (!response.ok) throw new Error(await extractErrorMessage(response));
+    if (Number(binduCurrentConversationId) === Number(conversationId)) newBinduConversation();
+    binduHistoryLoaded = false;
+    await loadBinduHistory(true);
 }
 
 function askBinduStarter(question) {
@@ -134,10 +233,12 @@ async function askBindu() {
         const response = await apiFetch("/bindu/ask", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ message, current_page: currentDashboardTab }),
+            body: JSON.stringify({ message, current_page: currentDashboardTab, conversation_id: binduCurrentConversationId }),
         });
         if (!response.ok) throw new Error(await extractErrorMessage(response));
         const data = await response.json();
+        binduCurrentConversationId = Number(data.conversation_id);
+        binduHistoryLoaded = false;
         showBinduTyping(false);
         appendBinduMessage("assistant", data.answer || "I couldn't find an answer.", data.sources || []);
     } catch (error) {
@@ -8902,6 +9003,11 @@ function logout(message = "") {
     }
     authToken = "";
     currentUser = null;
+    binduCurrentConversationId = null;
+    binduHistoryLoaded = false;
+    const binduMessages = document.getElementById("binduMessages");
+    if (binduMessages) binduMessages.innerHTML = binduWelcome();
+    closeBindu();
     stopInactivityGuard();
     localStorage.removeItem("agent_auth_token");
     localStorage.removeItem(STAFF_ACTIVITY_KEY);

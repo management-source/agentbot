@@ -5,7 +5,7 @@ import re
 from datetime import date, datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session, selectinload
 
@@ -15,6 +15,8 @@ from app.db import get_db
 from app.deps import get_current_mailbox
 from app.models import (
     ActivityLog,
+    BinduConversation,
+    BinduMessage,
     ComplianceRecord,
     LeaseRenewalRecord,
     MaintenanceOrder,
@@ -33,6 +35,7 @@ MAX_RESULTS = 12
 class BinduAskIn(BaseModel):
     message: str = Field(min_length=2, max_length=1000)
     current_page: str | None = Field(default=None, max_length=64)
+    conversation_id: int | None = None
 
 
 class BinduSource(BaseModel):
@@ -48,6 +51,23 @@ class BinduAskOut(BaseModel):
     sources: list[BinduSource]
     searched_pages: list[str]
     ai_enabled: bool
+    conversation_id: int
+
+
+class BinduConversationOut(BaseModel):
+    id: int
+    title: str
+    mailbox: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class BinduMessageOut(BaseModel):
+    id: int
+    role: str
+    content: str
+    sources: list[BinduSource] = Field(default_factory=list)
+    created_at: datetime
 
 
 def _value(value: Any) -> str:
@@ -149,7 +169,7 @@ def _fallback_answer(sources: list[dict[str, Any]], searched: list[str]) -> str:
     return f"I found {len(sources)} relevant result{'s' if len(sources) != 1 else ''} across the areas you can access ({areas}). The closest matches are listed below."
 
 
-def _grounded_answer(question: str, sources: list[dict[str, Any]], searched: list[str]) -> str:
+def _grounded_answer(question: str, sources: list[dict[str, Any]], searched: list[str], history: list[BinduMessage] | None = None) -> str:
     if not settings.OPENAI_API_KEY or not sources:
         return _fallback_answer(sources, searched)
     evidence = json.dumps(sources, ensure_ascii=False, default=str)
@@ -157,12 +177,13 @@ def _grounded_answer(question: str, sources: list[dict[str, Any]], searched: lis
         from openai import OpenAI
 
         client = OpenAI(api_key=settings.OPENAI_API_KEY)
+        recent = "\n".join(f"{row.role}: {row.content[:600]}" for row in (history or [])[-6:])
         answer = openai_text_completion(
             client,
             model=settings.OPENAI_MODEL,
             messages=[
                 {"role": "system", "content": "You are Bindu, a concise and friendly read-only assistant for a property management portal. Answer only from the supplied records. Never claim to change, send, assign, update, or delete anything. If evidence is incomplete, say so. Mention record titles naturally and keep the answer under 180 words."},
-                {"role": "user", "content": f"Question: {question}\n\nAccessible records:\n{evidence}"},
+                {"role": "user", "content": f"Recent conversation:\n{recent or 'None'}\n\nQuestion: {question}\n\nAccessible records:\n{evidence}"},
             ],
             temperature=0.1,
             max_tokens=320,
@@ -172,8 +193,67 @@ def _grounded_answer(question: str, sources: list[dict[str, Any]], searched: lis
         return _fallback_answer(sources, searched)
 
 
+def _conversation_or_404(db: Session, user: User, conversation_id: int) -> BinduConversation:
+    row = db.query(BinduConversation).filter(BinduConversation.id == conversation_id, BinduConversation.user_id == user.id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    return row
+
+
+def _message_sources(row: BinduMessage) -> list[BinduSource]:
+    try:
+        raw = json.loads(row.sources_json or "[]")
+        return [BinduSource(**item) for item in raw if isinstance(item, dict)]
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return []
+
+
+@router.get("/conversations", response_model=list[BinduConversationOut])
+def list_conversations(user: User = Depends(get_current_user), mailbox: str = Depends(get_current_mailbox), db: Session = Depends(get_db)):
+    return db.query(BinduConversation).filter(BinduConversation.user_id == user.id, BinduConversation.mailbox == mailbox).order_by(BinduConversation.updated_at.desc()).limit(50).all()
+
+
+@router.post("/conversations", response_model=BinduConversationOut)
+def create_conversation(user: User = Depends(get_current_user), mailbox: str = Depends(get_current_mailbox), db: Session = Depends(get_db)):
+    row = BinduConversation(user_id=user.id, mailbox=mailbox, title="New conversation")
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@router.get("/conversations/{conversation_id}/messages", response_model=list[BinduMessageOut])
+def conversation_messages(conversation_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    conversation = _conversation_or_404(db, user, conversation_id)
+    return [BinduMessageOut(id=row.id, role=row.role, content=row.content, sources=_message_sources(row), created_at=row.created_at) for row in sorted(conversation.messages, key=lambda item: item.created_at)]
+
+
+@router.delete("/conversations/{conversation_id}", status_code=204)
+def delete_conversation(conversation_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    conversation = _conversation_or_404(db, user, conversation_id)
+    db.delete(conversation)
+    db.commit()
+    return Response(status_code=204)
+
+
 @router.post("/ask", response_model=BinduAskOut)
 def ask_bindu(payload: BinduAskIn, user: User = Depends(get_current_user), mailbox: str = Depends(get_current_mailbox), db: Session = Depends(get_db)):
     question = re.sub(r"\s+", " ", payload.message).strip()
+    if payload.conversation_id is not None:
+        conversation = _conversation_or_404(db, user, payload.conversation_id)
+        if conversation.mailbox != mailbox:
+            raise HTTPException(status_code=400, detail="This conversation belongs to another mailbox")
+    else:
+        conversation = BinduConversation(user_id=user.id, mailbox=mailbox, title=question[:70])
+        db.add(conversation)
+        db.flush()
+    history = db.query(BinduMessage).filter(BinduMessage.conversation_id == conversation.id).order_by(BinduMessage.created_at.asc()).all()
     sources, searched = _collect_sources(db, user, mailbox, question, payload.current_page)
-    return BinduAskOut(answer=_grounded_answer(question, sources, searched), sources=[BinduSource(**item) for item in sources], searched_pages=searched, ai_enabled=bool(settings.OPENAI_API_KEY))
+    answer = _grounded_answer(question, sources, searched, history)
+    db.add(BinduMessage(conversation_id=conversation.id, role="user", content=question))
+    db.add(BinduMessage(conversation_id=conversation.id, role="assistant", content=answer, sources_json=json.dumps(sources, ensure_ascii=False, default=str)))
+    if conversation.title == "New conversation":
+        conversation.title = question[:70]
+    conversation.updated_at = datetime.utcnow()
+    db.commit()
+    return BinduAskOut(answer=answer, sources=[BinduSource(**item) for item in sources], searched_pages=searched, ai_enabled=bool(settings.OPENAI_API_KEY), conversation_id=conversation.id)

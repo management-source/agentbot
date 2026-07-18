@@ -374,6 +374,33 @@ class StaffGuide(Base):
     uploaded_by = relationship("User")
 
 
+class BinduConversation(Base):
+    __tablename__ = "bindu_conversations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), index=True)
+    mailbox: Mapped[str] = mapped_column(String, index=True)
+    title: Mapped[str] = mapped_column(String, default="New conversation")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+    user = relationship("User")
+    messages = relationship("BinduMessage", back_populates="conversation", cascade="all, delete-orphan")
+
+
+class BinduMessage(Base):
+    __tablename__ = "bindu_messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    conversation_id: Mapped[int] = mapped_column(Integer, ForeignKey("bindu_conversations.id"), index=True)
+    role: Mapped[str] = mapped_column(String, index=True)
+    content: Mapped[str] = mapped_column(Text)
+    sources_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+    conversation = relationship("BinduConversation", back_populates="messages")
+
+
 class ThreadTicket(Base):
     __tablename__ = "thread_tickets"
 

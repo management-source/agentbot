@@ -4268,6 +4268,8 @@
     .bindu-sources{display:grid;gap:7px;margin:8px 0 16px}.bindu-source{width:100%;padding:10px 11px;text-align:left;border:1px solid rgba(221,180,80,.2);border-radius:12px;background:rgba(214,171,68,.07);color:#f5ead0;cursor:pointer}.bindu-source:hover{border-color:rgba(221,180,80,.55);background:rgba(214,171,68,.12)}.bindu-source strong,.bindu-source span{display:block}.bindu-source strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}.bindu-source span{margin-top:3px;color:rgba(255,255,255,.48);font-size:10px;text-transform:uppercase;letter-spacing:.08em}
     .bindu-starters{display:flex;gap:7px;overflow-x:auto;padding:0 14px 11px}.bindu-starters button{flex:0 0 auto;border:1px solid rgba(221,180,80,.22);border-radius:999px;padding:7px 10px;background:transparent;color:#d8bd7a;font-size:11px;cursor:pointer}.bindu-starters button:hover{background:rgba(221,180,80,.09)}.bindu-form{display:flex;align-items:flex-end;gap:8px;padding:12px;border-top:1px solid rgba(255,255,255,.08);background:#0a0a09}.bindu-form textarea{min-height:44px;max-height:110px;flex:1;resize:none;border:1px solid rgba(255,255,255,.12);border-radius:13px;padding:12px;background:rgba(255,255,255,.055);color:#fff;font:inherit;font-size:13px;outline:none}.bindu-form textarea:focus{border-color:#d7b35e;box-shadow:0 0 0 3px rgba(215,179,94,.1)}.bindu-send{width:44px;height:44px;flex:0 0 auto;border:0;border-radius:13px;background:linear-gradient(135deg,#e8ca7b,#bb8d32);color:#111;font-size:19px;cursor:pointer}.bindu-send:disabled{opacity:.5;cursor:wait}.bindu-disclaimer{padding:0 14px 10px;text-align:center;background:#0a0a09;color:rgba(255,255,255,.32);font-size:9px}
     body.auth-locked .bindu-launcher,body.auth-locked .bindu-panel{display:none!important}@media(max-width:600px){.bindu-launcher{right:16px;bottom:16px;width:60px;height:60px}.bindu-panel{inset:12px;width:auto;height:auto;border-radius:20px}.bindu-panel.hidden{transform:translateY(14px) scale(.98)}}@media(prefers-reduced-motion:reduce){.bindu-panel,.bindu-launcher{transition:none}.bindu-typing i{animation:none}}
+    .bindu-icon-btn{width:34px;height:34px;flex:0 0 auto;border:1px solid rgba(255,255,255,.08);border-radius:10px;background:rgba(255,255,255,.06);color:#eee4ca;cursor:pointer}.bindu-icon-btn:hover{border-color:rgba(218,179,86,.4);background:rgba(218,179,86,.12)}.bindu-history{position:absolute;z-index:2;inset:77px 0 0;display:flex;flex-direction:column;background:rgba(10,10,9,.985);transition:transform .22s,opacity .22s}.bindu-history.hidden{display:flex!important;opacity:0;transform:translateX(-100%);pointer-events:none}.bindu-history-head{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.07)}.bindu-history-head strong{font-size:13px}.bindu-history-list{flex:1;min-height:0;overflow:auto;padding:9px}.bindu-history-item{display:flex;align-items:center;gap:7px;margin-bottom:5px}.bindu-history-open{min-width:0;flex:1;padding:10px 11px;text-align:left;border:1px solid transparent;border-radius:11px;background:transparent;color:#eee8db;cursor:pointer}.bindu-history-open:hover,.bindu-history-item.active .bindu-history-open{border-color:rgba(218,179,86,.28);background:rgba(218,179,86,.09)}.bindu-history-open strong,.bindu-history-open span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.bindu-history-open strong{font-size:12px}.bindu-history-open span{margin-top:3px;color:rgba(255,255,255,.4);font-size:10px}.bindu-history-delete{width:30px;height:30px;border:0;border-radius:9px;background:transparent;color:rgba(255,255,255,.35);cursor:pointer}.bindu-history-delete:hover{background:rgba(239,68,68,.12);color:#fca5a5}
+    .bindu-messages,.bindu-history-list,.bindu-starters{scrollbar-width:thin;scrollbar-color:rgba(213,173,77,.58) rgba(255,255,255,.045)}.bindu-messages::-webkit-scrollbar,.bindu-history-list::-webkit-scrollbar{width:7px}.bindu-starters::-webkit-scrollbar{height:4px}.bindu-messages::-webkit-scrollbar-track,.bindu-history-list::-webkit-scrollbar-track,.bindu-starters::-webkit-scrollbar-track{background:rgba(255,255,255,.035);border-radius:99px}.bindu-messages::-webkit-scrollbar-thumb,.bindu-history-list::-webkit-scrollbar-thumb,.bindu-starters::-webkit-scrollbar-thumb{border:2px solid transparent;border-radius:99px;background:linear-gradient(#ddbd6a,#9c7026) padding-box}.bindu-source-detail{margin-top:5px!important;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-transform:none!important;letter-spacing:0!important;color:rgba(255,255,255,.45)!important}.bindu-empty{padding:36px 20px;text-align:center;color:rgba(255,255,255,.45);font-size:12px}
   </style>
   </head>
 
@@ -7274,8 +7276,14 @@
       <div class="bindu-head">
         <img src="/static/bindu-assistant.png" alt="Bindu" />
         <div class="bindu-head-copy"><strong>Bindu</strong><span>Read-only portal assistant</span></div>
+        <button class="bindu-icon-btn" type="button" onclick="toggleBinduHistory()" aria-label="Conversation history" title="History">&#9776;</button>
+        <button class="bindu-icon-btn" type="button" onclick="newBinduConversation()" aria-label="New conversation" title="New conversation">&#43;</button>
         <button class="bindu-close" type="button" onclick="closeBindu()" aria-label="Close Bindu">&times;</button>
       </div>
+      <section class="bindu-history hidden" id="binduHistory" aria-label="Bindu conversation history">
+        <div class="bindu-history-head"><strong>Your conversations</strong><button class="bindu-icon-btn" type="button" onclick="toggleBinduHistory(false)" aria-label="Close history">&larr;</button></div>
+        <div class="bindu-history-list" id="binduHistoryList"></div>
+      </section>
       <div class="bindu-messages" id="binduMessages" aria-live="polite">
         <div class="bindu-message assistant"><div class="bindu-bubble">Hi, I’m Bindu. I can find and summarise records you have permission to view. What can I help you find?</div></div>
       </div>
@@ -7290,7 +7298,7 @@
       </form>
       <div class="bindu-disclaimer">Bindu can only read accessible portal records. Verify important details at the source.</div>
     </aside>
-    <script src="/static/app.js?v=29"></script>
+    <script src="/static/app.js?v=30"></script>
 
     <script>
   // Wire segmented status buttons to existing tab logic
