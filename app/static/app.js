@@ -4286,6 +4286,17 @@ function getRentFilters() {
     return { status, frequency, query };
 }
 
+function clearRentFilters() {
+    const status = document.getElementById("rentStatusFilter");
+    const frequency = document.getElementById("rentFrequencyFilter");
+    const query = document.getElementById("rentSearchBox");
+    if (status) status.value = "";
+    if (frequency) frequency.value = "";
+    if (query) query.value = "";
+    currentRentPage = 1;
+    loadActiveRentView(1);
+}
+
 function getRollingMonths() {
     const base = new Date();
     return [-1, 0, 1].map((offset) => {
@@ -4328,14 +4339,14 @@ function loadActiveRentView(page = null) {
 }
 
 function monthCellSelect(item) {
-    if (!item || !item.id) return `<span class="small muted">-</span>`;
+    if (!item || !item.id) return `<span class="small muted">—</span>`;
     const status = String(item.status || "DUE").toUpperCase();
     const extra = Number(item.extra_items || 0);
     const due = item.due_date ? formatDateShort(item.due_date) : "";
     const partialAmount = (typeof item.partial_amount === "number" && item.partial_amount > 0) ? Number(item.partial_amount).toFixed(2) : "";
     return `
-      <div>
-        <select style="min-width:110px" onchange="updateRentMonthCell(${item.id}, this.value, ${item.partial_amount || 0})">
+      <div class="rent-cell">
+        <select aria-label="Rent status" onchange="updateRentMonthCell(${item.id}, this.value, ${item.partial_amount || 0})">
           <option value="DUE" ${status === "DUE" ? "selected" : ""}>Due</option>
           <option value="PAID" ${status === "PAID" ? "selected" : ""}>Paid</option>
           <option value="PARTIAL" ${status === "PARTIAL" ? "selected" : ""}>Partial</option>
@@ -4346,7 +4357,7 @@ function monthCellSelect(item) {
         <div style="margin-top:6px">
           <input type="number" min="0" step="0.01" placeholder="Amount" value="${partialAmount}" style="width:100px" onchange="updateRentPartialAmount(${item.id}, this.value)" />
         </div>` : ``}
-        <div style="margin-top:4px">${rentStatusChip(status)}</div>
+        <div class="rent-cell-raw">${escapeHtml(item.raw_value || due || "No entry")}</div>
         <div class="small muted" style="margin-top:4px">${escapeHtml(due)}${partialAmount ? ` • $${partialAmount}` : ""}${extra > 0 ? ` • +${extra}` : ""}</div>
       </div>
     `;
@@ -4403,7 +4414,7 @@ async function loadRentTracker(page = null) {
         if (el) el.textContent = String(val || 0);
     };
 
-    setText("rentKpiTotal", summary.total || 0);
+    setText("rentKpiTotal", summary.properties || 0);
     setText("rentKpiOverdue", summary.overdue || 0);
     setText("rentKpiDueSoon", summary.due_next_7_days || 0);
     setText("rentKpiPaid", statusCounts.PAID || 0);
@@ -4418,7 +4429,8 @@ async function loadRentTracker(page = null) {
                 <td><div style="font-weight:700">${escapeHtml(r.property_address || "")}</div><div class="small muted">${escapeHtml(r.source_sheet || "-")}</div></td>
                 <td>${escapeHtml(r.frequency || "-")}</td>
                 <td>
-                    <div class="small muted">Paid ${Number((r.counts || {}).PAID || 0)} / ${Number(r.total_items || 0)}</div>
+                    <div class="small muted">${Number((r.counts || {}).PAID || 0)} of ${Number(r.total_items || 0)} paid</div>
+                    <div class="rent-progress"><span style="width:${Math.round((Number((r.counts || {}).PAID || 0) / Math.max(1, Number(r.total_items || 0))) * 100)}%"></span></div>
                     <div class="small muted">Due ${Number((r.counts || {}).DUE || 0)} • Partial ${Number((r.counts || {}).PARTIAL || 0)}</div>
                 </td>
                 ${rollingMonths.map((mk) => `<td>${monthCellSelect((r.months || {})[mk.key])}</td>`).join("")}
@@ -4484,7 +4496,7 @@ async function loadRentYearReport(page = null) {
         const el = document.getElementById(id);
         if (el) el.textContent = String(val || 0);
     };
-    setText("rentKpiTotal", summary.total || 0);
+    setText("rentKpiTotal", summary.properties || 0);
     setText("rentKpiOverdue", summary.overdue || 0);
     setText("rentKpiDueSoon", summary.due_next_7_days || 0);
     setText("rentKpiPaid", statusCounts.PAID || 0);
@@ -4500,7 +4512,8 @@ async function loadRentYearReport(page = null) {
                 <td class="sticky-col"><div style="font-weight:700">${escapeHtml(r.property_address || "")}</div><div class="small muted">${escapeHtml(r.source_sheet || "-")}</div></td>
                 <td>${escapeHtml(r.frequency || "-")}</td>
                 <td>
-                    <div class="small muted">Paid ${Number((r.counts || {}).PAID || 0)} / ${Number(r.total_items || 0)}</div>
+                    <div class="small muted">${Number((r.counts || {}).PAID || 0)} of ${Number(r.total_items || 0)} paid</div>
+                    <div class="rent-progress"><span style="width:${Math.round((Number((r.counts || {}).PAID || 0) / Math.max(1, Number(r.total_items || 0))) * 100)}%"></span></div>
                     <div class="small muted">Due ${Number((r.counts || {}).DUE || 0)} • Partial ${Number((r.counts || {}).PARTIAL || 0)}</div>
                 </td>
                 ${yearMonths.map((mk) => `<td>${monthCellSelect((r.months || {})[mk.key])}</td>`).join("")}
@@ -4617,7 +4630,8 @@ async function importRentWorkbook() {
     if (meta) {
         const rows = j && j.imported_rows ? j.imported_rows : "-";
         const y = (j && j.year) ? j.year : new Date().getFullYear();
-        meta.textContent = `Imported ${rows} rows for ${y} from ${escapeHtml(f.name)} at ${new Date().toLocaleString()}.`;
+        const counts = (j && j.status_counts) || {};
+        meta.textContent = `Imported ${rows} monthly entries for ${y} | ${counts.PAID || 0} paid | ${(counts.DUE || 0) + (counts.PARTIAL || 0) + (counts.AWAITING_CLEARANCE || 0)} pending | ${f.name}`;
     }
     currentRentPage = 1;
     await loadActiveRentView();

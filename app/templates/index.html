@@ -1904,6 +1904,43 @@
       background:#f8fafc;
       z-index:3;
     }
+    .rent-workspace{display:grid;gap:14px}
+    .rent-command-card{padding:16px 18px;background:linear-gradient(135deg,#fff 0%,#f8fafc 100%)}
+    .rent-import-controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+    .rent-import-controls input[type="file"]{max-width:260px;font-size:12px}
+    .rent-kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}
+    .rent-kpi{padding:14px 16px;min-width:0}
+    .rent-kpi-label{font-size:11px;font-weight:800;letter-spacing:.045em;text-transform:uppercase;color:#64748b}
+    .rent-kpi-value{font-size:25px;line-height:1.15;font-weight:850;color:#172033;margin-top:5px}
+    .rent-kpi-note{font-size:11px;color:#94a3b8;margin-top:3px}
+    .rent-toolbar{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap;margin-top:0}
+    .rent-toolbar .field{min-width:145px;flex:0 1 180px}
+    .rent-toolbar .rent-search{flex:1 1 260px}
+    .rent-toolbar-actions{display:flex;gap:8px;margin-left:auto}
+    #rentPanel>.rent-workspace .rent-table-wrap{max-height:calc(100vh - 330px);min-height:300px}
+    .rent-table.compact{min-width:850px}
+    .rent-table.compact th,.rent-table.compact td{padding:9px 10px;vertical-align:middle}
+    .rent-table.compact th:first-child,.rent-table.compact td:first-child{position:sticky;left:0;z-index:2;background:#fff;min-width:245px;max-width:290px}
+    .rent-table.compact th:first-child{z-index:4;background:#f4f7fb}
+    .rent-progress{width:110px;height:6px;background:#e8edf3;border-radius:999px;overflow:hidden;margin-top:6px}
+    .rent-progress span{display:block;height:100%;background:#28a071;border-radius:inherit}
+    .rent-cell{min-width:112px}.rent-cell select{width:100%;min-width:106px;padding:6px 24px 6px 8px;font-size:11px}
+    .rent-cell-raw{margin-top:5px;font-size:10px;line-height:1.3;color:#64748b;max-width:128px;white-space:normal}
+    @media(max-width:1280px){
+      .rent-kpi{padding:12px}.rent-kpi-value{font-size:21px}
+      #rentPanel>.rent-workspace .rent-table-wrap{max-height:calc(100vh - 300px)}
+      .rent-table th,.rent-table td{padding:8px;font-size:11px}
+    }
+    @media(max-width:820px){
+      .rent-kpis{display:flex;overflow-x:auto;padding-bottom:4px}.rent-kpi{min-width:140px}
+      .rent-command-card .row.space{align-items:flex-start;gap:12px}.rent-import-controls{width:100%}
+      .rent-import-controls input[type="file"]{max-width:100%;width:100%}
+      .rent-toolbar{display:grid;grid-template-columns:1fr 1fr}
+      .rent-toolbar .field,.rent-toolbar .rent-search{min-width:0;width:100%}
+      .rent-toolbar .seg,.rent-toolbar-actions{grid-column:1/-1;margin-left:0}
+      .rent-toolbar-actions .btn{flex:1}
+      #rentPanel>.rent-workspace .rent-table-wrap{max-height:none}
+    }
     .rent-status{
       display:inline-flex;
       align-items:center;
@@ -5601,14 +5638,15 @@
                 <div class="page-banner">
                   <div class="page-banner-kicker">Rent Operations</div>
                   <h2>Rent Tracker</h2>
-                  <p>Monitor rent schedules, upcoming due dates, arrears, paid status, and yearly reporting in one clean workspace.</p>
+                  <p>A fast property-by-month workspace for recording payments, spotting arrears, and keeping the team on the same page.</p>
                   <div class="page-banner-actions">
                     <span class="chip">Due dates</span>
                     <span class="chip">Arrears</span>
                     <span class="chip">Year report</span>
                   </div>
                 </div>
-                <div class="card">
+                <div class="rent-workspace">
+                <div class="card rent-command-card">
                   <div class="row space">
                     <div>
                       <p class="panel-title">Rent Due Tracker</p>
@@ -5616,7 +5654,7 @@
                         Excel sheet and track overdue, due soon, and paid
                         statuses in one place.</p>
                     </div>
-                    <div class="row">
+                    <div class="rent-import-controls">
                       <input type="file" id="rentImportFile" accept=".xlsx" />
                       <button class="btn primary"
                         onclick="importRentWorkbook()">Import Workbook</button>
@@ -5626,35 +5664,40 @@
                     style="margin-top:8px">No rent workbook imported yet.</div>
                 </div>
 
-                <div class="kpi-row">
-                  <div class="card kpi">
-                    <h3>Total Rows</h3>
-                    <div class="num" id="rentKpiTotal">0</div>
+                <div class="rent-kpis">
+                  <div class="card rent-kpi">
+                    <div class="rent-kpi-label">Properties</div>
+                    <div class="rent-kpi-value" id="rentKpiTotal">0</div>
+                    <div class="rent-kpi-note">In this tracker</div>
                   </div>
-                  <div class="card kpi">
-                    <h3>Overdue</h3>
-                    <div class="num danger" id="rentKpiOverdue">0</div>
+                  <div class="card rent-kpi">
+                    <div class="rent-kpi-label">Needs action</div>
+                    <div class="rent-kpi-value danger" id="rentKpiOverdue">0</div>
+                    <div class="rent-kpi-note">Overdue entries</div>
                   </div>
-                  <div class="card kpi">
-                    <h3>Due Next 7 Days</h3>
-                    <div class="num warn" id="rentKpiDueSoon">0</div>
+                  <div class="card rent-kpi">
+                    <div class="rent-kpi-label">Due soon</div>
+                    <div class="rent-kpi-value warn" id="rentKpiDueSoon">0</div>
+                    <div class="rent-kpi-note">Next 7 days</div>
                   </div>
-                  <div class="card kpi">
-                    <h3>Paid</h3>
-                    <div class="num ok" id="rentKpiPaid">0</div>
+                  <div class="card rent-kpi">
+                    <div class="rent-kpi-label">Paid</div>
+                    <div class="rent-kpi-value ok" id="rentKpiPaid">0</div>
+                    <div class="rent-kpi-note">Monthly entries</div>
                   </div>
-                  <div class="card kpi">
-                    <h3>Pending</h3>
-                    <div class="num accent" id="rentKpiPending">0</div>
+                  <div class="card rent-kpi">
+                    <div class="rent-kpi-label">Pending</div>
+                    <div class="rent-kpi-value accent" id="rentKpiPending">0</div>
+                    <div class="rent-kpi-note">Due, partial or clearing</div>
                   </div>
                 </div>
 
-                <div class="filters-row">
+                <div class="filters-row rent-toolbar">
                   <div class="seg" id="rentViewSeg">
                     <button id="rentViewTrackerBtn" class="active"
-                      onclick="switchRentViewMode('tracker')">Tracker</button>
+                      onclick="switchRentViewMode('tracker')">3 month view</button>
                     <button id="rentViewYearBtn"
-                      onclick="switchRentViewMode('year')">Year Report</button>
+                      onclick="switchRentViewMode('year')">Full year</button>
                   </div>
                   <div class="field">
                     <div class="label">Status</div>
@@ -5672,23 +5715,25 @@
                     <div class="label">Frequency</div>
                     <select id="rentFrequencyFilter">
                       <option value>All</option>
-                      <option value="MONTHLY" selected>Monthly</option>
+                      <option value="MONTHLY">Monthly</option>
+                      <option value="WEEKLY">Weekly</option>
                       <option value="FORTNIGHTLY">Fortnightly</option>
                     </select>
                   </div>
-                  <div class="field" style="min-width:260px">
+                  <div class="field rent-search">
                     <div class="label">Search</div>
                     <input type="text" id="rentSearchBox"
                       placeholder="Property, notes, raw value..." />
                   </div>
-                  <div class="row" style="align-self:flex-end">
+                  <div class="rent-toolbar-actions">
                     <button class="btn"
                       onclick="loadActiveRentView(1)">Apply</button>
+                    <button class="btn" onclick="clearRentFilters()">Clear</button>
                   </div>
                 </div>
 
                 <div class="rent-table-wrap" id="rentTrackerGrid">
-                  <table class="rent-table">
+                  <table class="rent-table compact">
                     <thead>
                       <tr>
                         <th>Property</th>
@@ -5739,6 +5784,7 @@
                     onclick="prevRentPage()">Prev</button>
                   <button class="btn" id="rentBtnNext"
                     onclick="nextRentPage()">Next</button>
+                </div>
                 </div>
               </div>
 

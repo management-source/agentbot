@@ -116,13 +116,15 @@ def _normalize_status(raw: str) -> RentTrackStatus:
     text = (raw or "").strip().lower()
     if not text:
         return RentTrackStatus.DUE
-    if "vacant" in text:
+    if "vacant" in text or "no tenant" in text:
         return RentTrackStatus.VACANT
+    if "not paid" in text or "unpaid" in text or "arrear" in text:
+        return RentTrackStatus.DUE
     if "part paid" in text or "partial" in text:
         return RentTrackStatus.PARTIAL
-    if "await" in text or "clearance" in text:
+    if "await" in text or "clearance" in text or "clearence" in text:
         return RentTrackStatus.AWAITING_CLEARANCE
-    if "paid" in text:
+    if "paid" in text or re.search(r"\bpiad\b", text):
         return RentTrackStatus.PAID
     return RentTrackStatus.DUE
 
@@ -248,6 +250,70 @@ def _parse_monthly_sheet(sheet_name: str, rows: list[tuple[int, dict[str, str]]]
     return items
 
 
+def _parse_month_matrix_sheet(sheet_name: str, rows: list[tuple[int, dict[str, str]]]) -> list[dict[str, Any]]:
+    """Parse the property x month layout used by the operational rent workbook.
+
+    The workbook does not rely on a special sheet name: a header row containing
+    Property Address and a second header row containing month names identifies it.
+    """
+    if not rows:
+        return []
+
+    year_match = re.search(r"(20\d{2})", sheet_name)
+    year = int(year_match.group(1)) if year_match else datetime.utcnow().year
+    address_col: str | None = None
+    month_cols: dict[str, int] = {}
+    header_last_row = 0
+
+    for row_num, vals in rows[:12]:
+        for col, raw in vals.items():
+            text = raw.strip().lower()
+            if "property" in text and "address" in text:
+                address_col = col
+                header_last_row = max(header_last_row, row_num)
+            if text in MONTHS:
+                month_cols[col] = MONTHS[text]
+                header_last_row = max(header_last_row, row_num)
+
+    if not address_col or len(month_cols) < 3:
+        return []
+
+    items: list[dict[str, Any]] = []
+    for row_num, vals in rows:
+        if row_num <= header_last_row:
+            continue
+        address = re.sub(r"\s+", " ", (vals.get(address_col) or "").strip())
+        if not address:
+            continue
+
+        row_text = " ".join(vals.values()).lower()
+        frequency = "WEEKLY" if "weekly" in row_text else "MONTHLY"
+        for col, month_num in month_cols.items():
+            raw_value = (vals.get(col) or "").strip()
+            status = _normalize_status(raw_value)
+            paid_on = _parse_date_from_any(raw_value, fallback_year=year) if status == RentTrackStatus.PAID else None
+            partial_amount = _extract_partial_amount(raw_value) if status == RentTrackStatus.PARTIAL else None
+            due_date = datetime(year, month_num, 1)
+            items.append(
+                {
+                    "property_address": address,
+                    "frequency": frequency,
+                    "due_date": due_date,
+                    "due_day": 1,
+                    "period_label": f"{year}-{month_num:02d}",
+                    "source_sheet": sheet_name,
+                    "status": status,
+                    "raw_value": raw_value or None,
+                    "paid_on": paid_on,
+                    "partial_amount": partial_amount,
+                    "notes": None,
+                    "created_at": datetime.utcnow(),
+                    "updated_at": datetime.utcnow(),
+                }
+            )
+    return items
+
+
 def _parse_fortnight_sheet(sheet_name: str, rows: list[tuple[int, dict[str, str]]]) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     if not rows:
@@ -320,7 +386,10 @@ def _parse_rent_workbook(content: bytes) -> list[dict[str, Any]]:
         for name, target in sheets:
             rows = _sheet_rows(zf, target, shared_strings)
             lname = name.lower()
-            if "fortn" in lname:
+            matrix_items = _parse_month_matrix_sheet(name, rows)
+            if matrix_items:
+                parsed_items.extend(matrix_items)
+            elif "fortn" in lname:
                 parsed_items.extend(_parse_fortnight_sheet(name, rows))
             elif "monthly" in lname:
                 parsed_items.extend(_parse_monthly_sheet(name, rows))
@@ -451,7 +520,7 @@ def list_items(
 @router.get("/properties")
 def list_property_progress(
     status: RentTrackStatus | None = None,
-    frequency: str | None = "MONTHLY",
+    frequency: str | None = None,
     query: str | None = None,
     page: int = 1,
     page_size: int = 25,
@@ -510,6 +579,7 @@ def list_property_progress(
                 "paid_on": r.paid_on,
                 "partial_amount": r.partial_amount,
                 "notes": r.notes,
+                "raw_value": r.raw_value,
                 "extra_items": 0,
             }
             existing = g["months"].get(month_key)
@@ -599,6 +669,7 @@ def summary(
 
     return {
         "total": len(rows),
+        "properties": len({_normalize_address_key(r.property_address) for r in rows}),
         "overdue": overdue,
         "due_next_7_days": due_next_7_days,
         "year": current_year,
