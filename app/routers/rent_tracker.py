@@ -3,7 +3,7 @@ from __future__ import annotations
 import calendar
 import re
 import zipfile
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from io import BytesIO
 from typing import Any
 import xml.etree.ElementTree as ET
@@ -44,6 +44,14 @@ class RentItemUpdateIn(BaseModel):
     status: RentTrackStatus | None = None
     paid_on: datetime | None = None
     partial_amount: float | None = None
+    notes: str | None = None
+
+
+class RentPropertyCreateIn(BaseModel):
+    property_address: str
+    frequency: str = "MONTHLY"
+    tracking_start: date
+    due_day: int | None = None
     notes: str | None = None
 
 
@@ -405,6 +413,74 @@ def _current_year_window() -> tuple[datetime, datetime, int]:
 
 def _normalize_address_key(address: str) -> str:
     return re.sub(r"\s+", " ", (address or "").strip().lower())
+
+
+@router.post("/properties")
+def create_tracked_property(
+    payload: RentPropertyCreateIn,
+    mailbox: str = Depends(get_current_mailbox),
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    address = re.sub(r"\s+", " ", payload.property_address.strip())
+    if len(address) < 5:
+        raise HTTPException(status_code=400, detail="Enter a valid property address.")
+
+    frequency = payload.frequency.strip().upper()
+    if frequency not in {"MONTHLY", "FORTNIGHTLY", "WEEKLY"}:
+        raise HTTPException(status_code=400, detail="Frequency must be monthly, fortnightly, or weekly.")
+
+    year = datetime.utcnow().year
+    if payload.tracking_start.year != year:
+        raise HTTPException(status_code=400, detail=f"Tracking must start within {year}.")
+
+    existing = (
+        db.query(RentDueTracker.id)
+        .filter(RentDueTracker.mailbox == mailbox)
+        .filter(func.lower(RentDueTracker.property_address) == address.lower())
+        .first()
+    )
+    if existing:
+        raise HTTPException(status_code=409, detail="This property is already in the rent tracker.")
+
+    start = payload.tracking_start
+    end = date(year, 12, 31)
+    dates: list[date] = []
+    if frequency == "MONTHLY":
+        due_day = max(1, min(31, payload.due_day or start.day))
+        month = start.month
+        while month <= 12:
+            day = min(due_day, calendar.monthrange(year, month)[1])
+            candidate = date(year, month, day)
+            if candidate >= start:
+                dates.append(candidate)
+            month += 1
+    else:
+        step = 7 if frequency == "WEEKLY" else 14
+        candidate = start
+        while candidate <= end:
+            dates.append(candidate)
+            candidate += timedelta(days=step)
+
+    now = datetime.utcnow()
+    for due in dates:
+        db.add(
+            RentDueTracker(
+                mailbox=mailbox,
+                property_address=address,
+                frequency=frequency,
+                due_date=datetime.combine(due, datetime.min.time()),
+                due_day=due.day,
+                period_label=due.strftime("%Y-%m") if frequency == "MONTHLY" else due.isoformat(),
+                source_sheet="Portal",
+                status=RentTrackStatus.DUE,
+                notes=payload.notes.strip() if payload.notes and payload.notes.strip() else None,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+    db.commit()
+    return {"ok": True, "property_address": address, "frequency": frequency, "created_periods": len(dates), "year": year}
 
 
 @router.post("/import-xlsx")

@@ -4297,6 +4297,63 @@ function clearRentFilters() {
     loadActiveRentView(1);
 }
 
+function toggleRentDueDay() {
+    const frequency = document.getElementById("rentNewFrequency")?.value || "MONTHLY";
+    const field = document.getElementById("rentNewDueDayField");
+    if (field) field.classList.toggle("hidden", frequency !== "MONTHLY");
+}
+
+async function addRentTrackedProperty() {
+    const addressEl = document.getElementById("rentNewPropertyAddress");
+    const frequencyEl = document.getElementById("rentNewFrequency");
+    const startEl = document.getElementById("rentNewTrackingStart");
+    const dueDayEl = document.getElementById("rentNewDueDay");
+    const meta = document.getElementById("rentAddPropertyMeta");
+    const button = document.getElementById("rentAddPropertyBtn");
+    const address = String(addressEl?.value || "").trim();
+    const trackingStart = String(startEl?.value || "").trim();
+    if (address.length < 5) {
+        if (meta) meta.textContent = "Enter the full property address.";
+        addressEl?.focus();
+        return;
+    }
+    if (!trackingStart) {
+        if (meta) meta.textContent = "Choose the date tracking should begin.";
+        startEl?.focus();
+        return;
+    }
+
+    const payload = {
+        property_address: address,
+        frequency: frequencyEl?.value || "MONTHLY",
+        tracking_start: trackingStart,
+    };
+    const dueDay = Number(dueDayEl?.value || 0);
+    if (payload.frequency === "MONTHLY" && dueDay > 0) payload.due_day = dueDay;
+
+    if (button) button.disabled = true;
+    if (meta) meta.textContent = "Adding property and creating tracking periods...";
+    const response = await apiFetch("/rent-tracker/properties", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+    });
+    if (button) button.disabled = false;
+    if (!response.ok) {
+        if (meta) meta.textContent = await extractErrorMessage(response);
+        return;
+    }
+    const result = await response.json();
+    if (meta) meta.textContent = `${result.property_address} added with ${result.created_periods} editable tracking periods.`;
+    if (addressEl) addressEl.value = "";
+    if (dueDayEl) dueDayEl.value = "";
+    currentRentPage = 1;
+    const startDate = new Date(`${trackingStart}T00:00:00`);
+    const now = new Date();
+    if (startDate < new Date(now.getFullYear(), now.getMonth(), 1)) switchRentViewMode("year");
+    else await loadActiveRentView(1);
+}
+
 function getRollingMonths() {
     const base = new Date();
     return [-1, 0, 1].map((offset) => {
@@ -4334,6 +4391,13 @@ function switchRentViewMode(mode) {
 }
 
 function loadActiveRentView(page = null) {
+    const start = document.getElementById("rentNewTrackingStart");
+    if (start && !start.value) {
+        const today = new Date();
+        start.value = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+        start.min = `${today.getFullYear()}-01-01`;
+        start.max = `${today.getFullYear()}-12-31`;
+    }
     if (rentViewMode === "year") return loadRentYearReport(page);
     return loadRentTracker(page);
 }

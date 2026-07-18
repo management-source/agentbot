@@ -1908,6 +1908,8 @@
     .rent-command-card{padding:16px 18px;background:linear-gradient(135deg,#fff 0%,#f8fafc 100%)}
     .rent-import-controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
     .rent-import-controls input[type="file"]{max-width:260px;font-size:12px}
+    .rent-add-form{display:grid;grid-template-columns:minmax(260px,2fr) repeat(3,minmax(130px,1fr)) auto;gap:10px;align-items:end;margin-top:14px}
+    .rent-add-form .field{min-width:0}.rent-add-form .btn{white-space:nowrap}
     .rent-kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}
     .rent-kpi{padding:14px 16px;min-width:0}
     .rent-kpi-label{font-size:11px;font-weight:800;letter-spacing:.045em;text-transform:uppercase;color:#64748b}
@@ -1927,6 +1929,7 @@
     .rent-cell{min-width:112px}.rent-cell select{width:100%;min-width:106px;padding:6px 24px 6px 8px;font-size:11px}
     .rent-cell-raw{margin-top:5px;font-size:10px;line-height:1.3;color:#64748b;max-width:128px;white-space:normal}
     @media(max-width:1280px){
+      .rent-add-form{grid-template-columns:2fr 1fr 1fr auto}.rent-add-form .rent-start-field{grid-column:1/2}
       .rent-kpi{padding:12px}.rent-kpi-value{font-size:21px}
       #rentPanel>.rent-workspace .rent-table-wrap{max-height:calc(100vh - 300px)}
       .rent-table th,.rent-table td{padding:8px;font-size:11px}
@@ -1935,6 +1938,7 @@
       .rent-kpis{display:flex;overflow-x:auto;padding-bottom:4px}.rent-kpi{min-width:140px}
       .rent-command-card .row.space{align-items:flex-start;gap:12px}.rent-import-controls{width:100%}
       .rent-import-controls input[type="file"]{max-width:100%;width:100%}
+      .rent-add-form{grid-template-columns:1fr 1fr}.rent-add-form .rent-address-field{grid-column:1/-1}.rent-add-form .btn{grid-column:1/-1}
       .rent-toolbar{display:grid;grid-template-columns:1fr 1fr}
       .rent-toolbar .field,.rent-toolbar .rent-search{min-width:0;width:100%}
       .rent-toolbar .seg,.rent-toolbar-actions{grid-column:1/-1;margin-left:0}
@@ -5647,21 +5651,34 @@
                 </div>
                 <div class="rent-workspace">
                 <div class="card rent-command-card">
-                  <div class="row space">
-                    <div>
-                      <p class="panel-title">Rent Due Tracker</p>
-                      <p class="panel-sub">Import rent due schedules from your
-                        Excel sheet and track overdue, due soon, and paid
-                        statuses in one place.</p>
-                    </div>
-                    <div class="rent-import-controls">
-                      <input type="file" id="rentImportFile" accept=".xlsx" />
-                      <button class="btn primary"
-                        onclick="importRentWorkbook()">Import Workbook</button>
-                    </div>
+                  <div>
+                    <p class="panel-title">Add a property to the tracker</p>
+                    <p class="panel-sub">Choose when tracking begins. Use a past date to create historical periods, then update those months in the full-year view.</p>
                   </div>
-                  <div class="small muted" id="rentImportMeta"
-                    style="margin-top:8px">No rent workbook imported yet.</div>
+                  <div class="rent-add-form">
+                    <div class="field rent-address-field">
+                      <div class="label">Property address</div>
+                      <input id="rentNewPropertyAddress" type="text" placeholder="Unit, street, suburb and postcode" />
+                    </div>
+                    <div class="field">
+                      <div class="label">Payment frequency</div>
+                      <select id="rentNewFrequency" onchange="toggleRentDueDay()">
+                        <option value="MONTHLY">Monthly</option>
+                        <option value="FORTNIGHTLY">Fortnightly</option>
+                        <option value="WEEKLY">Weekly</option>
+                      </select>
+                    </div>
+                    <div class="field rent-start-field">
+                      <div class="label">Track from</div>
+                      <input id="rentNewTrackingStart" type="date" />
+                    </div>
+                    <div class="field" id="rentNewDueDayField">
+                      <div class="label">Due day</div>
+                      <input id="rentNewDueDay" type="number" min="1" max="31" placeholder="e.g. 1" />
+                    </div>
+                    <button class="btn primary" id="rentAddPropertyBtn" onclick="addRentTrackedProperty()">Add property</button>
+                  </div>
+                  <div class="small muted" id="rentAddPropertyMeta" style="margin-top:9px">New periods are stored in the portal—no spreadsheet is required.</div>
                 </div>
 
                 <div class="rent-kpis">
