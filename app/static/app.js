@@ -51,6 +51,118 @@ function setupLoginMotion() {
     }, { passive: true });
 }
 
+let binduBusy = false;
+
+function toggleBindu(forceOpen = null) {
+    const panel = document.getElementById("binduPanel");
+    const launcher = document.getElementById("binduLauncher");
+    if (!panel || !launcher) return;
+    const shouldOpen = forceOpen === null ? panel.classList.contains("hidden") : !!forceOpen;
+    panel.classList.toggle("hidden", !shouldOpen);
+    panel.setAttribute("aria-hidden", String(!shouldOpen));
+    launcher.setAttribute("aria-expanded", String(shouldOpen));
+    if (shouldOpen) setTimeout(() => document.getElementById("binduInput")?.focus(), 80);
+}
+
+function closeBindu() {
+    toggleBindu(false);
+}
+
+function appendBinduMessage(role, text, sources = []) {
+    const messages = document.getElementById("binduMessages");
+    if (!messages) return;
+    const row = document.createElement("div");
+    row.className = `bindu-message ${role === "user" ? "user" : "assistant"}`;
+    const bubble = document.createElement("div");
+    bubble.className = "bindu-bubble";
+    bubble.textContent = String(text || "");
+    row.appendChild(bubble);
+    messages.appendChild(row);
+    if (Array.isArray(sources) && sources.length) {
+        const sourceList = document.createElement("div");
+        sourceList.className = "bindu-sources";
+        sources.slice(0, 6).forEach((source) => {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "bindu-source";
+            button.innerHTML = `<strong>${escapeHtml(source.title || "Portal record")}</strong><span>${escapeHtml(source.kind || source.page || "Source")}</span>`;
+            button.addEventListener("click", () => openBinduSource(source));
+            sourceList.appendChild(button);
+        });
+        messages.appendChild(sourceList);
+    }
+    messages.scrollTop = messages.scrollHeight;
+}
+
+function showBinduTyping(show) {
+    document.getElementById("binduTyping")?.remove();
+    if (!show) return;
+    const messages = document.getElementById("binduMessages");
+    if (!messages) return;
+    const row = document.createElement("div");
+    row.id = "binduTyping";
+    row.className = "bindu-message assistant";
+    row.innerHTML = '<div class="bindu-bubble"><span class="bindu-typing"><i></i><i></i><i></i></span></div>';
+    messages.appendChild(row);
+    messages.scrollTop = messages.scrollHeight;
+}
+
+function openBinduSource(source) {
+    const page = String(source?.page || "portal");
+    closeBindu();
+    if (canAccessPage(page)) switchDashboardTab(page);
+}
+
+function askBinduStarter(question) {
+    const input = document.getElementById("binduInput");
+    if (input) input.value = question;
+    askBindu();
+}
+
+async function askBindu() {
+    if (binduBusy || !authToken) return;
+    const input = document.getElementById("binduInput");
+    const send = document.getElementById("binduSend");
+    const message = String(input?.value || "").trim();
+    if (message.length < 2) return;
+    binduBusy = true;
+    if (input) input.value = "";
+    if (send) send.disabled = true;
+    appendBinduMessage("user", message);
+    showBinduTyping(true);
+    try {
+        const response = await apiFetch("/bindu/ask", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ message, current_page: currentDashboardTab }),
+        });
+        if (!response.ok) throw new Error(await extractErrorMessage(response));
+        const data = await response.json();
+        showBinduTyping(false);
+        appendBinduMessage("assistant", data.answer || "I couldn't find an answer.", data.sources || []);
+    } catch (error) {
+        showBinduTyping(false);
+        appendBinduMessage("assistant", error?.message || "I couldn't search the portal just now. Please try again.");
+    } finally {
+        binduBusy = false;
+        if (send) send.disabled = false;
+        input?.focus();
+    }
+}
+
+function setupBindu() {
+    const input = document.getElementById("binduInput");
+    input?.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" && !event.shiftKey) {
+            event.preventDefault();
+            askBindu();
+        }
+    });
+    document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && !document.getElementById("binduPanel")?.classList.contains("hidden")) closeBindu();
+    });
+}
+
 function recordStaffActivity(force = false) {
     if (!authToken) return;
     const now = Date.now();
@@ -8836,6 +8948,7 @@ function logout(message = "") {
 
 window.addEventListener("load", async () => {
     setupLoginMotion();
+    setupBindu();
     // Footer year
     const yearEl = document.getElementById("year");
     if (yearEl) yearEl.textContent = String(new Date().getFullYear());

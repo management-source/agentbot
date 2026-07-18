@@ -4260,6 +4260,14 @@
     @media(max-width:780px){.login-screen{padding:16px;align-items:flex-start;overflow:auto}.login-panel{grid-template-columns:1fr;min-height:calc(100dvh - 32px)}.login-panel-inner{padding:36px 24px 92px}.login-mark-wrap{order:-1;min-height:155px;padding:26px;border-left:0;border-bottom:1px solid rgba(255,255,255,.08)}.login-mark{width:min(280px,75%)}.login-panel-head{margin-bottom:28px}.login-footer{left:24px;right:24px;bottom:20px}}
     @media(max-width:420px){.login-screen{padding:0}.login-panel{min-height:100dvh;border-radius:0;border-left:0;border-right:0}.login-panel-inner{padding:30px 20px 94px}.login-form{gap:15px}.login-footer{left:20px;right:20px;gap:10px}}
     @media(prefers-reduced-motion:reduce){.login-screen::before,.login-orb,.login-submit{transition:none!important}}
+    /* Bindu read-only assistant */
+    .bindu-launcher{position:fixed;right:24px;bottom:24px;z-index:54;width:68px;height:68px;padding:3px;border:1px solid rgba(221,180,80,.8);border-radius:50%;background:#0b0a08;box-shadow:0 14px 38px rgba(0,0,0,.32),0 0 0 5px rgba(202,157,55,.12);cursor:pointer;transition:transform .2s,box-shadow .2s}.bindu-launcher:hover{transform:translateY(-3px) scale(1.03);box-shadow:0 18px 44px rgba(0,0,0,.38),0 0 0 7px rgba(202,157,55,.17)}.bindu-launcher:focus-visible{outline:3px solid #d8af50;outline-offset:4px}.bindu-launcher img{width:100%;height:100%;display:block;object-fit:cover;border-radius:50%}.bindu-launcher-dot{position:absolute;right:1px;bottom:5px;width:14px;height:14px;border:2px solid #111;border-radius:50%;background:#4ade80}
+    .bindu-panel{position:fixed;right:24px;bottom:104px;z-index:55;width:min(410px,calc(100vw - 32px));height:min(650px,calc(100dvh - 130px));display:flex;flex-direction:column;overflow:hidden;border:1px solid rgba(218,179,86,.36);border-radius:24px;background:rgba(12,12,11,.96);color:#f8f3e7;box-shadow:0 28px 80px rgba(0,0,0,.52);backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px);transform-origin:bottom right;transition:opacity .2s,transform .2s}.bindu-panel.hidden{display:flex!important;opacity:0;transform:translateY(12px) scale(.97);pointer-events:none}
+    .bindu-head{display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.08);background:linear-gradient(120deg,rgba(210,166,61,.14),transparent)}.bindu-head img{width:48px;height:48px;object-fit:cover;border:1px solid rgba(224,185,89,.7);border-radius:50%}.bindu-head-copy{min-width:0;flex:1}.bindu-head-copy strong{display:block;font-size:16px;color:#fff}.bindu-head-copy span{display:block;margin-top:2px;font-size:11px;color:rgba(255,255,255,.55)}.bindu-close{width:36px;height:36px;border:0;border-radius:10px;background:rgba(255,255,255,.07);color:#fff;font-size:21px;cursor:pointer}.bindu-close:hover{background:rgba(255,255,255,.12)}
+    .bindu-messages{flex:1;overflow:auto;padding:18px 14px;scroll-behavior:smooth}.bindu-message{display:flex;margin-bottom:14px}.bindu-message.user{justify-content:flex-end}.bindu-bubble{max-width:88%;padding:11px 13px;border-radius:16px;font-size:13px;line-height:1.5;white-space:pre-wrap}.bindu-message.assistant .bindu-bubble{border:1px solid rgba(255,255,255,.08);border-top-left-radius:5px;background:rgba(255,255,255,.07);color:#f6f1e6}.bindu-message.user .bindu-bubble{border-top-right-radius:5px;background:linear-gradient(135deg,#e5c36f,#b98b31);color:#111;font-weight:600}.bindu-typing{display:inline-flex;gap:4px}.bindu-typing i{width:6px;height:6px;border-radius:50%;background:#d9b254;animation:binduBounce 1s infinite alternate}.bindu-typing i:nth-child(2){animation-delay:.2s}.bindu-typing i:nth-child(3){animation-delay:.4s}@keyframes binduBounce{to{opacity:.3;transform:translateY(-4px)}}
+    .bindu-sources{display:grid;gap:7px;margin:8px 0 16px}.bindu-source{width:100%;padding:10px 11px;text-align:left;border:1px solid rgba(221,180,80,.2);border-radius:12px;background:rgba(214,171,68,.07);color:#f5ead0;cursor:pointer}.bindu-source:hover{border-color:rgba(221,180,80,.55);background:rgba(214,171,68,.12)}.bindu-source strong,.bindu-source span{display:block}.bindu-source strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}.bindu-source span{margin-top:3px;color:rgba(255,255,255,.48);font-size:10px;text-transform:uppercase;letter-spacing:.08em}
+    .bindu-starters{display:flex;gap:7px;overflow-x:auto;padding:0 14px 11px}.bindu-starters button{flex:0 0 auto;border:1px solid rgba(221,180,80,.22);border-radius:999px;padding:7px 10px;background:transparent;color:#d8bd7a;font-size:11px;cursor:pointer}.bindu-starters button:hover{background:rgba(221,180,80,.09)}.bindu-form{display:flex;align-items:flex-end;gap:8px;padding:12px;border-top:1px solid rgba(255,255,255,.08);background:#0a0a09}.bindu-form textarea{min-height:44px;max-height:110px;flex:1;resize:none;border:1px solid rgba(255,255,255,.12);border-radius:13px;padding:12px;background:rgba(255,255,255,.055);color:#fff;font:inherit;font-size:13px;outline:none}.bindu-form textarea:focus{border-color:#d7b35e;box-shadow:0 0 0 3px rgba(215,179,94,.1)}.bindu-send{width:44px;height:44px;flex:0 0 auto;border:0;border-radius:13px;background:linear-gradient(135deg,#e8ca7b,#bb8d32);color:#111;font-size:19px;cursor:pointer}.bindu-send:disabled{opacity:.5;cursor:wait}.bindu-disclaimer{padding:0 14px 10px;text-align:center;background:#0a0a09;color:rgba(255,255,255,.32);font-size:9px}
+    body.auth-locked .bindu-launcher,body.auth-locked .bindu-panel{display:none!important}@media(max-width:600px){.bindu-launcher{right:16px;bottom:16px;width:60px;height:60px}.bindu-panel{inset:12px;width:auto;height:auto;border-radius:20px}.bindu-panel.hidden{transform:translateY(14px) scale(.98)}}@media(prefers-reduced-motion:reduce){.bindu-panel,.bindu-launcher{transition:none}.bindu-typing i{animation:none}}
   </style>
   </head>
 
@@ -7259,7 +7267,30 @@
       </div>
     </div>
 
-    <script src="/static/app.js?v=28"></script>
+    <button class="bindu-launcher" id="binduLauncher" type="button" onclick="toggleBindu()" aria-label="Open Bindu assistant" aria-expanded="false">
+      <img src="/static/bindu-assistant.png" alt="" /><span class="bindu-launcher-dot" aria-hidden="true"></span>
+    </button>
+    <aside class="bindu-panel hidden" id="binduPanel" aria-label="Bindu read-only assistant" aria-hidden="true">
+      <div class="bindu-head">
+        <img src="/static/bindu-assistant.png" alt="Bindu" />
+        <div class="bindu-head-copy"><strong>Bindu</strong><span>Read-only portal assistant</span></div>
+        <button class="bindu-close" type="button" onclick="closeBindu()" aria-label="Close Bindu">&times;</button>
+      </div>
+      <div class="bindu-messages" id="binduMessages" aria-live="polite">
+        <div class="bindu-message assistant"><div class="bindu-bubble">Hi, I’m Bindu. I can find and summarise records you have permission to view. What can I help you find?</div></div>
+      </div>
+      <div class="bindu-starters" id="binduStarters">
+        <button type="button" onclick="askBinduStarter('Show urgent open maintenance requests')">Urgent maintenance</button>
+        <button type="button" onclick="askBinduStarter('Find lease renewals due soon')">Leases due soon</button>
+        <button type="button" onclick="askBinduStarter('Show outstanding compliance items')">Compliance items</button>
+      </div>
+      <form class="bindu-form" onsubmit="event.preventDefault(); askBindu();">
+        <textarea id="binduInput" maxlength="1000" rows="1" placeholder="Ask Bindu to find something…" aria-label="Message Bindu"></textarea>
+        <button class="bindu-send" id="binduSend" type="submit" aria-label="Send message">&#8593;</button>
+      </form>
+      <div class="bindu-disclaimer">Bindu can only read accessible portal records. Verify important details at the source.</div>
+    </aside>
+    <script src="/static/app.js?v=29"></script>
 
     <script>
   // Wire segmented status buttons to existing tab logic
