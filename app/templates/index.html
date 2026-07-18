@@ -5658,7 +5658,9 @@
                   <div class="rent-add-form">
                     <div class="field rent-address-field">
                       <div class="label">Property address</div>
-                      <input id="rentNewPropertyAddress" type="text" placeholder="Unit, street, suburb and postcode" />
+                      <input id="rentNewPropertySearch" type="text" list="rentPropertyOptions" placeholder="Search active properties..." autocomplete="off" />
+                      <input id="rentNewPropertyId" type="hidden" />
+                      <datalist id="rentPropertyOptions"></datalist>
                     </div>
                     <div class="field">
                       <div class="label">Payment frequency</div>
@@ -7332,23 +7334,23 @@
       </div>
     </div>
 
-    <button class="bindu-launcher" id="binduLauncher" type="button" onclick="toggleBindu()" aria-label="Open Bindu assistant" aria-expanded="false">
+    <button class="bindu-launcher" id="binduLauncher" type="button" onclick="toggleBindu()" aria-label="Open BINDU assistant" aria-expanded="false">
       <img src="/static/bindu-assistant.png" alt="" /><span class="bindu-launcher-dot" aria-hidden="true"></span>
     </button>
-    <aside class="bindu-panel hidden" id="binduPanel" aria-label="Bindu read-only assistant" aria-hidden="true">
+    <aside class="bindu-panel hidden" id="binduPanel" aria-label="BINDU read-only assistant" aria-hidden="true">
       <div class="bindu-head">
-        <img src="/static/bindu-assistant.png" alt="Bindu" />
-        <div class="bindu-head-copy"><strong>Bindu</strong><span>Read-only portal assistant</span></div>
+        <img src="/static/bindu-assistant.png" alt="BINDU" />
+        <div class="bindu-head-copy"><strong>BINDU</strong><span>Your Portal AI Agent</span></div>
         <button class="bindu-icon-btn" type="button" onclick="toggleBinduHistory()" aria-label="Conversation history" title="History">&#9776;</button>
         <button class="bindu-icon-btn" type="button" onclick="newBinduConversation()" aria-label="New conversation" title="New conversation">&#43;</button>
-        <button class="bindu-close" type="button" onclick="closeBindu()" aria-label="Close Bindu">&times;</button>
+        <button class="bindu-close" type="button" onclick="closeBindu()" aria-label="Close BINDU">&times;</button>
       </div>
-      <section class="bindu-history hidden" id="binduHistory" aria-label="Bindu conversation history">
+      <section class="bindu-history hidden" id="binduHistory" aria-label="BINDU conversation history">
         <div class="bindu-history-head"><strong>Your conversations</strong><button class="bindu-icon-btn" type="button" onclick="toggleBinduHistory(false)" aria-label="Close history">&larr;</button></div>
         <div class="bindu-history-list" id="binduHistoryList"></div>
       </section>
       <div class="bindu-messages" id="binduMessages" aria-live="polite">
-        <div class="bindu-message assistant"><div class="bindu-bubble">Hi, I’m Bindu. I can find and summarise records you have permission to view. What can I help you find?</div></div>
+        <div class="bindu-message assistant"><div class="bindu-bubble">Hi, I’m BINDU. I can find and summarise records you have permission to view. What can I help you find?</div></div>
       </div>
       <div class="bindu-starters" id="binduStarters">
         <button type="button" onclick="askBinduStarter('Show urgent open maintenance requests')">Urgent maintenance</button>
@@ -7356,10 +7358,10 @@
         <button type="button" onclick="askBinduStarter('Show outstanding compliance items')">Compliance items</button>
       </div>
       <form class="bindu-form" onsubmit="event.preventDefault(); askBindu();">
-        <textarea id="binduInput" maxlength="1000" rows="1" placeholder="Ask Bindu to find something…" aria-label="Message Bindu"></textarea>
+        <textarea id="binduInput" maxlength="1000" rows="1" placeholder="Ask BINDU to find something…" aria-label="Message BINDU"></textarea>
         <button class="bindu-send" id="binduSend" type="submit" aria-label="Send message">&#8593;</button>
       </form>
-      <div class="bindu-disclaimer">Bindu can only read accessible portal records. Verify important details at the source.</div>
+      <div class="bindu-disclaimer">BINDU can only read accessible portal records. Verify important details at the source.</div>
     </aside>
     <script src="/static/app.js?v=30"></script>
 

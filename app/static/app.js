@@ -124,7 +124,7 @@ function openBinduSource(source) {
 }
 
 function binduWelcome() {
-    return '<div class="bindu-message assistant"><div class="bindu-bubble">Hi, I’m Bindu. I can find and summarise records you have permission to view. What can I help you find?</div></div>';
+    return '<div class="bindu-message assistant"><div class="bindu-bubble">Hi, I’m BINDU. I can find and summarise records you have permission to view. What can I help you find?</div></div>';
 }
 
 function newBinduConversation() {
@@ -164,7 +164,7 @@ async function loadBinduHistory(force = false) {
     binduHistoryLoaded = true;
     if (!list) return;
     if (!conversations.length) {
-        list.innerHTML = '<div class="bindu-empty">No saved conversations yet.<br>Start a new chat with Bindu.</div>';
+        list.innerHTML = '<div class="bindu-empty">No saved conversations yet.<br>Start a new chat with BINDU.</div>';
         return;
     }
     list.innerHTML = "";
@@ -204,7 +204,7 @@ async function openBinduConversation(conversationId) {
 }
 
 async function deleteBinduConversation(conversationId) {
-    if (!window.confirm("Delete this Bindu conversation? This cannot be undone.")) return;
+    if (!window.confirm("Delete this BINDU conversation? This cannot be undone.")) return;
     const response = await apiFetch(`/bindu/conversations/${Number(conversationId)}`, { method: "DELETE" });
     if (!response.ok) throw new Error(await extractErrorMessage(response));
     if (Number(binduCurrentConversationId) === Number(conversationId)) newBinduConversation();
@@ -3111,6 +3111,7 @@ function switchDashboardTab(tab) {
 
     updateSyncContextUI();
     if (currentDashboardTab === "rent" && !rentLoadedOnce) {
+        refreshPropertyOptions();
         loadActiveRentView();
     }
     if (currentDashboardTab === "lease_renewals" && !leaseRenewalsLoadedOnce) {
@@ -4304,17 +4305,19 @@ function toggleRentDueDay() {
 }
 
 async function addRentTrackedProperty() {
-    const addressEl = document.getElementById("rentNewPropertyAddress");
+    const propertySearchEl = document.getElementById("rentNewPropertySearch");
+    const propertyIdEl = document.getElementById("rentNewPropertyId");
     const frequencyEl = document.getElementById("rentNewFrequency");
     const startEl = document.getElementById("rentNewTrackingStart");
     const dueDayEl = document.getElementById("rentNewDueDay");
     const meta = document.getElementById("rentAddPropertyMeta");
     const button = document.getElementById("rentAddPropertyBtn");
-    const address = String(addressEl?.value || "").trim();
+    const selectedProperty = resolvePropertySearchValue(propertySearchEl?.value || "");
+    const propertyId = Number(selectedProperty?.id || propertyIdEl?.value || 0);
     const trackingStart = String(startEl?.value || "").trim();
-    if (address.length < 5) {
-        if (meta) meta.textContent = "Enter the full property address.";
-        addressEl?.focus();
+    if (!propertyId) {
+        if (meta) meta.textContent = "Select a property from the property database list.";
+        propertySearchEl?.focus();
         return;
     }
     if (!trackingStart) {
@@ -4324,7 +4327,7 @@ async function addRentTrackedProperty() {
     }
 
     const payload = {
-        property_address: address,
+        property_id: propertyId,
         frequency: frequencyEl?.value || "MONTHLY",
         tracking_start: trackingStart,
     };
@@ -4345,7 +4348,8 @@ async function addRentTrackedProperty() {
     }
     const result = await response.json();
     if (meta) meta.textContent = `${result.property_address} added with ${result.created_periods} editable tracking periods.`;
-    if (addressEl) addressEl.value = "";
+    if (propertySearchEl) propertySearchEl.value = "";
+    if (propertyIdEl) propertyIdEl.value = "";
     if (dueDayEl) dueDayEl.value = "";
     currentRentPage = 1;
     const startDate = new Date(`${trackingStart}T00:00:00`);
@@ -5419,6 +5423,9 @@ async function refreshPropertyOptions() {
     const landlordReportSearch = document.getElementById("landlordReportPropertySearch");
     const landlordReportHidden = document.getElementById("landlordReportPropertyId");
     const landlordReportList = document.getElementById("landlordReportPropertyOptions");
+    const rentSearch = document.getElementById("rentNewPropertySearch");
+    const rentHidden = document.getElementById("rentNewPropertyId");
+    const rentList = document.getElementById("rentPropertyOptions");
     try {
         const r = await apiFetch("/properties/options");
         if (!r.ok) {
@@ -5426,11 +5433,13 @@ async function refreshPropertyOptions() {
             if (maintenanceList) maintenanceList.innerHTML = "";
             if (leaseList) leaseList.innerHTML = "";
             if (landlordReportList) landlordReportList.innerHTML = "";
+            if (rentList) rentList.innerHTML = "";
             renderAddressSuggestionOptions();
             if (hidden) hidden.value = "";
             if (maintenanceHidden) maintenanceHidden.value = "";
             if (leaseHidden) leaseHidden.value = "";
             if (landlordReportHidden) landlordReportHidden.value = "";
+            if (rentHidden) rentHidden.value = "";
             return;
         }
         const data = await r.json();
@@ -5455,6 +5464,7 @@ async function refreshPropertyOptions() {
         if (maintenanceList) maintenanceList.innerHTML = optionsHtml;
         if (leaseList) leaseList.innerHTML = optionsHtml;
         if (landlordReportList) landlordReportList.innerHTML = optionsHtml;
+        if (rentList) rentList.innerHTML = optionsHtml;
         renderAddressSuggestionOptions();
         if (search && hidden) {
             const match = resolvePropertySearchValue(search.value);
@@ -5471,6 +5481,10 @@ async function refreshPropertyOptions() {
         if (landlordReportSearch && landlordReportHidden) {
             const match = resolvePropertySearchValue(landlordReportSearch.value);
             landlordReportHidden.value = match ? String(match.id) : "";
+        }
+        if (rentSearch && rentHidden) {
+            const match = resolvePropertySearchValue(rentSearch.value);
+            rentHidden.value = match ? String(match.id) : "";
         }
     } catch {
         if (complianceList) complianceList.innerHTML = "";

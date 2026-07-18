@@ -182,7 +182,7 @@ def _grounded_answer(question: str, sources: list[dict[str, Any]], searched: lis
             client,
             model=settings.OPENAI_MODEL,
             messages=[
-                {"role": "system", "content": "You are Bindu, a concise and friendly read-only assistant for a property management portal. Answer only from the supplied records. Never claim to change, send, assign, update, or delete anything. If evidence is incomplete, say so. Mention record titles naturally and keep the answer under 180 words."},
+                {"role": "system", "content": "You are BINDU, a concise and friendly read-only assistant for a property management portal. Answer only from the supplied records. Never claim to change, send, assign, update, or delete anything. If evidence is incomplete, say so. Mention record titles naturally and keep the answer under 180 words."},
                 {"role": "user", "content": f"Recent conversation:\n{recent or 'None'}\n\nQuestion: {question}\n\nAccessible records:\n{evidence}"},
             ],
             temperature=0.1,

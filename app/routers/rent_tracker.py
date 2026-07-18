@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from app.authz import get_current_user
 from app.db import get_db
 from app.deps import get_current_mailbox
-from app.models import RentDueTracker, RentTrackStatus, User
+from app.models import ManagedProperty, RentDueTracker, RentTrackStatus, User
 from app.schemas import RentDueItemOut, RentDueListOut
 
 router = APIRouter()
@@ -48,7 +48,7 @@ class RentItemUpdateIn(BaseModel):
 
 
 class RentPropertyCreateIn(BaseModel):
-    property_address: str
+    property_id: int
     frequency: str = "MONTHLY"
     tracking_start: date
     due_day: int | None = None
@@ -422,9 +422,30 @@ def create_tracked_property(
     db: Session = Depends(get_db),
     _user: User = Depends(get_current_user),
 ):
-    address = re.sub(r"\s+", " ", payload.property_address.strip())
-    if len(address) < 5:
-        raise HTTPException(status_code=400, detail="Enter a valid property address.")
+    property_row = (
+        db.query(ManagedProperty)
+        .filter(ManagedProperty.mailbox == mailbox)
+        .filter(ManagedProperty.id == payload.property_id)
+        .filter(ManagedProperty.is_active == True)
+        .first()
+    )
+    if not property_row:
+        raise HTTPException(status_code=404, detail="Select an active property from the property database.")
+    address = re.sub(
+        r"\s+",
+        " ",
+        ", ".join(
+            part.strip()
+            for part in [
+                property_row.property_address,
+                property_row.address_line_2,
+                property_row.suburb,
+                property_row.state_code,
+                property_row.postcode,
+            ]
+            if part and part.strip()
+        ),
+    )
 
     frequency = payload.frequency.strip().upper()
     if frequency not in {"MONTHLY", "FORTNIGHTLY", "WEEKLY"}:
