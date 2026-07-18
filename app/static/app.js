@@ -46,8 +46,8 @@ function setupLoginMotion() {
         const y = Math.max(0, Math.min(100, ((event.clientY - rect.top) / rect.height) * 100));
         screen.style.setProperty("--pointer-x", `${x}%`);
         screen.style.setProperty("--pointer-y", `${y}%`);
-        screen.style.setProperty("--orb-x", `${(x - 50) * 0.18}px`);
-        screen.style.setProperty("--orb-y", `${(y - 50) * 0.18}px`);
+        screen.style.setProperty("--orb-x", `${(x - 50) * 0.35}px`);
+        screen.style.setProperty("--orb-y", `${(y - 50) * 0.35}px`);
     }, { passive: true });
 }
 
