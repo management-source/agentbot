@@ -2871,146 +2871,38 @@
       .system-user-actions{grid-template-columns:1fr}
     }
 
-    /* Team directory */
-    .team-workspace{
-      display:flex;
-      flex-direction:column;
-      gap:16px;
-    }
-    .team-toolbar{
-      display:flex;
-      justify-content:space-between;
-      gap:12px;
-      align-items:center;
-      padding:14px 16px;
-      border:1px solid #dbe4ef;
-      border-radius:20px;
-      background:#fff;
-      box-shadow:0 10px 28px rgba(15,23,42,.055);
-    }
+    /* Team directory — layered liquid-glass cards */
+    .team-workspace{display:flex;flex-direction:column;gap:18px;position:relative}
+    .team-toolbar{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:14px 16px;border:1px solid rgba(255,255,255,.82);border-radius:22px;background:rgba(255,255,255,.58);-webkit-backdrop-filter:blur(24px) saturate(165%);backdrop-filter:blur(24px) saturate(165%);box-shadow:0 14px 38px rgba(42,50,74,.08),inset 0 1px 0 rgba(255,255,255,.92)}
     .team-toolbar strong{display:block;color:#101828;font-size:16px}
     .team-toolbar span{display:block;margin-top:3px;color:#667085;font-size:13px}
-    .team-grid{
-      display:grid;
-      grid-template-columns:repeat(3, minmax(0, 1fr));
-      gap:14px;
-    }
-    .team-card{
-      position:relative;
-      overflow:hidden;
-      padding:18px;
-      border:1px solid #dbe4ef;
-      border-radius:24px;
-      background:
-        radial-gradient(circle at top right, rgba(201,162,70,.12), transparent 34%),
-        #fff;
-      box-shadow:0 12px 30px rgba(15,23,42,.07);
-    }
-    .team-card::after{
-      content:"";
-      position:absolute;
-      right:-60px;
-      top:-80px;
-      width:180px;
-      height:180px;
-      border-radius:999px;
-      border:1px solid rgba(201,162,70,.16);
-      pointer-events:none;
-    }
-    .team-card-top{
-      display:flex;
-      align-items:center;
-      gap:14px;
-      min-width:0;
-    }
-    .team-avatar{
-      width:72px;
-      height:72px;
-      border-radius:24px;
-      object-fit:cover;
-      border:1px solid #dbe4ef;
-      background:#0f172a;
-      color:#f9e7a7;
-      flex:0 0 auto;
-      box-shadow:0 10px 22px rgba(15,23,42,.12);
-    }
-    .team-card-identity{min-width:0}
-    .team-card-identity h3{
-      margin:0;
-      color:#101828;
-      font-size:19px;
-      line-height:1.15;
-      letter-spacing:-.03em;
-    }
-    .team-role-line{
-      display:flex;
-      flex-wrap:wrap;
-      gap:6px;
-      margin-top:8px;
-    }
-    .team-role,
-    .team-admin-pill{
-      display:inline-flex;
-      align-items:center;
-      min-height:28px;
-      padding:6px 9px;
-      border-radius:999px;
-      border:1px solid #dbe4ef;
-      background:#f8fafc;
-      color:#344054;
-      font-size:12px;
-      font-weight:850;
-    }
-    .team-admin-pill{
-      border-color:rgba(201,162,70,.34);
-      background:rgba(201,162,70,.12);
-      color:#7a5a12;
-    }
-    .team-contact-list{
-      display:grid;
-      gap:10px;
-      margin-top:18px;
-    }
-    .team-contact-list div{
-      padding:12px;
-      border:1px solid #edf1f6;
-      border-radius:16px;
-      background:rgba(248,250,252,.82);
-    }
-    .team-contact-list span{
-      display:block;
-      color:#667085;
-      font-size:11px;
-      font-weight:900;
-      text-transform:uppercase;
-      letter-spacing:.08em;
-    }
-    .team-contact-list a,
-    .team-muted{
-      display:block;
-      margin-top:4px;
-      color:#101828;
-      font-size:13px;
-      font-weight:800;
-      text-decoration:none;
-      word-break:break-word;
-    }
-    .team-contact-list a:hover{color:#8f6f1d}
-    .team-muted{color:#98a2b3}
-    .team-card-foot{
-      margin-top:14px;
-      padding-top:12px;
-      border-top:1px solid #edf1f6;
-      color:#667085;
-      font-size:12px;
-    }
-    @media (max-width: 1100px){
-      .team-grid{grid-template-columns:repeat(2, minmax(0, 1fr))}
-    }
-    @media (max-width: 700px){
-      .team-toolbar{align-items:flex-start;flex-direction:column}
-      .team-grid{grid-template-columns:1fr}
-    }
+    .team-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;padding:4px 2px 12px}
+    .team-card{--team-hue:215;position:relative;isolation:isolate;overflow:hidden;min-height:350px;padding:20px;border:1px solid rgba(255,255,255,.82);border-radius:30px;background:linear-gradient(145deg,rgba(255,255,255,.76),rgba(255,255,255,.42));-webkit-backdrop-filter:blur(28px) saturate(180%);backdrop-filter:blur(28px) saturate(180%);box-shadow:0 20px 48px rgba(39,48,74,.12),inset 0 1px 1px rgba(255,255,255,.95);transition:transform .35s cubic-bezier(.2,.8,.2,1),box-shadow .35s ease,border-color .35s ease}
+    .team-card::before{content:"";position:absolute;z-index:-2;inset:-35% -30% auto 16%;height:260px;border-radius:50%;background:radial-gradient(circle,hsla(var(--team-hue),88%,72%,.42),transparent 68%);filter:blur(8px);pointer-events:none}
+    .team-card::after{content:"";position:absolute;z-index:-1;inset:0;border-radius:inherit;background:linear-gradient(120deg,rgba(255,255,255,.48),transparent 36%,rgba(255,255,255,.12) 68%,rgba(255,255,255,.38));pointer-events:none}
+    .team-card:nth-child(3n + 2){--team-hue:275}
+    .team-card:nth-child(3n + 3){--team-hue:165}
+    .team-card:hover{transform:translateY(-7px) scale(1.01);border-color:rgba(255,255,255,.98);box-shadow:0 28px 62px rgba(39,48,74,.17),inset 0 1px 1px #fff}
+    .team-card-top{display:flex;align-items:flex-start;gap:16px;min-width:0}
+    .team-avatar{width:84px;height:84px;border-radius:27px;object-fit:cover;border:2px solid rgba(255,255,255,.88);background:#0f172a;color:#f9e7a7;flex:0 0 auto;box-shadow:0 14px 30px rgba(37,47,73,.18),inset 0 1px 0 rgba(255,255,255,.4)}
+    .team-card-identity{min-width:0;padding-top:3px}
+    .team-card-identity h3{margin:0;color:#101828;font-size:20px;line-height:1.18;letter-spacing:-.035em}
+    .team-role-line{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
+    .team-role,.team-admin-pill{display:inline-flex;align-items:center;min-height:28px;padding:6px 9px;border-radius:999px;border:1px solid rgba(255,255,255,.72);background:rgba(255,255,255,.54);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);color:#344054;font-size:12px;font-weight:850}
+    .team-admin-pill{border-color:rgba(201,162,70,.34);background:rgba(249,231,167,.34);color:#7a5a12}
+    .team-contact-list{display:grid;gap:10px;margin-top:24px}
+    .team-contact-list div{position:relative;padding:12px 14px 12px 46px;border:1px solid rgba(255,255,255,.72);border-radius:18px;background:rgba(255,255,255,.44);box-shadow:inset 0 1px 0 rgba(255,255,255,.7);transition:background .2s ease,transform .2s ease}
+    .team-contact-list div:hover{background:rgba(255,255,255,.68);transform:translateX(2px)}
+    .team-contact-icon{position:absolute;left:12px;top:50%;width:25px;height:25px;transform:translateY(-50%);display:grid;place-items:center;border-radius:9px;color:hsl(var(--team-hue),55%,38%);background:hsla(var(--team-hue),80%,75%,.24)}
+    .team-contact-icon svg{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+    .team-contact-list span{display:block;color:#667085;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.1em}
+    .team-contact-list a,.team-muted{display:block;margin-top:4px;color:#101828;font-size:13px;font-weight:800;text-decoration:none;word-break:break-word}
+    .team-contact-list a:hover{color:#8f6f1d}.team-muted{color:#98a2b3}
+    .team-card-foot{display:flex;align-items:center;gap:8px;margin-top:16px;padding-top:14px;border-top:1px solid rgba(255,255,255,.62);color:#667085;font-size:12px}
+    .team-status-dot{width:7px;height:7px;flex:0 0 auto;border-radius:50%;background:#30d158;box-shadow:0 0 0 4px rgba(48,209,88,.12)}
+    @media (max-width:1100px){.team-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+    @media (max-width:700px){.team-toolbar{align-items:flex-start;flex-direction:column}.team-grid{grid-template-columns:1fr}.team-card{min-height:0}}
+    @media (prefers-reduced-motion:reduce){.team-card,.team-contact-list div{transition:none}.team-card:hover{transform:none}}
 
     /* Activity log */
     .activity-workspace{

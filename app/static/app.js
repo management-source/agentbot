@@ -2461,15 +2461,18 @@ function renderTeamDirectory(users) {
                 </div>
                 <div class="team-contact-list">
                     <div>
+                        <i class="team-contact-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 6.5 12 13l8-6.5"/><rect x="3" y="5" width="18" height="14" rx="3"/></svg></i>
                         <span>Email</span>
                         ${teamContactLink(u, "email")}
                     </div>
                     <div>
+                        <i class="team-contact-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M8.2 3.5 10.6 8 8.8 9.8a15.2 15.2 0 0 0 5.4 5.4l1.8-1.8 4.5 2.4-.5 3.1a2 2 0 0 1-2 1.6C10 20.5 3.5 14 3.5 6a2 2 0 0 1 1.6-2Z"/></svg></i>
                         <span>Phone</span>
                         ${teamContactLink(u, "phone")}
                     </div>
                 </div>
                 <div class="team-card-foot">
+                    <i class="team-status-dot" aria-hidden="true"></i>
                     <span>${u.last_login_at ? `Last login ${escapeHtml(formatUserDate(u.last_login_at))}` : "Login not recorded yet"}</span>
                 </div>
             </article>
