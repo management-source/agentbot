@@ -5791,30 +5791,12 @@
                       </section>
 
                       <section class="landlord-report-card" aria-labelledby="landlordReportCustomDetailsHeading">
-                        <div class="landlord-report-card-head"><div><h3 id="landlordReportCustomDetailsHeading">Customise PDF details</h3><p>Enter only the values you want to replace in this report. Blank fields keep the live value or “Not recorded”.</p></div></div>
-                        <div class="landlord-report-form-grid" id="landlordReportDetailOverrides">
-                          <div class="field wide"><label class="label">Property address (including cover and headers)</label><input data-report-detail="Property address" type="text" /></div>
-                          <div class="field"><label class="label">Executive tenancy status</label><input data-report-detail="Tenancy" type="text" /></div>
-                          <div class="field"><label class="label">Executive rent status</label><input data-report-detail="Rent" type="text" /></div>
-                          <div class="field"><label class="label">Executive maintenance status</label><input data-report-detail="Maintenance" type="text" /></div>
-                          <div class="field"><label class="label">Executive compliance status</label><input data-report-detail="Compliance" type="text" /></div>
-                          <div class="field"><label class="label">Executive lease status</label><input data-report-detail="Lease" type="text" /></div>
-                          <div class="field"><label class="label">Tenant names</label><input data-report-detail="Tenant names" type="text" /></div>
-                          <div class="field"><label class="label">Lease type</label><input data-report-detail="Lease type" type="text" /></div>
-                          <div class="field"><label class="label">Lease commencement</label><input data-report-detail="Lease commencement" type="text" /></div>
-                          <div class="field"><label class="label">Lease expiry</label><input data-report-detail="Lease expiry" type="text" /></div>
-                          <div class="field"><label class="label">Current weekly rent</label><input data-report-detail="Current weekly rent" type="text" /></div>
-                          <div class="field"><label class="label">Bond amount</label><input data-report-detail="Bond amount" type="text" /></div>
-                          <div class="field"><label class="label">Rent paid-to date</label><input data-report-detail="Rent paid-to date" type="text" /></div>
-                          <div class="field"><label class="label">Occupancy status</label><input data-report-detail="Occupancy status" type="text" /></div>
-                          <div class="field"><label class="label">Property type</label><input data-report-detail="Property type" type="text" /></div>
-                          <div class="field"><label class="label">Rent received during period</label><input data-report-detail="Rent received during period" type="text" /></div>
-                          <div class="field"><label class="label">Owner disbursements</label><input data-report-detail="Owner disbursements" type="text" /></div>
-                          <div class="field"><label class="label">Management fees</label><input data-report-detail="Management fees" type="text" /></div>
-                          <div class="field"><label class="label">Maintenance expenses</label><input data-report-detail="Maintenance expenses" type="text" /></div>
-                          <div class="field"><label class="label">Current rent balance</label><input data-report-detail="Current rent balance" type="text" /></div>
-                          <div class="field"><label class="label">Outstanding invoices</label><input data-report-detail="Outstanding invoices" type="text" /></div>
+                        <div class="landlord-report-card-head"><div><h3 id="landlordReportCustomDetailsHeading">Customise PDF details</h3><p>Add only the fields needed for this report. Unavailable fields are omitted unless you add a value here.</p></div></div>
+                        <div class="row" style="align-items:flex-end;margin-bottom:12px">
+                          <div class="field" style="flex:1"><label class="label" for="landlordReportDetailPicker">Field to add</label><select id="landlordReportDetailPicker"></select></div>
+                          <button class="btn primary" type="button" onclick="addLandlordReportDetail()">Add Field</button>
                         </div>
+                        <div class="landlord-report-form-grid" id="landlordReportDetailOverrides"><div class="landlord-report-empty wide">No custom PDF fields added.</div></div>
                       </section>
 
                       <section class="landlord-report-card" aria-labelledby="landlordReportActivitiesHeading">

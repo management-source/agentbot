@@ -1269,6 +1269,18 @@ def assemble_report(
                         if label in detail_overrides:
                             item["value"] = detail_overrides[label]
 
+    # Do not clutter owner reports with unavailable placeholders. A field is
+    # restored automatically when staff choose it and provide an override.
+    unavailable_prefixes = ("not recorded", "not available")
+    for section in sections.values():
+        for block in section["blocks"]:
+            if block.get("type") not in {"key_values", "status_cards"}:
+                continue
+            block["items"] = [
+                item for item in block.get("items", [])
+                if not _clean(item.get("value")).lower().startswith(unavailable_prefixes)
+            ]
+
     section_notes = _value(options, "section_notes", {}) or {}
     if isinstance(section_notes, Mapping):
         for section_id, note in section_notes.items():

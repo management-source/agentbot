@@ -468,6 +468,15 @@ let landlordReportEditingActivityId = "";
 let landlordReportSelectedPhotoIds = new Set();
 let landlordReportOnlyPhotos = [];
 let landlordReportPendingPhotoIds = [];
+let landlordReportDetailValues = {};
+const LANDLORD_REPORT_DETAIL_FIELDS = [
+    "Property address", "Tenancy", "Rent", "Maintenance", "Compliance", "Lease",
+    "Tenant names", "Lease type", "Lease commencement", "Lease expiry", "Current weekly rent",
+    "Bond amount", "Rent paid-to date", "Occupancy status", "Property type",
+    "Rent received during period", "Recorded partial payments", "Owner disbursements",
+    "Management fees", "Maintenance expenses", "Other expenses", "Current rent balance",
+    "Outstanding invoices", "Net owner summary"
+];
 let landlordReportPreviewTimer = null;
 let landlordReportContextTimer = null;
 let landlordReportContextRequest = 0;
@@ -5598,9 +5607,7 @@ function bindLandlordReportEvents() {
         element?.addEventListener("input", scheduleLandlordReportPreview);
         element?.addEventListener("change", scheduleLandlordReportPreview);
     });
-    document.querySelectorAll("#landlordReportDetailOverrides [data-report-detail]").forEach((element) => {
-        element.addEventListener("input", scheduleLandlordReportPreview);
-    });
+    renderLandlordReportDetailPicker();
 }
 
 async function initLandlordReportBuilder() {
@@ -5632,6 +5639,7 @@ function resetLandlordReportBuilder() {
     landlordReportSelectedPhotoIds = new Set();
     landlordReportOnlyPhotos = [];
     landlordReportPendingPhotoIds = [];
+    landlordReportDetailValues = {};
     landlordReportContextRequest += 1;
     landlordReportPreviewRequest += 1;
     if (landlordReportContextTimer) clearTimeout(landlordReportContextTimer);
@@ -5650,7 +5658,7 @@ function resetLandlordReportBuilder() {
         const element = document.getElementById(id);
         if (element) element.value = "";
     });
-    document.querySelectorAll("#landlordReportDetailOverrides [data-report-detail]").forEach((element) => { element.value = ""; });
+    renderLandlordReportDetailPicker();
     const manager = document.getElementById("landlordReportManager");
     if (manager) manager.innerHTML = '<option value="">Select property manager</option>';
     const sections = document.getElementById("landlordReportSectionList");
@@ -5861,6 +5869,42 @@ function landlordReportStatusLabel(value) {
     return labels[value] || String(value || "In progress").replaceAll("_", " ");
 }
 
+function renderLandlordReportDetailPicker() {
+    const picker = document.getElementById("landlordReportDetailPicker");
+    const container = document.getElementById("landlordReportDetailOverrides");
+    const selected = Object.keys(landlordReportDetailValues);
+    if (picker) {
+        const available = LANDLORD_REPORT_DETAIL_FIELDS.filter((label) => !selected.includes(label));
+        picker.innerHTML = available.length
+            ? available.map((label) => `<option value="${escapeHtml(label)}">${escapeHtml(label)}</option>`).join("")
+            : '<option value="">All available fields added</option>';
+        picker.disabled = !available.length;
+    }
+    if (!container) return;
+    container.innerHTML = selected.length ? selected.map((label) => `<div class="field"><label class="label">${escapeHtml(label)}</label><div class="row"><input style="flex:1" data-report-detail="${escapeHtml(label)}" value="${escapeHtml(landlordReportDetailValues[label] || "")}" oninput="updateLandlordReportDetail(this)" /><button class="btn danger" type="button" onclick="removeLandlordReportDetail('${escapeHtml(label)}')">Remove</button></div></div>`).join("") : '<div class="landlord-report-empty wide">No custom PDF fields added.</div>';
+}
+
+function addLandlordReportDetail() {
+    const label = document.getElementById("landlordReportDetailPicker")?.value || "";
+    if (!label) return;
+    landlordReportDetailValues[label] = "";
+    renderLandlordReportDetailPicker();
+    document.querySelector(`[data-report-detail="${CSS.escape(label)}"]`)?.focus();
+}
+
+function updateLandlordReportDetail(input) {
+    const label = input?.dataset?.reportDetail;
+    if (!label) return;
+    landlordReportDetailValues[label] = input.value || "";
+    scheduleLandlordReportPreview();
+}
+
+function removeLandlordReportDetail(label) {
+    delete landlordReportDetailValues[label];
+    renderLandlordReportDetailPicker();
+    scheduleLandlordReportPreview();
+}
+
 function renderLandlordReportActivities() {
     const container = document.getElementById("landlordReportActivityList");
     if (!container) return;
@@ -6026,7 +6070,8 @@ async function loadLandlordReportContext() {
             landlordReportSelectedSections = new Set(context.default_sections || []);
             landlordReportOnlyPhotos = [];
             landlordReportPendingPhotoIds = [];
-            document.querySelectorAll("#landlordReportDetailOverrides [data-report-detail]").forEach((element) => { element.value = ""; });
+            landlordReportDetailValues = {};
+            renderLandlordReportDetailPicker();
             resetLandlordReportActivityForm();
         }
         const landlord = document.getElementById("landlordReportLandlordName");
@@ -6071,8 +6116,8 @@ function buildLandlordReportPayload(showErrors = true) {
         return null;
     }
     const selectedNotes = Object.fromEntries(Object.entries(landlordReportSectionNotes).filter(([sectionId, value]) => selectedSections.includes(sectionId) && String(value || "").trim()));
-    const detailOverrides = Object.fromEntries(Array.from(document.querySelectorAll("#landlordReportDetailOverrides [data-report-detail]"))
-        .map((input) => [input.dataset.reportDetail, String(input.value || "").trim()]).filter(([, value]) => value));
+    const detailOverrides = Object.fromEntries(Object.entries(landlordReportDetailValues)
+        .map(([label, value]) => [label, String(value || "").trim()]).filter(([, value]) => value));
     landlordReportPhotoSelectionChangedSilently();
     return {
         property_id: propertyId,

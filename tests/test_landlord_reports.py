@@ -487,7 +487,7 @@ def test_missing_data_financial_toggle_and_safe_values(db):
         additional_notes=None,
     )
     text = json.dumps(report, default=str)
-    assert "Not recorded" in text
+    assert "Not recorded" not in text
     assert "Excluded" in text
     assert "undefined" not in text
     assert "NaN" not in text
@@ -542,6 +542,23 @@ def test_report_api_preview_pdf_and_permission_dependency(db, seeded):
     preview_response = client.post("/landlord-reports/preview", json=payload)
     assert preview_response.status_code == 200
     assert "Monthly Property Report" in preview_response.json()["html"]
+
+    custom_payload = _options(
+        seeded,
+        ["property_tenancy"],
+        detail_overrides={"Bond amount": "$2,607.14"},
+        intro_message=None,
+        overall_summary=None,
+        additional_notes=None,
+    )
+    for key in ("start_date", "end_date", "prepared_date"):
+        custom_payload[key] = custom_payload[key].isoformat()
+    custom_preview = client.post("/landlord-reports/preview", json=custom_payload)
+    assert custom_preview.status_code == 200
+    assert "$2,607.14" in custom_preview.json()["html"]
+    assert "LEASE COMMENCEMENT" not in custom_preview.json()["html"]
+    assert "Not recorded" not in custom_preview.json()["html"]
+
     pdf_response = client.post("/landlord-reports/pdf", json=payload)
     assert pdf_response.status_code == 200
     assert pdf_response.headers["content-type"] == "application/pdf"
