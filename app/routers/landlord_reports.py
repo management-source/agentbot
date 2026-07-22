@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import json
 import logging
+import zipfile
 from datetime import date as Date, datetime
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session
@@ -14,6 +15,8 @@ from app.authz import has_page_access, require_page_access
 from app.db import get_db
 from app.deps import get_current_mailbox
 from app.models import AppState, User
+from app.models import ManagedProperty
+from app.services.landlord_invoice_import import address_match_score, parse_invoice_csv, parse_invoice_workbook
 from app.services.landlord_report_pdf import generate_landlord_report_pdf
 from app.services.landlord_reports import (
     ALL_SECTION_IDS,
@@ -31,6 +34,47 @@ from app.services.landlord_reports import (
 
 router = APIRouter(prefix="/landlord-reports", tags=["landlord-reports"])
 logger = logging.getLogger(__name__)
+
+
+@router.post("/invoice-workbook")
+async def parse_invoice_workbook_for_reports(
+    file: UploadFile = File(...),
+    mailbox: str = Depends(get_current_mailbox),
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_page_access("landlord_reports")),
+):
+    filename = (file.filename or "").lower()
+    if not filename.endswith((".xlsx", ".csv")):
+        raise HTTPException(status_code=400, detail="Please upload the CRM invoice export as a .csv or .xlsx file.")
+    raw = await file.read(15_000_001)
+    if not raw:
+        raise HTTPException(status_code=400, detail="Uploaded workbook is empty.")
+    if len(raw) > 15_000_000:
+        raise HTTPException(status_code=413, detail="The invoice workbook must be no larger than 15MB.")
+    try:
+        invoices = parse_invoice_csv(raw) if filename.endswith(".csv") else parse_invoice_workbook(raw)
+    except zipfile.BadZipFile as exc:
+        raise HTTPException(status_code=400, detail="The uploaded file is not a valid Excel workbook.") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Invoice workbook could not be parsed: {exc}") from exc
+    if not invoices:
+        raise HTTPException(status_code=400, detail="No invoice rows were found. Use the CRM Outgoing invoices Report CSV or a workbook with property address and invoice fields.")
+    properties = db.query(ManagedProperty).filter(ManagedProperty.mailbox == mailbox, ManagedProperty.is_active == True).all()
+    property_labels = [(prop, " ".join(filter(None, [prop.property_address, prop.address_line_2, prop.suburb, prop.state_code, prop.postcode]))) for prop in properties]
+    matched = 0
+    for invoice in invoices:
+        ranked = sorted(((address_match_score(invoice["property_address"], label), prop) for prop, label in property_labels), key=lambda value: value[0], reverse=True)
+        score, prop = ranked[0] if ranked else (0.0, None)
+        if prop is not None and score >= 0.58:
+            invoice["property_id"] = prop.id
+            invoice["matched_property_address"] = prop.property_address
+            invoice["match_score"] = round(score, 3)
+            matched += 1
+        else:
+            invoice["property_id"] = None
+            invoice["matched_property_address"] = None
+            invoice["match_score"] = round(score, 3)
+    return {"filename": file.filename, "rows": invoices, "row_count": len(invoices), "matched_count": matched, "unmatched_count": len(invoices) - matched, "stored": False}
 
 
 ReportActivityStatus = Literal["completed", "in_progress", "awaiting_landlord_approval", "scheduled"]
@@ -58,6 +102,20 @@ class ReportOnlyPhoto(BaseModel):
     data_url: str = Field(max_length=10_100_000)
 
 
+class ReportInvoiceRow(BaseModel):
+    property_id: int = Field(gt=0)
+    invoice_date: Date | None = None
+    due_date: Date | None = None
+    paid_date: Date | None = None
+    invoice_number: str | None = Field(default=None, max_length=160)
+    description: str | None = Field(default=None, max_length=1000)
+    supplier: str | None = Field(default=None, max_length=300)
+    amount: float | None = Field(default=None, allow_inf_nan=False)
+    status: str | None = Field(default=None, max_length=160)
+    category: str | None = Field(default=None, max_length=160)
+    gst: float | None = Field(default=None, allow_inf_nan=False)
+
+
 class LandlordReportRequest(BaseModel):
     property_id: int = Field(gt=0)
     start_date: Date
@@ -79,6 +137,7 @@ class LandlordReportRequest(BaseModel):
     hero_photo_id: int | None = Field(default=None, gt=0)
     detail_overrides: dict[str, str] = Field(default_factory=dict)
     report_only_photos: list[ReportOnlyPhoto] = Field(default_factory=list, max_length=40)
+    invoice_rows: list[ReportInvoiceRow] = Field(default_factory=list, max_length=5000)
 
     @model_validator(mode="after")
     def validate_report(self):

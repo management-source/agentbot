@@ -863,6 +863,32 @@ def assemble_report(
     )
 
     partial_total = sum(float(item.partial_amount or 0) for item in rent_rows if item.partial_amount is not None)
+    invoice_rows: list[dict[str, Any]] = []
+    for raw in _value(options, "invoice_rows", []) or []:
+        invoice_date = _value(raw, "invoice_date")
+        if int(_value(raw, "property_id") or 0) != prop.id or not isinstance(invoice_date, date) or not start_date <= invoice_date <= end_date:
+            continue
+        amount = _value(raw, "amount")
+        invoice_rows.append({
+            "invoice_date": format_date_au(invoice_date),
+            "invoice_number": _clean(_value(raw, "invoice_number"), 160) or "—",
+            "supplier": _clean(_value(raw, "supplier"), 300) or "—",
+            "category": _clean(_value(raw, "category"), 160) or "—",
+            "description": _clean(_value(raw, "description"), 1000) or "—",
+            "amount": format_currency_aud(amount),
+            "amount_raw": float(amount) if amount is not None else 0.0,
+            "gst": format_currency_aud(_value(raw, "gst")),
+            "status": _clean(_value(raw, "status"), 160) or "—",
+        })
+    invoice_total = sum(item["amount_raw"] for item in invoice_rows)
+    outstanding_total = sum(
+        item["amount_raw"] for item in invoice_rows
+        if not (
+            ("paid" in item["status"].lower() and "unpaid" not in item["status"].lower() and "not paid" not in item["status"].lower())
+            or "processed" in item["status"].lower()
+            or "complete" in item["status"].lower()
+        )
+    )
     financial_items = [
         {"label": "Rent received during period", "value": "Not recorded in current system"},
         {"label": "Recorded partial payments", "value": format_currency_aud(partial_total) if partial_total else "Not recorded"},
@@ -871,7 +897,8 @@ def assemble_report(
         {"label": "Maintenance expenses", "value": "Not recorded (quotes are shown separately)"},
         {"label": "Other expenses", "value": "Not recorded in current system"},
         {"label": "Current rent balance", "value": "Not recorded in current system"},
-        {"label": "Outstanding invoices", "value": "Not recorded in current system"},
+        {"label": "Invoices during period", "value": f"{len(invoice_rows)} invoice{'s' if len(invoice_rows) != 1 else ''} — {format_currency_aud(invoice_total)}" if invoice_rows else "Not recorded in current system"},
+        {"label": "Outstanding invoices", "value": format_currency_aud(outstanding_total) if invoice_rows else "Not recorded in current system"},
         {"label": "Net owner summary", "value": "Not available without an owner ledger"},
     ]
     financial_blocks: list[dict[str, Any]] = []
@@ -903,13 +930,29 @@ def assemble_report(
                 ],
             }
         )
+    if include_financial and invoice_rows:
+        financial_blocks.append({
+            "type": "table",
+            "title": "CRM invoices for this reporting period",
+            "columns": [
+                {"key": "invoice_date", "label": "Invoice date"},
+                {"key": "invoice_number", "label": "Invoice no."},
+                {"key": "supplier", "label": "Supplier"},
+                {"key": "category", "label": "Category"},
+                {"key": "description", "label": "Description"},
+                {"key": "amount", "label": "Amount"},
+                {"key": "gst", "label": "GST"},
+                {"key": "status", "label": "Status"},
+            ],
+            "rows": invoice_rows,
+        })
     manual_block = _manual_block(manual["rent_financial"], include_financial)
     if manual_block:
         financial_blocks.append(manual_block)
     sections["rent_financial"] = _section(
         "rent_financial",
         financial_blocks,
-        bool(rent_rows or manual["rent_financial"]),
+        bool(rent_rows or invoice_rows or manual["rent_financial"]),
         "No financial or rent activity was recorded for this period.",
     )
 

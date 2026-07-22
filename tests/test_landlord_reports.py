@@ -38,6 +38,7 @@ from app.models import (
     UserRole,
 )
 from app.services.landlord_report_pdf import generate_landlord_report_pdf
+from app.services.landlord_invoice_import import address_match_score, normalize_address, parse_invoice_csv
 from app.routers.landlord_reports import router as landlord_reports_router
 from app.services.landlord_reports import (
     ALL_SECTION_IDS,
@@ -373,6 +374,46 @@ def test_pdf_detail_overrides_and_report_only_activity_photos(db, seeded):
     photo_block = next(block for block in inspection["blocks"] if block["type"] == "photos")
     assert photo_block["items"][0]["attachment_id"] == report_photo_id
     assert report_photo_id in report["available_photo_ids"]
+
+
+def test_invoice_rows_are_address_matchable_and_month_filtered(db, seeded):
+    assert normalize_address("63 Ironwood Avenue, Cranbourne North VIC 3977") == normalize_address("63 Ironwood Ave Cranbourne N Victoria 3977")
+    assert address_match_score("63 Ironwood Avenue, Cranbourne North VIC 3977", "63 Ironwood Ave Cranbourne N 3977") > 0.8
+    assert address_match_score("64 Ironwood Ave Cranbourne North", "63 Ironwood Ave Cranbourne North") == 0
+
+    report = _report(
+        db,
+        seeded,
+        ["rent_financial"],
+        invoice_rows=[
+            {"property_id": seeded["property"].id, "invoice_date": date(2026, 7, 12), "invoice_number": "INV-100", "supplier": "Safety Co", "description": "Smoke alarm service", "amount": 180, "status": "Unpaid"},
+            {"property_id": seeded["property"].id, "invoice_date": date(2026, 6, 30), "invoice_number": "INV-OLD", "supplier": "Old Co", "description": "Previous month", "amount": 90, "status": "Paid"},
+        ],
+    )
+    text = json.dumps(report, default=str)
+    assert "INV-100" in text
+    assert "Safety Co" in text
+    assert "INV-OLD" not in text
+    assert "1 invoice" in text
+    assert "$180.00" in text
+
+
+def test_real_crm_invoice_csv_layout_and_multiline_status_are_parsed():
+    raw = (
+        'Results: 1,Outgoing invoices Report - created on 22/07/2026 12:12:30\r\n'
+        'Property Address,Description,Detail Description,Priority Invoice,Category,Creditor,Invoice Number,Total Amount,GST,Due Date,Recurring,Status,Payment Method,Paid To Date,Created By,Created,EFT Status,Created User,Created User Email\r\n'
+        '"1/4-6   Eumarella Street,Tullamarine",Invoice No - INV-153810,"1/4-6&nbsp; Eumarella Street, Tullamarine, 3043, smoke alarm compliance invoice",No,Compliance,CheckHero,DONSPREO00609,$108.90,$9.90,21/07/2026,None,"Disburse\n(22 Jul 2026)",PAY FROM LANDLORD FUNDS,20/08/2026,Manual,22/07/2026,,Jessica Gale,Admin@donspremier.com.au\r\n'
+    ).encode()
+    rows = parse_invoice_csv(raw)
+    assert len(rows) == 1
+    assert rows[0]["property_address"] == "1/4-6 Eumarella Street,Tullamarine"
+    assert rows[0]["invoice_date"] == date(2026, 7, 22)
+    assert rows[0]["invoice_number"] == "DONSPREO00609"
+    assert rows[0]["amount"] == pytest.approx(108.90)
+    assert rows[0]["gst"] == pytest.approx(9.90)
+    assert rows[0]["category"] == "Compliance"
+    assert rows[0]["status"] == "Disburse\n(22 Jul 2026)"
+    assert "nbsp" not in rows[0]["description"]
 
 
 def test_context_uses_real_sources_and_filters_unsupported_photos(db, seeded):

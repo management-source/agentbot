@@ -5790,6 +5790,16 @@
                         </div>
                       </section>
 
+                      <section class="landlord-report-card" aria-labelledby="landlordReportInvoiceImportHeading">
+                        <div class="landlord-report-card-head"><div><h3 id="landlordReportInvoiceImportHeading">CRM invoice export</h3><p>Upload the all-properties “Outgoing invoices Report” CSV once. It is parsed temporarily, matched to properties, and never saved to portal storage.</p></div></div>
+                        <div class="row" style="align-items:flex-end;flex-wrap:wrap">
+                          <div class="field" style="flex:1;min-width:220px"><label class="label" for="landlordReportInvoiceFile">Invoice CSV or Excel export</label><input id="landlordReportInvoiceFile" type="file" accept=".csv,.xlsx" /></div>
+                          <button class="btn primary" id="landlordReportInvoiceUpload" type="button" onclick="uploadLandlordReportInvoices()">Load Invoice Data</button>
+                          <button class="btn" type="button" onclick="clearLandlordReportInvoices()">Clear</button>
+                        </div>
+                        <div class="small muted" id="landlordReportInvoiceMeta" style="margin-top:9px">No invoice workbook loaded for this session.</div>
+                      </section>
+
                       <section class="landlord-report-card" aria-labelledby="landlordReportCustomDetailsHeading">
                         <div class="landlord-report-card-head"><div><h3 id="landlordReportCustomDetailsHeading">Customise PDF details</h3><p>Add only the fields needed for this report. Unavailable fields are omitted unless you add a value here.</p></div></div>
                         <div class="row" style="align-items:flex-end;margin-bottom:12px">

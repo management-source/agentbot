@@ -469,6 +469,8 @@ let landlordReportSelectedPhotoIds = new Set();
 let landlordReportOnlyPhotos = [];
 let landlordReportPendingPhotoIds = [];
 let landlordReportDetailValues = {};
+let landlordReportInvoiceRows = [];
+let landlordReportInvoiceFilename = "";
 const LANDLORD_REPORT_DETAIL_FIELDS = [
     "Property address", "Tenancy", "Rent", "Maintenance", "Compliance", "Lease",
     "Tenant names", "Lease type", "Lease commencement", "Lease expiry", "Current weekly rent",
@@ -5715,6 +5717,63 @@ function renderLandlordReportSourceSummary() {
     container.innerHTML = items.map(([label, value]) => `<span>${escapeHtml(label)}: ${escapeHtml(String(value ?? 0))}</span>`).join("");
 }
 
+function landlordReportInvoicesForCurrentSelection() {
+    const propertyId = Number(document.getElementById("landlordReportPropertyId")?.value || 0);
+    const period = landlordReportPeriod();
+    return landlordReportInvoiceRows.filter((row) => Number(row.property_id) === propertyId && row.invoice_date && row.invoice_date >= period.startDate && row.invoice_date <= period.endDate);
+}
+
+function updateLandlordReportInvoiceMeta(summary = null) {
+    const meta = document.getElementById("landlordReportInvoiceMeta");
+    if (!meta) return;
+    if (!landlordReportInvoiceRows.length) {
+        meta.textContent = "No invoice workbook loaded for this session.";
+        return;
+    }
+    const relevant = landlordReportInvoicesForCurrentSelection();
+    const unmatched = summary?.unmatched_count;
+    meta.textContent = `${landlordReportInvoiceRows.length} invoice rows loaded from ${landlordReportInvoiceFilename}. ${relevant.length} match the selected property and reporting period.${Number.isFinite(unmatched) ? ` ${unmatched} workbook row(s) could not be matched confidently.` : ""}`;
+}
+
+async function uploadLandlordReportInvoices() {
+    const input = document.getElementById("landlordReportInvoiceFile");
+    const file = input?.files?.[0];
+    if (!file) {
+        setLandlordReportMessage("Choose the CRM Outgoing invoices Report .csv or .xlsx file first.", "error");
+        return;
+    }
+    const button = document.getElementById("landlordReportInvoiceUpload");
+    if (button) button.disabled = true;
+    const meta = document.getElementById("landlordReportInvoiceMeta");
+    if (meta) meta.textContent = "Reading and matching invoice rows…";
+    try {
+        const form = new FormData();
+        form.append("file", file, file.name);
+        const response = await apiFetch("/landlord-reports/invoice-workbook", { method: "POST", body: form });
+        if (!response.ok) throw new Error(await extractErrorMessage(response));
+        const result = await response.json();
+        landlordReportInvoiceRows = Array.isArray(result.rows) ? result.rows : [];
+        landlordReportInvoiceFilename = result.filename || file.name;
+        updateLandlordReportInvoiceMeta(result);
+        setLandlordReportMessage(`Invoice data loaded temporarily: ${result.matched_count || 0} of ${result.row_count || 0} rows matched to managed properties.`, "success");
+        scheduleLandlordReportPreview();
+    } catch (error) {
+        if (meta) meta.textContent = "Invoice workbook could not be loaded.";
+        setLandlordReportMessage(error.message || "Invoice workbook could not be loaded.", "error");
+    } finally {
+        if (button) button.disabled = false;
+    }
+}
+
+function clearLandlordReportInvoices() {
+    landlordReportInvoiceRows = [];
+    landlordReportInvoiceFilename = "";
+    const input = document.getElementById("landlordReportInvoiceFile");
+    if (input) input.value = "";
+    updateLandlordReportInvoiceMeta();
+    scheduleLandlordReportPreview();
+}
+
 function renderLandlordReportSections() {
     const container = document.getElementById("landlordReportSectionList");
     const definitions = Array.isArray(landlordReportContext?.sections) ? landlordReportContext.sections : [];
@@ -6082,6 +6141,7 @@ async function loadLandlordReportContext() {
         renderLandlordReportSections();
         renderLandlordReportPhotos(propertyChanged);
         renderLandlordReportActivities();
+        updateLandlordReportInvoiceMeta();
         document.getElementById("landlordReportSaveDefaults")?.classList.toggle("hidden", !context.can_manage_defaults);
         const limitations = document.getElementById("landlordReportLimitations");
         if (limitations) {
@@ -6140,6 +6200,7 @@ function buildLandlordReportPayload(showErrors = true) {
         hero_photo_id: Number(document.getElementById("landlordReportHeroPhoto")?.value || 0) || null,
         detail_overrides: detailOverrides,
         report_only_photos: landlordReportOnlyPhotos,
+        invoice_rows: landlordReportInvoicesForCurrentSelection(),
     };
 }
 
