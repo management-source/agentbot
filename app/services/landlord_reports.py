@@ -516,6 +516,7 @@ def _manual_entries(options: Mapping[str, Any], include_internal: bool) -> dict[
                 "amount": _value(raw, "amount"),
                 "action_required": _multiline(_value(raw, "landlord_action"), 2500),
                 "internal": internal,
+                "photo_ids": [int(value) for value in (_value(raw, "photo_ids", []) or []) if int(value) < 0],
             }
         )
     for entries in grouped.values():
@@ -670,6 +671,9 @@ def assemble_report(
     if not isinstance(start_date, date) or not isinstance(end_date, date) or not isinstance(prepared_date, date):
         raise LandlordReportError("A valid property, reporting period and prepared date are required.")
     validate_period(start_date, end_date)
+    # The operational snapshot closes at the selected period end. The prepared
+    # date remains a document-generation label and never extends report data.
+    report_as_of = end_date
     prop = _get_property(db, mailbox, int(_value(options, "property_id") or 0))
     manager = _get_property_manager(db, _value(options, "property_manager_id"), current_user)
     owners = _contact_book(prop.owners_json)
@@ -680,6 +684,21 @@ def assemble_report(
     include_financial = bool(_value(options, "include_financial", True))
     include_internal = bool(_value(options, "include_internal_notes", False))
     manual = _manual_entries(options, include_internal)
+    detail_overrides = {
+        _clean(key, 120).lower(): _multiline(value, 2000)
+        for key, value in (_value(options, "detail_overrides", {}) or {}).items()
+        if _clean(key) and _multiline(value, 2000)
+    }
+    uploaded_photo_by_id: dict[int, dict[str, Any]] = {}
+    for raw in _value(options, "report_only_photos", []) or []:
+        photo_id = int(_value(raw, "id") or 0)
+        if photo_id < 0:
+            uploaded_photo_by_id[photo_id] = {
+                "attachment_id": photo_id,
+                "filename": _clean(_value(raw, "filename"), 240) or "Report photo",
+                "caption": _clean(_value(raw, "caption"), 500) or "Report photo",
+                "date": "Report only",
+            }
     start_utc, end_utc = _period_utc_bounds(start_date, end_date)
 
     tenant_accounts = (
@@ -708,14 +727,14 @@ def assemble_report(
     overdue_rent = [
         item
         for item in rent_rows
-        if item.status in UNSETTLED_RENT_STATUSES and item.due_date and item.due_date.date() < prepared_date
+        if item.status in UNSETTLED_RENT_STATUSES and item.due_date and item.due_date.date() < report_as_of
     ]
 
     compliance_cards: list[dict[str, Any]] = []
     compliance_actions: list[str] = []
     compliance_due_dates: list[tuple[date, str]] = []
     for row in compliance_rows:
-        state, tone = _compliance_state(row, prepared_date)
+        state, tone = _compliance_state(row, report_as_of)
         label = status_label(row.compliance_type)
         compliance_cards.append(
             {
@@ -733,7 +752,7 @@ def assemble_report(
         )
         if tone == "danger":
             compliance_actions.append(f"{label}: {state.lower()}.")
-        if row.due_date and row.due_date.date() >= prepared_date:
+        if row.due_date and row.due_date.date() >= report_as_of:
             compliance_due_dates.append((row.due_date.date(), f"{label} compliance due"))
 
     if not compliance_cards and legacy_compliance:
@@ -747,9 +766,9 @@ def assemble_report(
             state = "Not recorded"
             tone = "neutral"
             if due:
-                state = "Overdue" if due.date() < prepared_date else "Current"
+                state = "Overdue" if due.date() < report_as_of else "Current"
                 tone = "danger" if state == "Overdue" else "success"
-                if due.date() >= prepared_date:
+                if due.date() >= report_as_of:
                     compliance_due_dates.append((due.date(), f"{label} due"))
             compliance_cards.append(
                 {
@@ -789,7 +808,7 @@ def assemble_report(
     for order in open_orders:
         if order.status in {MaintenanceOrderStatus.WAITING_OWNER_APPROVAL, MaintenanceOrderStatus.QUOTE_RECEIVED}:
             critical_actions.append(f"Landlord decision required for maintenance: {order.title}.")
-    if lease and lease.current_lease_end and lease.current_lease_end.date() <= prepared_date + timedelta(days=60):
+    if lease and lease.current_lease_end and lease.current_lease_end.date() <= report_as_of + timedelta(days=60):
         critical_actions.append(f"Lease expiry is approaching on {format_date_au(lease.current_lease_end)}.")
 
     sections: dict[str, dict[str, Any]] = {}
@@ -896,11 +915,11 @@ def assemble_report(
 
     arrears_rows: list[dict[str, Any]] = []
     for item in overdue_rent:
-        due = item.due_date.date() if item.due_date else prepared_date
+        due = item.due_date.date() if item.due_date else report_as_of
         arrears_rows.append(
             {
                 "due_date": format_date_au(due),
-                "days": str(max((prepared_date - due).days, 0)),
+                "days": str(max((report_as_of - due).days, 0)),
                 "outstanding": "Not recorded" if include_financial else "Excluded",
                 "follow_up": _multiline(item.notes, 800) if include_internal and item.notes else "Not recorded",
                 "status": status_label(item.status),
@@ -1146,7 +1165,7 @@ def assemble_report(
             (lease.follow_up_date, "Lease renewal follow-up"),
             (lease.rent_increase_date, "New rent commencement"),
         ]:
-            if when and when.date() >= prepared_date:
+            if when and when.date() >= report_as_of:
                 upcoming.append({"date": when.date(), "title": title, "status": "Upcoming", "tone": "warning"})
     for due, title in compliance_due_dates:
         upcoming.append({"date": due, "title": title, "status": "Upcoming", "tone": "warning"})
@@ -1155,10 +1174,10 @@ def assemble_report(
             (order.due_by, f"Maintenance follow-up: {order.title}"),
             (order.tradie_scheduled_for, f"Maintenance appointment: {order.title}"),
         ]:
-            if when and when.date() >= prepared_date:
+            if when and when.date() >= report_as_of:
                 upcoming.append({"date": when.date(), "title": title, "status": status_label(order.status), "tone": _tone_for_status(order.status)})
         if order.status in {MaintenanceOrderStatus.WAITING_OWNER_APPROVAL, MaintenanceOrderStatus.QUOTE_RECEIVED}:
-            upcoming.append({"date": prepared_date, "title": f"Landlord approval required: {order.title}", "status": "Action required", "tone": "danger"})
+            upcoming.append({"date": report_as_of, "title": f"Landlord approval required: {order.title}", "status": "Action required", "tone": "danger"})
     unique_upcoming: list[dict[str, Any]] = []
     upcoming_seen: set[tuple[date, str]] = set()
     for item in sorted(upcoming, key=lambda value: (value["date"], value["title"])):
@@ -1225,6 +1244,31 @@ def assemble_report(
         "additional_notes", additional_blocks, bool(additional_blocks), "No additional notes were added for this report."
     )
 
+    # Report-only images stay in this request and appear beside the activity
+    # they document; they are never persisted as maintenance attachments.
+    for section_id, entries in manual.items():
+        photo_items: list[dict[str, Any]] = []
+        seen_photo_ids: set[int] = set()
+        for entry in entries:
+            for photo_id in entry.get("photo_ids", []):
+                if photo_id in uploaded_photo_by_id and photo_id not in seen_photo_ids:
+                    photo_items.append(uploaded_photo_by_id[photo_id])
+                    seen_photo_ids.add(photo_id)
+        if include_photos and photo_items:
+            sections[section_id]["blocks"].append({"type": "photos", "title": "Activity photos", "items": photo_items})
+            sections[section_id]["has_activity"] = True
+
+    # Overrides are matched by the visible field label, allowing source-backed
+    # and unavailable values alike to be tailored for this PDF only.
+    if detail_overrides:
+        for section in sections.values():
+            for block in section["blocks"]:
+                for item in block.get("items", []):
+                    if isinstance(item, dict):
+                        label = _clean(item.get("label"), 120).lower()
+                        if label in detail_overrides:
+                            item["value"] = detail_overrides[label]
+
     section_notes = _value(options, "section_notes", {}) or {}
     if isinstance(section_notes, Mapping):
         for section_id, note in section_notes.items():
@@ -1264,7 +1308,7 @@ def assemble_report(
             "agency_website": AGENCY_WEBSITE,
             "disclaimer": REPORT_DISCLAIMER,
             "property_id": prop.id,
-            "property_address": _full_property_label(prop),
+            "property_address": detail_overrides.get("property address") or _full_property_label(prop),
             "landlord_name": landlord_name,
             "property_manager_name": manager.name,
             "property_manager_email": manager.email,
@@ -1284,7 +1328,7 @@ def assemble_report(
         "sections": included_sections,
         "included_section_ids": [section["id"] for section in included_sections],
         "excluded_empty_section_ids": excluded_empty,
-        "available_photo_ids": [item["attachment_id"] for item in available_photos],
+        "available_photo_ids": [item["attachment_id"] for item in available_photos] + list(uploaded_photo_by_id),
         "warnings": [
             "Owner ledger, inspection, bond, insurance, advertising, applications and market figures are included only when staff add verified report activities."
         ],

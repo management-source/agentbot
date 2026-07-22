@@ -48,6 +48,14 @@ class ManualReportActivity(BaseModel):
     amount: float | None = Field(default=None, allow_inf_nan=False)
     landlord_action: str | None = Field(default=None, max_length=2500)
     internal: bool = False
+    photo_ids: list[int] = Field(default_factory=list, max_length=20)
+
+
+class ReportOnlyPhoto(BaseModel):
+    id: int = Field(lt=0)
+    filename: str = Field(max_length=240)
+    caption: str | None = Field(default=None, max_length=500)
+    data_url: str = Field(max_length=10_100_000)
 
 
 class LandlordReportRequest(BaseModel):
@@ -69,6 +77,8 @@ class LandlordReportRequest(BaseModel):
     manual_activities: list[ManualReportActivity] = Field(default_factory=list, max_length=500)
     photo_attachment_ids: list[int] = Field(default_factory=list, max_length=250)
     hero_photo_id: int | None = Field(default=None, gt=0)
+    detail_overrides: dict[str, str] = Field(default_factory=dict)
+    report_only_photos: list[ReportOnlyPhoto] = Field(default_factory=list, max_length=40)
 
     @model_validator(mode="after")
     def validate_report(self):
@@ -85,6 +95,11 @@ class LandlordReportRequest(BaseModel):
                 raise ValueError(f"Unknown report section note: {section_id}.")
             if len(str(note or "")) > 6000:
                 raise ValueError("Section notes cannot exceed 6,000 characters.")
+        if len(self.detail_overrides) > 100:
+            raise ValueError("No more than 100 PDF details can be customised.")
+        for key, value in self.detail_overrides.items():
+            if len(key) > 120 or len(str(value or "")) > 2000:
+                raise ValueError("A customised PDF detail is too long.")
         return self
 
 
@@ -118,6 +133,31 @@ def _report_photo_ids(report: dict) -> list[int]:
                 attachment_id = int(item.get("attachment_id") or 0)
                 if attachment_id and attachment_id not in result:
                     result.append(attachment_id)
+    return result
+
+
+def _report_only_photo_bytes(payload: LandlordReportRequest) -> dict[int, tuple[bytes, str]]:
+    import base64
+    import binascii
+
+    result: dict[int, tuple[bytes, str]] = {}
+    total = 0
+    allowed = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+    for photo in payload.report_only_photos:
+        try:
+            header, encoded = photo.data_url.split(",", 1)
+            content_type = header[5:].split(";", 1)[0].lower() if header.startswith("data:") else ""
+            if content_type not in allowed or ";base64" not in header:
+                raise ValueError
+            raw = base64.b64decode(encoded, validate=True)
+        except (ValueError, binascii.Error) as exc:
+            raise LandlordReportError(f"{photo.filename} is not a supported report photo.") from exc
+        if not raw or len(raw) > 7_500_000:
+            raise LandlordReportError("Each report-only photo must be no larger than 7.5MB.")
+        total += len(raw)
+        if total > 25_000_000:
+            raise LandlordReportError("Report-only photos cannot exceed 25MB in total.")
+        result[photo.id] = (raw, content_type)
     return result
 
 
@@ -174,6 +214,7 @@ def preview_report(
             property_id=payload.property_id,
             attachment_ids=_report_photo_ids(report),
         )
+        photos.update(_report_only_photo_bytes(payload))
         preview_html = render_preview_html(report, photos)
     except LandlordReportError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -204,6 +245,7 @@ def download_report_pdf(
             property_id=payload.property_id,
             attachment_ids=_report_photo_ids(report),
         )
+        photos.update(_report_only_photo_bytes(payload))
         pdf_bytes = generate_landlord_report_pdf(report, photos)
     except LandlordReportError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

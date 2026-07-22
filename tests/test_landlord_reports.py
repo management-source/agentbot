@@ -342,6 +342,39 @@ def test_manual_activity_mapping_deduplicates_and_requires_opt_in_for_internal(d
         )
 
 
+def test_pdf_detail_overrides_and_report_only_activity_photos(db, seeded):
+    report_photo_id = -101
+    activity = {
+        "id": "inspection-with-photo",
+        "section_id": "routine_inspections",
+        "date": date(2026, 7, 15),
+        "title": "Routine inspection completed",
+        "status": "completed",
+        "photo_ids": [report_photo_id],
+    }
+    report = _report(
+        db,
+        seeded,
+        ["property_tenancy", "routine_inspections"],
+        detail_overrides={"Bond amount": "$2,400.00", "Lease commencement": "01/02/2026"},
+        manual_activities=[activity],
+        report_only_photos=[{
+            "id": report_photo_id,
+            "filename": "inspection.png",
+            "caption": "Living room at routine inspection",
+            "data_url": "data:image/png;base64,unused-by-assembler",
+        }],
+    )
+
+    text = json.dumps(report, default=str)
+    assert "$2,400.00" in text
+    assert "01/02/2026" in text
+    inspection = next(section for section in report["sections"] if section["id"] == "routine_inspections")
+    photo_block = next(block for block in inspection["blocks"] if block["type"] == "photos")
+    assert photo_block["items"][0]["attachment_id"] == report_photo_id
+    assert report_photo_id in report["available_photo_ids"]
+
+
 def test_context_uses_real_sources_and_filters_unsupported_photos(db, seeded):
     context = build_report_context(
         db,

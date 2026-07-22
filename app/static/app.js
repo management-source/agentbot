@@ -466,6 +466,8 @@ let landlordReportSectionNotes = {};
 let landlordReportActivities = [];
 let landlordReportEditingActivityId = "";
 let landlordReportSelectedPhotoIds = new Set();
+let landlordReportOnlyPhotos = [];
+let landlordReportPendingPhotoIds = [];
 let landlordReportPreviewTimer = null;
 let landlordReportContextTimer = null;
 let landlordReportContextRequest = 0;
@@ -5596,6 +5598,9 @@ function bindLandlordReportEvents() {
         element?.addEventListener("input", scheduleLandlordReportPreview);
         element?.addEventListener("change", scheduleLandlordReportPreview);
     });
+    document.querySelectorAll("#landlordReportDetailOverrides [data-report-detail]").forEach((element) => {
+        element.addEventListener("input", scheduleLandlordReportPreview);
+    });
 }
 
 async function initLandlordReportBuilder() {
@@ -5625,6 +5630,8 @@ function resetLandlordReportBuilder() {
     landlordReportActivities = [];
     landlordReportEditingActivityId = "";
     landlordReportSelectedPhotoIds = new Set();
+    landlordReportOnlyPhotos = [];
+    landlordReportPendingPhotoIds = [];
     landlordReportContextRequest += 1;
     landlordReportPreviewRequest += 1;
     if (landlordReportContextTimer) clearTimeout(landlordReportContextTimer);
@@ -5643,6 +5650,7 @@ function resetLandlordReportBuilder() {
         const element = document.getElementById(id);
         if (element) element.value = "";
     });
+    document.querySelectorAll("#landlordReportDetailOverrides [data-report-detail]").forEach((element) => { element.value = ""; });
     const manager = document.getElementById("landlordReportManager");
     if (manager) manager.innerHTML = '<option value="">Select property manager</option>';
     const sections = document.getElementById("landlordReportSectionList");
@@ -5876,9 +5884,38 @@ function resetLandlordReportActivityForm() {
     if (status) status.value = "completed";
     if (internal) internal.checked = false;
     if (dateInput) dateInput.value = landlordReportMelbourneDate();
+    landlordReportPendingPhotoIds = [];
+    const photoInput = document.getElementById("landlordReportActivityPhotos");
+    if (photoInput) photoInput.value = "";
+    const photoStatus = document.getElementById("landlordReportActivityPhotoStatus");
+    if (photoStatus) photoStatus.textContent = "No photos selected. Up to 20 images, 7.5MB each.";
     const save = document.getElementById("landlordReportActivitySave");
     if (save) save.textContent = "Add Activity";
     document.getElementById("landlordReportActivityCancel")?.classList.add("hidden");
+}
+
+async function landlordReportActivityPhotosChanged(files) {
+    const selected = Array.from(files || []).slice(0, 20);
+    const allowed = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+    if (selected.some((file) => !allowed.has(file.type) || file.size > 7500000)) {
+        setLandlordReportMessage("Use JPG, PNG, WebP or GIF images no larger than 7.5MB each.", "error");
+        return;
+    }
+    const additions = await Promise.all(selected.map((file, index) => new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve({ id: -(Date.now() + index + Math.floor(Math.random() * 1000)), filename: file.name, caption: file.name.replace(/\.[^.]+$/, ""), data_url: reader.result });
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    })));
+    if (landlordReportEditingActivityId) {
+        const existing = landlordReportActivities.find((item) => item.id === landlordReportEditingActivityId);
+        const replacedIds = new Set(existing?.photo_ids || []);
+        landlordReportOnlyPhotos = landlordReportOnlyPhotos.filter((photo) => !replacedIds.has(photo.id));
+    }
+    landlordReportOnlyPhotos.push(...additions);
+    landlordReportPendingPhotoIds = additions.map((photo) => photo.id);
+    const status = document.getElementById("landlordReportActivityPhotoStatus");
+    if (status) status.textContent = `${additions.length} photo${additions.length === 1 ? "" : "s"} ready for this activity.`;
 }
 
 function saveLandlordReportActivity() {
@@ -5902,6 +5939,7 @@ function saveLandlordReportActivity() {
         amount: amountRaw === "" ? null : Number(amountRaw),
         landlord_action: document.getElementById("landlordReportActivityAction")?.value || null,
         internal: !!document.getElementById("landlordReportActivityInternal")?.checked,
+        photo_ids: landlordReportPendingPhotoIds.length ? [...landlordReportPendingPhotoIds] : (existing?.photo_ids || []),
     };
     if (existing) landlordReportActivities = landlordReportActivities.map((entry) => entry.id === existing.id ? item : entry);
     else landlordReportActivities.push(item);
@@ -5934,6 +5972,9 @@ function editLandlordReportActivity(activityId) {
     });
     const internal = document.getElementById("landlordReportActivityInternal");
     if (internal) internal.checked = !!item.internal;
+    landlordReportPendingPhotoIds = [...(item.photo_ids || [])];
+    const photoStatus = document.getElementById("landlordReportActivityPhotoStatus");
+    if (photoStatus) photoStatus.textContent = landlordReportPendingPhotoIds.length ? `${landlordReportPendingPhotoIds.length} existing photo(s) attached. Choose files to replace them.` : "No photos selected. Up to 20 images, 7.5MB each.";
     const save = document.getElementById("landlordReportActivitySave");
     if (save) save.textContent = "Update Activity";
     document.getElementById("landlordReportActivityCancel")?.classList.remove("hidden");
@@ -5944,6 +5985,8 @@ function removeLandlordReportActivity(activityId) {
     const item = landlordReportActivities.find((entry) => entry.id === activityId);
     if (!item || !confirm(`Remove "${item.title}" from this report?`)) return;
     landlordReportActivities = landlordReportActivities.filter((entry) => entry.id !== activityId);
+    const usedPhotoIds = new Set(landlordReportActivities.flatMap((entry) => entry.photo_ids || []));
+    landlordReportOnlyPhotos = landlordReportOnlyPhotos.filter((photo) => usedPhotoIds.has(photo.id));
     if (landlordReportEditingActivityId === activityId) resetLandlordReportActivityForm();
     renderLandlordReportActivities();
     scheduleLandlordReportPreview();
@@ -5981,6 +6024,9 @@ async function loadLandlordReportContext() {
             landlordReportSectionNotes = {};
             landlordReportSectionOrder = (context.sections || []).map((section) => section.id);
             landlordReportSelectedSections = new Set(context.default_sections || []);
+            landlordReportOnlyPhotos = [];
+            landlordReportPendingPhotoIds = [];
+            document.querySelectorAll("#landlordReportDetailOverrides [data-report-detail]").forEach((element) => { element.value = ""; });
             resetLandlordReportActivityForm();
         }
         const landlord = document.getElementById("landlordReportLandlordName");
@@ -6025,6 +6071,8 @@ function buildLandlordReportPayload(showErrors = true) {
         return null;
     }
     const selectedNotes = Object.fromEntries(Object.entries(landlordReportSectionNotes).filter(([sectionId, value]) => selectedSections.includes(sectionId) && String(value || "").trim()));
+    const detailOverrides = Object.fromEntries(Array.from(document.querySelectorAll("#landlordReportDetailOverrides [data-report-detail]"))
+        .map((input) => [input.dataset.reportDetail, String(input.value || "").trim()]).filter(([, value]) => value));
     landlordReportPhotoSelectionChangedSilently();
     return {
         property_id: propertyId,
@@ -6045,6 +6093,8 @@ function buildLandlordReportPayload(showErrors = true) {
         manual_activities: landlordReportActivities,
         photo_attachment_ids: [...landlordReportSelectedPhotoIds],
         hero_photo_id: Number(document.getElementById("landlordReportHeroPhoto")?.value || 0) || null,
+        detail_overrides: detailOverrides,
+        report_only_photos: landlordReportOnlyPhotos,
     };
 }
 

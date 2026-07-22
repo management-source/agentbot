@@ -5790,6 +5790,33 @@
                         </div>
                       </section>
 
+                      <section class="landlord-report-card" aria-labelledby="landlordReportCustomDetailsHeading">
+                        <div class="landlord-report-card-head"><div><h3 id="landlordReportCustomDetailsHeading">Customise PDF details</h3><p>Enter only the values you want to replace in this report. Blank fields keep the live value or “Not recorded”.</p></div></div>
+                        <div class="landlord-report-form-grid" id="landlordReportDetailOverrides">
+                          <div class="field wide"><label class="label">Property address (including cover and headers)</label><input data-report-detail="Property address" type="text" /></div>
+                          <div class="field"><label class="label">Executive tenancy status</label><input data-report-detail="Tenancy" type="text" /></div>
+                          <div class="field"><label class="label">Executive rent status</label><input data-report-detail="Rent" type="text" /></div>
+                          <div class="field"><label class="label">Executive maintenance status</label><input data-report-detail="Maintenance" type="text" /></div>
+                          <div class="field"><label class="label">Executive compliance status</label><input data-report-detail="Compliance" type="text" /></div>
+                          <div class="field"><label class="label">Executive lease status</label><input data-report-detail="Lease" type="text" /></div>
+                          <div class="field"><label class="label">Tenant names</label><input data-report-detail="Tenant names" type="text" /></div>
+                          <div class="field"><label class="label">Lease type</label><input data-report-detail="Lease type" type="text" /></div>
+                          <div class="field"><label class="label">Lease commencement</label><input data-report-detail="Lease commencement" type="text" /></div>
+                          <div class="field"><label class="label">Lease expiry</label><input data-report-detail="Lease expiry" type="text" /></div>
+                          <div class="field"><label class="label">Current weekly rent</label><input data-report-detail="Current weekly rent" type="text" /></div>
+                          <div class="field"><label class="label">Bond amount</label><input data-report-detail="Bond amount" type="text" /></div>
+                          <div class="field"><label class="label">Rent paid-to date</label><input data-report-detail="Rent paid-to date" type="text" /></div>
+                          <div class="field"><label class="label">Occupancy status</label><input data-report-detail="Occupancy status" type="text" /></div>
+                          <div class="field"><label class="label">Property type</label><input data-report-detail="Property type" type="text" /></div>
+                          <div class="field"><label class="label">Rent received during period</label><input data-report-detail="Rent received during period" type="text" /></div>
+                          <div class="field"><label class="label">Owner disbursements</label><input data-report-detail="Owner disbursements" type="text" /></div>
+                          <div class="field"><label class="label">Management fees</label><input data-report-detail="Management fees" type="text" /></div>
+                          <div class="field"><label class="label">Maintenance expenses</label><input data-report-detail="Maintenance expenses" type="text" /></div>
+                          <div class="field"><label class="label">Current rent balance</label><input data-report-detail="Current rent balance" type="text" /></div>
+                          <div class="field"><label class="label">Outstanding invoices</label><input data-report-detail="Outstanding invoices" type="text" /></div>
+                        </div>
+                      </section>
+
                       <section class="landlord-report-card" aria-labelledby="landlordReportActivitiesHeading">
                         <div class="landlord-report-card-head"><div><h3 id="landlordReportActivitiesHeading">Report-only activities</h3><p>Add verified details that are not stored elsewhere. These entries never overwrite source records.</p></div></div>
                         <div class="landlord-report-activity-form">
@@ -5802,6 +5829,7 @@
                           <div class="field"><label class="label" for="landlordReportActivityAmount">Amount (AUD)</label><input id="landlordReportActivityAmount" type="number" step="0.01" min="0" /></div>
                           <div class="field wide"><label class="label" for="landlordReportActivityDescription">Landlord-facing description</label><textarea id="landlordReportActivityDescription" maxlength="5000"></textarea></div>
                           <div class="field wide"><label class="label" for="landlordReportActivityAction">Action required from landlord</label><textarea id="landlordReportActivityAction" maxlength="2500"></textarea></div>
+                          <div class="field wide"><label class="label" for="landlordReportActivityPhotos">Optional activity photos</label><input id="landlordReportActivityPhotos" type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple onchange="landlordReportActivityPhotosChanged(this.files)" /><div class="small muted" id="landlordReportActivityPhotoStatus">No photos selected. Up to 20 images, 7.5MB each.</div></div>
                           <label class="landlord-report-toggle internal wide"><input id="landlordReportActivityInternal" type="checkbox" /><span>Mark this activity internal. It is excluded unless internal notes are enabled.</span></label>
                           <div class="row wide"><button class="btn primary" id="landlordReportActivitySave" type="button" onclick="saveLandlordReportActivity()">Add Activity</button><button class="btn hidden" id="landlordReportActivityCancel" type="button" onclick="resetLandlordReportActivityForm()">Cancel Edit</button></div>
                         </div>
