@@ -81,6 +81,13 @@ class Settings(BaseSettings):
     OPENAI_MODEL: str = "gpt-4o-mini"
     OPENAI_TRANSCRIBE_MODEL: str = "whisper-1"
 
+    # Inspection route planning providers. Defaults work for development; a
+    # production deployment can point OSRM at a managed/self-hosted instance.
+    INSPECTIONS_VICMAP_URL: str = "https://services-ap1.arcgis.com/P744lA0wf4LlBZ84/ArcGIS/rest/services/Vicmap_Address/FeatureServer/0/query"
+    INSPECTIONS_OSRM_BASE_URL: str = "https://router.project-osrm.org"
+    INSPECTIONS_HTTP_TIMEOUT_SECONDS: float = 12.0
+    INSPECTIONS_PROVIDER_BUDGET_SECONDS: float = 60.0
+
     # Optional default signature if not set via UI
     DEFAULT_SIGNATURE: str = ""
 

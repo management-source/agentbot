@@ -30,6 +30,7 @@ AREA_LABELS = {
     "sync": "Email Sync",
     "blacklist": "Blacklist",
     "maintenance": "Maintenance",
+    "inspections": "Inspections",
     "tenant": "Tenant Portal",
     "rent-tracker": "Rent Tracker",
     "lease-renewals": "Lease Renewals",
@@ -47,6 +48,7 @@ ENTITY_LABELS = {
     "tickets": "Email Ticket",
     "threads": "Email Thread",
     "maintenance": "Maintenance",
+    "inspections": "Inspection Plan",
     "rent-tracker": "Rent Item",
     "lease-renewals": "Lease Renewal",
     "landlord-reports": "Landlord Report",
@@ -151,6 +153,14 @@ def infer_activity(method: str, path: str) -> dict[str, str | None]:
             action = "Added maintenance note"
         elif "tradies" in parts:
             entity_type = "Tradie"
+    elif root == "inspections":
+        entity_type = "Inspection Plan"
+        if tail == "optimize":
+            action = "Optimized inspection routes"
+        elif tail == "status":
+            action = "Updated inspection plan status"
+        elif "plans" in parts and method.upper() == "POST":
+            action = "Saved inspection plan"
     elif root == "tenant" and "admin" in parts:
         entity_type = "Tenant Account"
         if method.upper() == "DELETE":

@@ -18,7 +18,7 @@ from pydantic import BaseModel, EmailStr
 from sqlalchemy import and_, func
 from sqlalchemy.orm import Session
 
-from app.authz import get_current_user, require_role
+from app.authz import LEGACY_INSPECTIONS_PAGE_ACCESS, get_current_user, require_role
 from app.config import settings
 from app.db import get_db
 from app.models import AppState, PasswordResetToken, ThreadTicket, ThreadTicketAudit, ThreadTicketNote, User, UserRole
@@ -61,6 +61,12 @@ PAGE_REGISTRY = [
         "id": "maintenance",
         "label": "Maintenance",
         "description": "Staff-managed maintenance orders, owner approvals, quotes, tradie arrangements, and completion tracking.",
+        "section": "Operations",
+    },
+    {
+        "id": "inspections",
+        "label": "Inspections",
+        "description": "Plan property inspections, allocate agents, calculate efficient times and routes, and review conflicts.",
         "section": "Operations",
     },
     {
@@ -134,10 +140,10 @@ PAGE_REGISTRY = [
 
 
 DEFAULT_ROLE_PAGE_ACCESS = {
-    UserRole.ADMIN.value: ["portal", "notifications", "myspace", "inbox", "maintenance", "rent", "lease_renewals", "landlord_reports", "compliance", "coverage", "compliance_providers", "properties", "team", "activity", "system"],
-    UserRole.PM.value: ["portal", "notifications", "myspace", "inbox", "maintenance", "rent", "lease_renewals", "landlord_reports", "compliance", "coverage", "compliance_providers", "properties", "team", "activity", "system"],
-    UserRole.LEASING.value: ["portal", "notifications", "myspace", "inbox", "lease_renewals", "properties", "team"],
-    UserRole.SALES.value: ["portal", "notifications", "myspace", "inbox", "maintenance", "rent", "lease_renewals", "landlord_reports", "compliance", "coverage", "compliance_providers", "properties", "team", "activity", "system"],
+    UserRole.ADMIN.value: ["portal", "notifications", "myspace", "inbox", "maintenance", "inspections", "rent", "lease_renewals", "landlord_reports", "compliance", "coverage", "compliance_providers", "properties", "team", "activity", "system"],
+    UserRole.PM.value: ["portal", "notifications", "myspace", "inbox", "maintenance", "inspections", "rent", "lease_renewals", "landlord_reports", "compliance", "coverage", "compliance_providers", "properties", "team", "activity", "system"],
+    UserRole.LEASING.value: ["portal", "notifications", "myspace", "inbox", "lease_renewals", "inspections", "properties", "team"],
+    UserRole.SALES.value: ["portal", "notifications", "myspace", "inbox", "maintenance", "inspections", "rent", "lease_renewals", "landlord_reports", "compliance", "coverage", "compliance_providers", "properties", "team", "activity", "system"],
     UserRole.ACCOUNTS.value: ["portal", "notifications", "myspace", "inbox", "rent", "team"],
     UserRole.READONLY.value: ["portal", "notifications", "myspace", "team"],
 }
@@ -321,15 +327,12 @@ def _normalize_role_page_access(raw: dict | None) -> dict[str, list[str]]:
         requested = raw.get(key, DEFAULT_ROLE_PAGE_ACCESS.get(key, ["portal"]))
         if not isinstance(requested, list):
             requested = DEFAULT_ROLE_PAGE_ACCESS.get(key, ["portal"])
-        selected = {str(page_id).strip() for page_id in requested if str(page_id or "").strip() in page_ids}
+        requested_selected = {str(page_id).strip() for page_id in requested if str(page_id or "").strip()}
+        selected = requested_selected & page_ids
         default_selected = set(DEFAULT_ROLE_PAGE_ACCESS.get(key, ["portal"]))
         locked_pages = {str(page["id"]) for page in PAGE_REGISTRY if page.get("locked")}
-        missing_default_pages = {
-            page_id for page_id in ("maintenance", "lease_renewals", "landlord_reports", "team", "activity", "compliance_providers", *locked_pages)
-            if page_id in default_selected and page_id not in selected
-        }
-        if missing_default_pages and selected == (default_selected - missing_default_pages):
-            selected.update(missing_default_pages)
+        if requested_selected == LEGACY_INSPECTIONS_PAGE_ACCESS.get(key):
+            selected.add("inspections")
 
         # Portal prevents blank workspaces. System controls admin access and is
         # intentionally configurable from the Access Control matrix.

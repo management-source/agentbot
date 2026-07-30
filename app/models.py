@@ -1,8 +1,9 @@
-from datetime import datetime
+from datetime import date, datetime
 from enum import Enum
 
 from sqlalchemy import (
     String,
+    Date,
     DateTime,
     Boolean,
     Integer,
@@ -104,6 +105,15 @@ class LeaseRenewalStatus(str, Enum):
     ADVERTISED = "ADVERTISED"
     ON_HOLD = "ON_HOLD"
     COMPLETED = "COMPLETED"
+
+
+class InspectionPlanStatus(str, Enum):
+    DRAFT = "DRAFT"
+    PLANNED = "PLANNED"
+    CONFIRMED = "CONFIRMED"
+    IN_PROGRESS = "IN_PROGRESS"
+    COMPLETED = "COMPLETED"
+    CANCELLED = "CANCELLED"
 
 
 class AuditAction(str, Enum):
@@ -535,6 +545,91 @@ class ManagedProperty(Base):
     source: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class InspectionGeocodeCache(Base):
+    __tablename__ = "inspection_geocode_cache"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    mailbox: Mapped[str] = mapped_column(String, index=True)
+    cache_key: Mapped[str] = mapped_column(String, unique=True, index=True)
+    query_address: Mapped[str] = mapped_column(String)
+    formatted_address: Mapped[str | None] = mapped_column(String, nullable=True)
+    latitude: Mapped[float] = mapped_column(Float)
+    longitude: Mapped[float] = mapped_column(Float)
+    provider: Mapped[str] = mapped_column(String, default="vicmap", index=True)
+    provider_payload_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class InspectionPlan(Base):
+    __tablename__ = "inspection_plans"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    mailbox: Mapped[str] = mapped_column(String, index=True)
+    name: Mapped[str] = mapped_column(String, index=True)
+    status: Mapped[InspectionPlanStatus] = mapped_column(
+        SAEnum(InspectionPlanStatus),
+        default=InspectionPlanStatus.PLANNED,
+        index=True,
+    )
+    plan_date: Mapped[date] = mapped_column(Date, index=True)
+    day_start: Mapped[str] = mapped_column(String)
+    day_end: Mapped[str] = mapped_column(String)
+    timezone: Mapped[str] = mapped_column(String, default="Australia/Melbourne")
+    start_address: Mapped[str] = mapped_column(String)
+    allow_agent_overlap: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    provider: Mapped[str | None] = mapped_column(String, nullable=True)
+    optimization_result_json: Mapped[str] = mapped_column(Text)
+    created_by_user_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+    created_by = relationship("User")
+    visits = relationship("InspectionVisit", back_populates="plan", cascade="all, delete-orphan")
+
+
+class InspectionVisit(Base):
+    __tablename__ = "inspection_visits"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    mailbox: Mapped[str] = mapped_column(String, index=True)
+    plan_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("inspection_plans.id", ondelete="CASCADE"),
+        index=True,
+    )
+    client_id: Mapped[str] = mapped_column(String, index=True)
+    property_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("managed_properties.id"),
+        index=True,
+    )
+    property_address: Mapped[str] = mapped_column(String, index=True)
+    latitude: Mapped[float] = mapped_column(Float)
+    longitude: Mapped[float] = mapped_column(Float)
+    agent_ids_json: Mapped[str] = mapped_column(Text)
+    agent_names_json: Mapped[str] = mapped_column(Text)
+    duration_minutes: Mapped[int] = mapped_column(Integer)
+    buffer_minutes: Mapped[int] = mapped_column(Integer, default=0)
+    scheduled_start: Mapped[datetime] = mapped_column(DateTime, index=True)
+    scheduled_end: Mapped[datetime] = mapped_column(DateTime, index=True)
+    sequence: Mapped[int] = mapped_column(Integer, default=0, index=True)
+    travel_minutes: Mapped[int] = mapped_column(Integer, default=0)
+    distance_km: Mapped[float] = mapped_column(Float, default=0.0)
+    conflicts_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+    plan = relationship("InspectionPlan", back_populates="visits")
+    property = relationship("ManagedProperty")
 
 
 class MaintenanceOrder(Base):

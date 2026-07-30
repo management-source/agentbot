@@ -14,12 +14,22 @@ from app.security import decode_access_token
 ROLE_PAGE_ACCESS_KEY = "system:role_page_access"
 DEFAULT_ADMIN_ACCESS_ROLES = {UserRole.ADMIN.value, UserRole.PM.value, UserRole.SALES.value}
 DEFAULT_PAGE_ACCESS = {
-    UserRole.ADMIN.value: {"portal", "notifications", "myspace", "inbox", "maintenance", "rent", "lease_renewals", "landlord_reports", "compliance", "coverage", "compliance_providers", "properties", "team", "activity", "system"},
-    UserRole.PM.value: {"portal", "notifications", "myspace", "inbox", "maintenance", "rent", "lease_renewals", "landlord_reports", "compliance", "coverage", "compliance_providers", "properties", "team", "activity", "system"},
-    UserRole.LEASING.value: {"portal", "notifications", "myspace", "inbox", "properties", "team"},
-    UserRole.SALES.value: {"portal", "notifications", "myspace", "inbox", "maintenance", "rent", "lease_renewals", "landlord_reports", "compliance", "coverage", "compliance_providers", "properties", "team", "activity", "system"},
+    UserRole.ADMIN.value: {"portal", "notifications", "myspace", "inbox", "maintenance", "inspections", "rent", "lease_renewals", "landlord_reports", "compliance", "coverage", "compliance_providers", "properties", "team", "activity", "system"},
+    UserRole.PM.value: {"portal", "notifications", "myspace", "inbox", "maintenance", "inspections", "rent", "lease_renewals", "landlord_reports", "compliance", "coverage", "compliance_providers", "properties", "team", "activity", "system"},
+    UserRole.LEASING.value: {"portal", "notifications", "myspace", "inbox", "inspections", "properties", "team"},
+    UserRole.SALES.value: {"portal", "notifications", "myspace", "inbox", "maintenance", "inspections", "rent", "lease_renewals", "landlord_reports", "compliance", "coverage", "compliance_providers", "properties", "team", "activity", "system"},
     UserRole.ACCOUNTS.value: {"portal", "notifications", "myspace", "inbox", "rent", "team"},
     UserRole.READONLY.value: {"portal", "notifications", "myspace", "team"},
+}
+
+# Before Inspections existed, these were the exact role defaults persisted by
+# the access-control screen. Treat only these unchanged legacy sets as opting
+# into the new page; a genuinely customized role remains untouched.
+LEGACY_INSPECTIONS_PAGE_ACCESS = {
+    UserRole.ADMIN.value: {"portal", "notifications", "myspace", "inbox", "maintenance", "rent", "lease_renewals", "landlord_reports", "compliance", "coverage", "compliance_providers", "properties", "team", "activity", "system"},
+    UserRole.PM.value: {"portal", "notifications", "myspace", "inbox", "maintenance", "rent", "lease_renewals", "landlord_reports", "compliance", "coverage", "compliance_providers", "properties", "team", "activity", "system"},
+    UserRole.LEASING.value: {"portal", "notifications", "myspace", "inbox", "lease_renewals", "properties", "team"},
+    UserRole.SALES.value: {"portal", "notifications", "myspace", "inbox", "maintenance", "rent", "lease_renewals", "landlord_reports", "compliance", "coverage", "compliance_providers", "properties", "team", "activity", "system"},
 }
 
 
@@ -63,6 +73,8 @@ def has_page_access(role: UserRole | str | None, page_id: str, db: Session | Non
             pages = parsed.get(key) if isinstance(parsed, dict) else None
             if isinstance(pages, list):
                 selected = {str(page_id).strip() for page_id in pages}
+                if selected == LEGACY_INSPECTIONS_PAGE_ACCESS.get(key):
+                    selected.add("inspections")
                 if "compliance" in selected:
                     selected.add("compliance_providers")
                 return page in selected

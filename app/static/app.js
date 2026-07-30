@@ -499,6 +499,19 @@ let currentCoveragePage = 1;
 let coverageLoadedOnce = false;
 let usersLoadedOnce = false;
 let teamLoadedOnce = false;
+let inspectionsLoadedOnce = false;
+let inspectionEventsBound = false;
+let inspectionAgents = [];
+let inspectionAvailableAgentIds = new Set();
+let inspectionAvailabilityInitialized = false;
+let inspectionRows = [];
+let inspectionRowSequence = 0;
+let inspectionPlans = [];
+let inspectionCurrentPlanId = null;
+let inspectionLastOptimization = null;
+let inspectionMap = null;
+let inspectionMapRouteLayer = null;
+let inspectionMapMarkerLayer = null;
 let activityLoadedOnce = false;
 let currentActivityPage = 1;
 let activityTotalPages = 1;
@@ -569,6 +582,11 @@ function updateSyncContextUI() {
     if (currentDashboardTab === "maintenance") {
         if (viewBadge) viewBadge.textContent = "Maintenance";
         if (info) info.textContent = "Inbox sync controls are hidden while you are managing maintenance orders.";
+        return;
+    }
+    if (currentDashboardTab === "inspections") {
+        if (viewBadge) viewBadge.textContent = "Inspections";
+        if (info) info.textContent = "Inbox sync controls are hidden while you are planning inspection routes.";
         return;
     }
     if (currentDashboardTab === "compliance") {
@@ -959,6 +977,7 @@ async function initMailboxes() {
         sel.addEventListener("change", () => {
             currentMailbox = sel.value;
             localStorage.setItem("agent_mailbox", currentMailbox);
+            clearPropertyOptionsState();
             // refresh UI data under new mailbox
             currentPage = 1;
             rentLoadedOnce = false;
@@ -969,6 +988,10 @@ async function initMailboxes() {
             leaseRenewalRecordsCache = {};
             resetLandlordReportBuilder();
             maintenanceLoadedOnce = false;
+            inspectionsLoadedOnce = false;
+            inspectionPlans = [];
+            resetInspectionWorkspace({ preserveDate: true, preserveAgents: true });
+            renderInspectionPlans();
             propertiesLoadedOnce = false;
             complianceLoadedOnce = false;
             coverageLoadedOnce = false;
@@ -987,6 +1010,9 @@ async function initMailboxes() {
             if (currentDashboardTab === "maintenance") {
                 currentMaintenancePage = 1;
                 loadMaintenanceDashboard();
+            }
+            if (currentDashboardTab === "inspections") {
+                initInspectionsWorkspace(true);
             }
             if (currentDashboardTab === "properties") {
                 currentPropertiesPage = 1;
@@ -1830,27 +1856,27 @@ const USER_ROLE_ACCESS = {
         optionLabel: "Administrator",
         defaultAdminAccess: true,
         summary: "Full control over the portal, system users, settings, and all operational workspaces.",
-        access: ["Portal Hub", "My Space", "Email Manager", "Maintenance", "Rent Tracker", "Lease Renewals", "Monthly Landlord Report", "Compliance", "Compliance Report", "Compliance Providers", "Properties", "Our Team", "Activity Log", "System"],
+        access: ["Portal Hub", "My Space", "Email Manager", "Maintenance", "Inspections", "Rent Tracker", "Lease Renewals", "Monthly Landlord Report", "Compliance", "Compliance Report", "Compliance Providers", "Properties", "Our Team", "Activity Log", "System"],
     },
     PM: {
         label: "Property Manager",
         optionLabel: "Property Manager",
         defaultAdminAccess: true,
         summary: "Property management access for inbox triage, maintenance, compliance, rent, and property work.",
-        access: ["Portal Hub", "My Space", "Email Manager", "Maintenance", "Rent Tracker", "Lease Renewals", "Monthly Landlord Report", "Compliance", "Compliance Report", "Compliance Providers", "Properties", "Our Team", "Activity Log", "System"],
+        access: ["Portal Hub", "My Space", "Email Manager", "Maintenance", "Inspections", "Rent Tracker", "Lease Renewals", "Monthly Landlord Report", "Compliance", "Compliance Report", "Compliance Providers", "Properties", "Our Team", "Activity Log", "System"],
     },
     LEASING: {
         label: "Marketing Advisor",
         optionLabel: "Marketing Advisor",
         summary: "Marketing and leasing-focused access for email work, property information, and team contacts.",
-        access: ["Portal Hub", "My Space", "Email Manager", "Lease Renewals", "Properties", "Our Team"],
+        access: ["Portal Hub", "My Space", "Email Manager", "Inspections", "Lease Renewals", "Properties", "Our Team"],
     },
     SALES: {
         label: "Director",
         optionLabel: "Director",
         defaultAdminAccess: true,
         summary: "Director-level access across the core portal workspaces.",
-        access: ["Portal Hub", "My Space", "Email Manager", "Maintenance", "Rent Tracker", "Lease Renewals", "Monthly Landlord Report", "Compliance", "Compliance Report", "Compliance Providers", "Properties", "Our Team", "Activity Log", "System"],
+        access: ["Portal Hub", "My Space", "Email Manager", "Maintenance", "Inspections", "Rent Tracker", "Lease Renewals", "Monthly Landlord Report", "Compliance", "Compliance Report", "Compliance Providers", "Properties", "Our Team", "Activity Log", "System"],
     },
     ACCOUNTS: {
         label: "Administrative Assistant",
@@ -1875,6 +1901,7 @@ const FALLBACK_PAGE_REGISTRY = [
     { id: "myspace", label: "My Space", description: "Private planner, follow-ups, links, snippets, notes, and guides.", section: "Core" },
     { id: "inbox", label: "Email Manager", description: "Email tickets and inbox operations.", section: "Operations" },
     { id: "maintenance", label: "Maintenance", description: "Maintenance orders, owner approvals, quotes, tradie arrangements, and completion tracking.", section: "Operations" },
+    { id: "inspections", label: "Inspections", description: "Multi-agent inspection planning, route optimisation, timings, buffers, and conflict checks.", section: "Operations" },
     { id: "rent", label: "Rent Tracker", description: "Rent tracking and reports.", section: "Operations" },
     { id: "lease_renewals", label: "Lease Renewals", description: "Lease renewal dates, signatures, rent review tracking, follow-ups, and reporting.", section: "Operations" },
     { id: "landlord_reports", label: "Monthly Landlord Report", description: "Owner-facing monthly property reports and branded PDF generation.", section: "Operations" },
@@ -2000,6 +2027,7 @@ function applyPageVisibility() {
         myspace: "navMySpace",
         inbox: "navInbox",
         maintenance: "navMaintenance",
+        inspections: "navInspections",
         rent: "navRentTracker",
         lease_renewals: "navLeaseRenewals",
         landlord_reports: "navLandlordReports",
@@ -3005,7 +3033,7 @@ function formatDateShort(dt) {
 }
 
 function switchDashboardTab(tab) {
-    const requestedTab = ["portal", "notifications", "myspace", "maintenance", "rent", "lease_renewals", "landlord_reports", "compliance", "coverage", "compliance_providers", "properties", "team", "activity", "system", "inbox"].includes(tab) ? tab : "portal";
+    const requestedTab = ["portal", "notifications", "myspace", "maintenance", "inspections", "rent", "lease_renewals", "landlord_reports", "compliance", "coverage", "compliance_providers", "properties", "team", "activity", "system", "inbox"].includes(tab) ? tab : "portal";
     if (requestedTab !== "maintenance" && maintenanceOrderModalIsOpen()) {
         closeMaintenanceOrderModal();
     }
@@ -3021,6 +3049,7 @@ function switchDashboardTab(tab) {
         myspace: ["My Space", "Your private workspace for planning, follow-ups, snippets, notes, and staff guides."],
         inbox: ["Email Manager", "Unified inbox operations with clear action queues and fast follow-up tools."],
         maintenance: ["Maintenance", "Create, approve, quote, schedule, and complete property maintenance orders."],
+        inspections: ["Inspections", "Build conflict-aware multi-agent inspection schedules with optimised travel routes and timings."],
         rent: ["Rent Tracker", "Track rental due dates, payments, arrears, and yearly rent reporting."],
         lease_renewals: ["Lease Renewals", "Track renewal due dates, signatures, rent review details, follow-ups, and portfolio reporting."],
         landlord_reports: ["Monthly Landlord Report", "Prepare a branded owner report from live property records and verified report-only notes."],
@@ -3042,6 +3071,7 @@ function switchDashboardTab(tab) {
     const mySpacePanel = document.getElementById("mySpacePanel");
     const inboxPanel = document.getElementById("inboxPanel");
     const maintenancePanel = document.getElementById("maintenancePanel");
+    const inspectionsPanel = document.getElementById("inspectionsPanel");
     const rentPanel = document.getElementById("rentPanel");
     const leaseRenewalsPanel = document.getElementById("leaseRenewalsPanel");
     const landlordReportsPanel = document.getElementById("landlordReportsPanel");
@@ -3054,6 +3084,7 @@ function switchDashboardTab(tab) {
     const systemPanel = document.getElementById("systemPanel");
     const navInbox = document.getElementById("navInbox");
     const navMaintenance = document.getElementById("navMaintenance");
+    const navInspections = document.getElementById("navInspections");
     const navMySpace = document.getElementById("navMySpace");
     const navPortal = document.getElementById("navPortal");
     const navRent = document.getElementById("navRentTracker");
@@ -3073,6 +3104,7 @@ function switchDashboardTab(tab) {
     if (mySpacePanel) mySpacePanel.classList.toggle("hidden", currentDashboardTab !== "myspace");
     if (inboxPanel) inboxPanel.classList.toggle("hidden", currentDashboardTab !== "inbox");
     if (maintenancePanel) maintenancePanel.classList.toggle("hidden", currentDashboardTab !== "maintenance");
+    if (inspectionsPanel) inspectionsPanel.classList.toggle("hidden", currentDashboardTab !== "inspections");
     if (rentPanel) rentPanel.classList.toggle("hidden", currentDashboardTab !== "rent");
     if (leaseRenewalsPanel) leaseRenewalsPanel.classList.toggle("hidden", currentDashboardTab !== "lease_renewals");
     if (landlordReportsPanel) landlordReportsPanel.classList.toggle("hidden", currentDashboardTab !== "landlord_reports");
@@ -3087,6 +3119,7 @@ function switchDashboardTab(tab) {
     if (navMySpace) navMySpace.classList.toggle("active", currentDashboardTab === "myspace");
     if (navInbox) navInbox.classList.toggle("active", currentDashboardTab === "inbox");
     if (navMaintenance) navMaintenance.classList.toggle("active", currentDashboardTab === "maintenance");
+    if (navInspections) navInspections.classList.toggle("active", currentDashboardTab === "inspections");
     if (navRent) navRent.classList.toggle("active", currentDashboardTab === "rent");
     if (navLeaseRenewals) navLeaseRenewals.classList.toggle("active", currentDashboardTab === "lease_renewals");
     if (navLandlordReports) navLandlordReports.classList.toggle("active", currentDashboardTab === "landlord_reports");
@@ -3110,6 +3143,7 @@ function switchDashboardTab(tab) {
     if (shell) {
         shell.classList.toggle("inbox-mode", currentDashboardTab === "inbox");
         shell.classList.toggle("maintenance-mode", currentDashboardTab === "maintenance");
+        shell.classList.toggle("inspections-mode", currentDashboardTab === "inspections");
         shell.classList.toggle("lease-renewals-mode", currentDashboardTab === "lease_renewals");
         shell.classList.toggle("landlord-reports-mode", currentDashboardTab === "landlord_reports");
         shell.classList.toggle("portal-mode", currentDashboardTab === "portal");
@@ -3142,6 +3176,10 @@ function switchDashboardTab(tab) {
         refreshPropertyOptions();
         loadMaintenanceTradies();
         loadMaintenanceDashboard();
+    }
+    if (currentDashboardTab === "inspections") {
+        if (!inspectionsLoadedOnce) initInspectionsWorkspace();
+        setTimeout(invalidateInspectionMap, 80);
     }
     if (currentDashboardTab === "myspace" && !mySpaceLoadedOnce) {
         loadMySpace();
@@ -3193,6 +3231,1285 @@ function toggleSidebar() {
     const collapsed = !(shell && shell.classList.contains("sidebar-collapsed"));
     localStorage.setItem("agent_sidebar_collapsed", collapsed ? "1" : "0");
     applySidebarState();
+}
+
+const INSPECTION_ROUTE_COLOURS = [
+    "#2563eb", "#e11d48", "#059669", "#9333ea", "#ea580c",
+    "#0891b2", "#ca8a04", "#4f46e5", "#db2777", "#16a34a",
+];
+
+function inspectionEscape(value) {
+    return escapeHtml(String(value == null ? "" : value));
+}
+
+function inspectionToday() {
+    try {
+        const parts = new Intl.DateTimeFormat("en-AU", {
+            timeZone: "Australia/Melbourne",
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+        }).formatToParts(new Date());
+        const values = Object.fromEntries(parts.filter((part) => part.type !== "literal").map((part) => [part.type, part.value]));
+        return `${values.year}-${values.month}-${values.day}`;
+    } catch {
+        return new Date().toISOString().slice(0, 10);
+    }
+}
+
+function inspectionDefaultPlanName(dateValue = "") {
+    const raw = String(dateValue || inspectionToday());
+    try {
+        const date = new Date(`${raw}T12:00:00`);
+        return `Inspections - ${date.toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })}`;
+    } catch {
+        return `Inspection plan ${raw}`;
+    }
+}
+
+function inspectionParseJson(value) {
+    if (typeof value !== "string") return value;
+    try { return JSON.parse(value); } catch { return value; }
+}
+
+function inspectionArray(value) {
+    const parsed = inspectionParseJson(value);
+    return Array.isArray(parsed) ? parsed : [];
+}
+
+function inspectionNumber(value, fallback = 0) {
+    const number = Number(value);
+    return Number.isFinite(number) ? number : fallback;
+}
+
+function inspectionAgentId(agent) {
+    return inspectionNumber(agent?.id ?? agent?.agent_id ?? agent?.user_id, 0);
+}
+
+function inspectionAgentById(agentId) {
+    const id = inspectionNumber(agentId, 0);
+    return inspectionAgents.find((agent) => inspectionAgentId(agent) === id) || null;
+}
+
+function inspectionAgentName(agentId, fallback = "") {
+    const agent = inspectionAgentById(agentId);
+    return String(agent?.name || agent?.display_name || agent?.email || fallback || (agentId ? `Agent ${agentId}` : "Auto-allocated"));
+}
+
+function inspectionAgentInitials(agent) {
+    const name = String(agent?.name || agent?.display_name || agent?.email || "Agent").trim();
+    const parts = name.split(/\s+/).filter(Boolean);
+    return (parts.length > 1 ? `${parts[0][0]}${parts[parts.length - 1][0]}` : name.slice(0, 2)).toUpperCase();
+}
+
+function inspectionPropertyById(propertyId) {
+    const id = inspectionNumber(propertyId, 0);
+    return propertyOptionsCache.find((property) => inspectionNumber(property?.id, 0) === id) || null;
+}
+
+function inspectionPropertyLabel(propertyId, fallback = "") {
+    const property = inspectionPropertyById(propertyId);
+    return String(property?.label || propertyFullAddress(property || {}) || fallback || "");
+}
+
+function inspectionExtractAgentIds(value) {
+    const source = Array.isArray(value) ? value : (value == null ? [] : [value]);
+    return [...new Set(source.map((item) => {
+        if (item && typeof item === "object") return inspectionAgentId(item);
+        return inspectionNumber(item, 0);
+    }).filter((id) => id > 0))];
+}
+
+function createInspectionRow(seed = {}) {
+    const property = seed.property && typeof seed.property === "object" ? seed.property : null;
+    const propertyId = inspectionNumber(seed.property_id ?? property?.id, 0) || null;
+    const clientId = String(seed.client_id || seed.visit_id || `inspection-${Date.now()}-${++inspectionRowSequence}`);
+    const singleAgent = seed.agent_id ?? seed.assigned_agent_id ?? seed.assigned_user_id;
+    const agentIds = inspectionExtractAgentIds(seed.agent_ids ?? seed.assigned_agent_ids ?? seed.agents ?? singleAgent);
+    return {
+        client_id: clientId,
+        property_id: propertyId,
+        property_label: String(
+            seed.property_label || seed.address || seed.property_address || property?.label ||
+            property?.full_address || inspectionPropertyLabel(propertyId, "")
+        ),
+        agent_ids: agentIds,
+        duration_minutes: Math.min(480, Math.max(5, inspectionNumber(seed.duration_minutes ?? seed.duration ?? seed.inspection_minutes, 30))),
+        buffer_minutes: Math.min(240, Math.max(0, inspectionNumber(seed.buffer_minutes ?? seed.extra_buffer_minutes ?? seed.parking_minutes, 10))),
+        earliest_time: String(seed.earliest_time || seed.window_start || seed.earliest || ""),
+        latest_time: String(seed.latest_time || seed.window_end || seed.latest || ""),
+        notes: String(seed.notes || seed.note || ""),
+    };
+}
+
+function inspectionRowByClientId(clientId) {
+    return inspectionRows.find((row) => String(row.client_id) === String(clientId)) || null;
+}
+
+function renderInspectionPropertyOptions() {
+    const target = document.getElementById("inspectionPropertyOptions");
+    if (!target) return;
+    target.innerHTML = propertyOptionsCache
+        .map((property) => `<option value="${inspectionEscape(property?.label || propertyFullAddress(property || {}))}"></option>`)
+        .join("");
+    inspectionRows.forEach((row) => {
+        if (row.property_id && !row.property_label) row.property_label = inspectionPropertyLabel(row.property_id, "");
+    });
+}
+
+function availableInspectionAgents() {
+    return inspectionAgents.filter((agent) => inspectionAvailableAgentIds.has(inspectionAgentId(agent)));
+}
+
+function renderInspectionAvailableAgents() {
+    const target = document.getElementById("inspectionAvailableAgents");
+    const meta = document.getElementById("inspectionAvailableAgentMeta");
+    if (!target) return;
+    if (!inspectionAgents.length) {
+        target.innerHTML = `<div class="inspection-empty">No active team members are available.</div>`;
+        if (meta) meta.textContent = "No active agents";
+        return;
+    }
+    target.innerHTML = inspectionAgents.map((agent) => {
+        const id = inspectionAgentId(agent);
+        const checked = inspectionAvailableAgentIds.has(id);
+        const name = agent?.name || agent?.display_name || agent?.email || `Agent ${id}`;
+        const avatar = String(agent?.avatar_url || "").trim();
+        return `<label class="inspection-agent-toggle">
+            <input type="checkbox" data-inspection-available-agent="${id}" ${checked ? "checked" : ""} />
+            <span class="inspection-agent-avatar">${avatar ? `<img src="${inspectionEscape(avatar)}" alt="" />` : inspectionEscape(inspectionAgentInitials(agent))}</span>
+            <span>${inspectionEscape(name)}</span>
+        </label>`;
+    }).join("");
+    const count = inspectionAvailableAgentIds.size;
+    if (meta) meta.textContent = `${count} of ${inspectionAgents.length} agent${inspectionAgents.length === 1 ? "" : "s"} selected`;
+}
+
+function inspectionAgentPickerMarkup(row) {
+    const available = availableInspectionAgents();
+    const selectedNames = row.agent_ids.map((id) => inspectionAgentName(id)).filter(Boolean);
+    const summary = selectedNames.length ? selectedNames.join(", ") : "Auto-allocate best agent";
+    const options = available.length
+        ? available.map((agent) => {
+            const id = inspectionAgentId(agent);
+            return `<label class="inspection-agent-option">
+                <input type="checkbox" data-inspection-row-agent="${id}" ${row.agent_ids.includes(id) ? "checked" : ""} />
+                <span>${inspectionEscape(agent?.name || agent?.email || `Agent ${id}`)}</span>
+            </label>`;
+        }).join("")
+        : `<div class="inspection-empty">Select available agents above first.</div>`;
+    return `<details class="inspection-agent-picker">
+        <summary data-inspection-agent-summary>${inspectionEscape(summary)}</summary>
+        <div class="inspection-agent-menu">
+            <button class="inspection-agent-auto" type="button" data-inspection-action="auto-agents">Use automatic allocation</button>
+            ${options}
+        </div>
+    </details>`;
+}
+
+function renderInspectionRows() {
+    const target = document.getElementById("inspectionVisits");
+    const count = document.getElementById("inspectionVisitCount");
+    if (count) count.textContent = String(inspectionRows.length);
+    if (!target) return;
+    if (!inspectionRows.length) {
+        target.innerHTML = `<div class="inspection-empty"><strong>No inspection stops yet.</strong><br />Add a property to begin building the day.</div>`;
+        return;
+    }
+    target.innerHTML = inspectionRows.map((row, index) => {
+        const propertyHint = row.property_label || "Choose a managed property";
+        return `<article class="inspection-visit-card" data-inspection-client-id="${inspectionEscape(row.client_id)}">
+            <div class="inspection-visit-head">
+                <div class="inspection-visit-title">
+                    <span class="inspection-stop-number">${index + 1}</span>
+                    <span><strong>Inspection ${index + 1}</strong><small data-inspection-property-hint>${inspectionEscape(propertyHint)}</small></span>
+                </div>
+                <div class="inspection-visit-actions">
+                    <button class="inspection-icon-btn" type="button" title="Move earlier" aria-label="Move inspection earlier" data-inspection-action="up" ${index === 0 ? "disabled" : ""}>↑</button>
+                    <button class="inspection-icon-btn" type="button" title="Move later" aria-label="Move inspection later" data-inspection-action="down" ${index === inspectionRows.length - 1 ? "disabled" : ""}>↓</button>
+                    <button class="inspection-icon-btn danger" type="button" title="Remove" aria-label="Remove inspection" data-inspection-action="remove">×</button>
+                </div>
+            </div>
+            <div class="inspection-visit-fields">
+                <div class="field property-field">
+                    <label class="label">Property</label>
+                    <input type="text" list="inspectionPropertyOptions" autocomplete="off" data-inspection-field="property_label"
+                        class="${row.property_label && !row.property_id ? "invalid" : ""}" value="${inspectionEscape(row.property_label)}" placeholder="Search managed property address…" />
+                </div>
+                <div class="field">
+                    <label class="label">Inspection time</label>
+                    <input type="number" min="5" max="480" step="5" data-inspection-field="duration_minutes" value="${inspectionEscape(row.duration_minutes)}" />
+                    <div class="small muted" style="margin-top:4px">minutes</div>
+                </div>
+                <div class="field">
+                    <label class="label">Parking / buffer after</label>
+                    <input type="number" min="0" max="240" step="5" data-inspection-field="buffer_minutes" value="${inspectionEscape(row.buffer_minutes)}" />
+                    <div class="small muted" style="margin-top:4px">minutes</div>
+                </div>
+                <div class="field">
+                    <label class="label">Earliest arrival</label>
+                    <input type="time" data-inspection-field="earliest_time" value="${inspectionEscape(row.earliest_time)}" />
+                </div>
+                <div class="field">
+                    <label class="label">Latest arrival</label>
+                    <input type="time" data-inspection-field="latest_time" value="${inspectionEscape(row.latest_time)}" />
+                </div>
+                <div class="field agents-field">
+                    <label class="label">Assigned agents <span class="muted">(optional)</span></label>
+                    ${inspectionAgentPickerMarkup(row)}
+                </div>
+                <div class="field notes-field">
+                    <label class="label">Inspection notes <span class="muted">(optional)</span></label>
+                    <textarea maxlength="2000" data-inspection-field="notes" placeholder="Access instructions, tenant constraints, key collection, parking notes…">${inspectionEscape(row.notes)}</textarea>
+                </div>
+            </div>
+        </article>`;
+    }).join("");
+}
+
+function updateInspectionAgentSummary(card, row) {
+    const summary = card?.querySelector("[data-inspection-agent-summary]");
+    if (!summary || !row) return;
+    const names = row.agent_ids.map((id) => inspectionAgentName(id)).filter(Boolean);
+    summary.textContent = names.length ? names.join(", ") : "Auto-allocate best agent";
+}
+
+function setInspectionMessage(message = "", type = "") {
+    const target = document.getElementById("inspectionPlannerStatus");
+    if (!target) return;
+    target.textContent = String(message || "");
+    target.className = `inspection-planner-message${message ? " show" : ""}${type ? ` ${type}` : ""}`;
+}
+
+function setInspectionBusy(busy, message = "") {
+    ["inspectionOptimizeBtn", "inspectionSaveBtn", "inspectionNewPlanBtn", "inspectionAddVisitBtn", "inspectionRefreshPlansBtn"].forEach((id) => {
+        const button = document.getElementById(id);
+        if (button) button.disabled = !!busy || (id === "inspectionSaveBtn" && !inspectionLastOptimization);
+    });
+    if (message) setInspectionMessage(message, busy ? "busy" : "");
+}
+
+function markInspectionPlanDirty() {
+    const hadRenderedResult = !!inspectionLastOptimization || !!document.querySelector("#inspectionSchedule .inspection-schedule-row");
+    inspectionLastOptimization = null;
+    const save = document.getElementById("inspectionSaveBtn");
+    if (save) save.disabled = true;
+    const mapStatus = document.getElementById("inspectionMapStatus");
+    if (mapStatus && hadRenderedResult) mapStatus.textContent = "Plan changed. Optimise again to refresh routes and timings.";
+}
+
+function bindInspectionEvents() {
+    if (inspectionEventsBound) return;
+    inspectionEventsBound = true;
+    const visits = document.getElementById("inspectionVisits");
+    if (visits) {
+        visits.addEventListener("input", (event) => {
+            const control = event.target;
+            const card = control.closest("[data-inspection-client-id]");
+            const row = inspectionRowByClientId(card?.dataset.inspectionClientId);
+            if (!row) return;
+            const field = control.dataset.inspectionField;
+            if (!field) return;
+            if (field === "property_label") {
+                row.property_label = control.value || "";
+                const match = resolvePropertySearchValue(row.property_label);
+                row.property_id = match ? inspectionNumber(match.id, 0) : null;
+                control.classList.remove("invalid");
+                const hint = card.querySelector("[data-inspection-property-hint]");
+                if (hint) hint.textContent = row.property_label || "Choose a managed property";
+            } else if (field === "duration_minutes") {
+                row.duration_minutes = Math.min(480, Math.max(5, inspectionNumber(control.value, 5)));
+            } else if (field === "buffer_minutes") {
+                row.buffer_minutes = Math.min(240, Math.max(0, inspectionNumber(control.value, 0)));
+            } else {
+                row[field] = control.value || "";
+            }
+            markInspectionPlanDirty();
+        });
+        visits.addEventListener("change", (event) => {
+            const control = event.target;
+            const card = control.closest("[data-inspection-client-id]");
+            const row = inspectionRowByClientId(card?.dataset.inspectionClientId);
+            if (!row) return;
+            if (control.matches("[data-inspection-row-agent]")) {
+                const id = inspectionNumber(control.dataset.inspectionRowAgent, 0);
+                const selected = new Set(row.agent_ids);
+                if (control.checked) selected.add(id); else selected.delete(id);
+                row.agent_ids = [...selected].filter((agentId) => agentId > 0);
+                updateInspectionAgentSummary(card, row);
+                markInspectionPlanDirty();
+                return;
+            }
+            if (control.dataset.inspectionField === "property_label") {
+                control.dispatchEvent(new Event("input", { bubbles: true }));
+                control.classList.toggle("invalid", !!row.property_label && !row.property_id);
+            }
+            markInspectionPlanDirty();
+        });
+        visits.addEventListener("click", (event) => {
+            const button = event.target.closest("[data-inspection-action]");
+            if (!button) return;
+            const card = button.closest("[data-inspection-client-id]");
+            const clientId = card?.dataset.inspectionClientId;
+            const index = inspectionRows.findIndex((row) => String(row.client_id) === String(clientId));
+            if (index < 0) return;
+            const action = button.dataset.inspectionAction;
+            if (action === "remove") inspectionRows.splice(index, 1);
+            if (action === "up" && index > 0) [inspectionRows[index - 1], inspectionRows[index]] = [inspectionRows[index], inspectionRows[index - 1]];
+            if (action === "down" && index < inspectionRows.length - 1) [inspectionRows[index], inspectionRows[index + 1]] = [inspectionRows[index + 1], inspectionRows[index]];
+            if (action === "auto-agents") {
+                inspectionRows[index].agent_ids = [];
+                updateInspectionAgentSummary(card, inspectionRows[index]);
+                card.querySelectorAll("[data-inspection-row-agent]").forEach((input) => { input.checked = false; });
+                const details = button.closest("details");
+                if (details) details.open = false;
+            } else {
+                renderInspectionRows();
+            }
+            markInspectionPlanDirty();
+        });
+    }
+    const available = document.getElementById("inspectionAvailableAgents");
+    if (available) {
+        available.addEventListener("change", (event) => {
+            const control = event.target.closest("[data-inspection-available-agent]");
+            if (!control) return;
+            const id = inspectionNumber(control.dataset.inspectionAvailableAgent, 0);
+            if (control.checked) inspectionAvailableAgentIds.add(id);
+            else {
+                inspectionAvailableAgentIds.delete(id);
+                inspectionRows.forEach((row) => { row.agent_ids = row.agent_ids.filter((agentId) => agentId !== id); });
+            }
+            renderInspectionAvailableAgents();
+            renderInspectionRows();
+            markInspectionPlanDirty();
+        });
+    }
+    ["inspectionPlanDate", "inspectionDayStart", "inspectionDayEnd", "inspectionStartAddress", "inspectionAllowAgentOverlap"].forEach((id) => {
+        const control = document.getElementById(id);
+        if (control) control.addEventListener("change", markInspectionPlanDirty);
+    });
+    const saved = document.getElementById("inspectionSavedPlans");
+    if (saved) {
+        saved.addEventListener("click", (event) => {
+            const button = event.target.closest("[data-inspection-open-plan]");
+            if (button) loadInspectionPlan(button.dataset.inspectionOpenPlan);
+        });
+        saved.addEventListener("change", (event) => {
+            const select = event.target.closest("[data-inspection-plan-status]");
+            if (select) updateInspectionPlanStatus(select.dataset.inspectionPlanStatus, select.value, select);
+        });
+    }
+    window.addEventListener("resize", invalidateInspectionMap, { passive: true });
+}
+
+async function loadInspectionAgents(force = false) {
+    if (!force && inspectionAgents.length) {
+        renderInspectionAvailableAgents();
+        return inspectionAgents;
+    }
+    try {
+        const response = await apiFetch("/user-auth/team");
+        const data = await response.json().catch(() => null);
+        if (!response.ok) throw new Error(data?.detail || "Could not load the team.");
+        const items = Array.isArray(data) ? data : inspectionArray(data?.items || data?.team || data?.users);
+        inspectionAgents = items.filter((agent) => agent?.is_active !== false && inspectionAgentId(agent) > 0);
+        const validIds = new Set(inspectionAgents.map(inspectionAgentId));
+        if (!inspectionAvailabilityInitialized) {
+            inspectionAvailableAgentIds = new Set(validIds);
+            inspectionAvailabilityInitialized = true;
+        } else {
+            inspectionAvailableAgentIds = new Set([...inspectionAvailableAgentIds].filter((id) => validIds.has(id)));
+        }
+        renderInspectionAvailableAgents();
+        renderInspectionRows();
+        return inspectionAgents;
+    } catch (error) {
+        inspectionAgents = [];
+        inspectionAvailableAgentIds = new Set();
+        renderInspectionAvailableAgents();
+        setInspectionMessage(error?.message || "Could not load active agents.", "error");
+        return [];
+    }
+}
+
+function addInspectionVisit(seed = {}) {
+    inspectionRows.push(createInspectionRow(seed));
+    renderInspectionRows();
+    markInspectionPlanDirty();
+    const target = document.getElementById("inspectionVisits");
+    if (target) setTimeout(() => target.lastElementChild?.scrollIntoView({ behavior: "smooth", block: "nearest" }), 30);
+}
+
+function resetInspectionWorkspace(options = {}) {
+    const preserveDate = !!options.preserveDate;
+    const preserveAgents = !!options.preserveAgents;
+    const dateControl = document.getElementById("inspectionPlanDate");
+    const date = preserveDate && dateControl?.value ? dateControl.value : inspectionToday();
+    inspectionCurrentPlanId = null;
+    inspectionLastOptimization = null;
+    inspectionRows = [createInspectionRow()];
+    if (!preserveAgents) {
+        inspectionAvailabilityInitialized = false;
+        inspectionAvailableAgentIds = new Set(inspectionAgents.map(inspectionAgentId));
+        inspectionAvailabilityInitialized = inspectionAgents.length > 0;
+    }
+    const values = {
+        inspectionPlanName: inspectionDefaultPlanName(date),
+        inspectionPlanDate: date,
+        inspectionDayStart: "09:00",
+        inspectionDayEnd: "17:30",
+        inspectionStartAddress: "",
+    };
+    Object.entries(values).forEach(([id, value]) => {
+        const control = document.getElementById(id);
+        if (control) control.value = value;
+    });
+    const overlap = document.getElementById("inspectionAllowAgentOverlap");
+    if (overlap) overlap.checked = false;
+    const save = document.getElementById("inspectionSaveBtn");
+    if (save) save.disabled = true;
+    renderInspectionAvailableAgents();
+    renderInspectionRows();
+    clearInspectionResults();
+    setInspectionMessage("");
+}
+
+function newInspectionPlan() {
+    resetInspectionWorkspace({ preserveAgents: true });
+    setInspectionMessage("Started a fresh inspection plan.", "success");
+}
+
+async function initInspectionsWorkspace(force = false) {
+    if (!document.getElementById("inspectionsPanel")) return;
+    bindInspectionEvents();
+    if (!inspectionRows.length) resetInspectionWorkspace({ preserveAgents: true });
+    if (!document.getElementById("inspectionPlanDate")?.value) {
+        const date = inspectionToday();
+        document.getElementById("inspectionPlanDate").value = date;
+        document.getElementById("inspectionPlanName").value = inspectionDefaultPlanName(date);
+    }
+    renderInspectionRows();
+    ensureInspectionMap();
+    if (inspectionsLoadedOnce && !force) {
+        renderInspectionPropertyOptions();
+        invalidateInspectionMap();
+        return;
+    }
+    setInspectionMessage("Loading properties, agents, and recent plans…", "busy");
+    await Promise.allSettled([
+        refreshPropertyOptions(),
+        loadInspectionAgents(force),
+        loadInspectionPlans(force),
+    ]);
+    renderInspectionPropertyOptions();
+    renderInspectionRows();
+    inspectionsLoadedOnce = true;
+    if (document.getElementById("inspectionPlannerStatus")?.classList.contains("busy")) setInspectionMessage("");
+    invalidateInspectionMap();
+}
+
+function inspectionApiError(data, fallback = "Request failed.") {
+    const detail = data?.detail ?? data?.message ?? data?.error;
+    if (Array.isArray(detail)) {
+        return detail.map((item) => item?.msg || item?.message || String(item)).join("; ");
+    }
+    if (detail && typeof detail === "object") return detail.message || JSON.stringify(detail);
+    return String(detail || fallback);
+}
+
+function collectInspectionPayload() {
+    const planDate = String(document.getElementById("inspectionPlanDate")?.value || "").trim();
+    const dayStart = String(document.getElementById("inspectionDayStart")?.value || "").trim();
+    const dayEnd = String(document.getElementById("inspectionDayEnd")?.value || "").trim();
+    let planName = String(document.getElementById("inspectionPlanName")?.value || "").trim();
+    if (!planDate) throw new Error("Choose an inspection date.");
+    if (!dayStart || !dayEnd) throw new Error("Set both the start and end of the working day.");
+    if (dayStart >= dayEnd) throw new Error("The working day must end after it starts.");
+    if (!planName) {
+        planName = inspectionDefaultPlanName(planDate);
+        const control = document.getElementById("inspectionPlanName");
+        if (control) control.value = planName;
+    }
+    const availableAgentIds = [...inspectionAvailableAgentIds].filter((id) => id > 0).sort((a, b) => a - b);
+    if (!availableAgentIds.length) throw new Error("Select at least one available agent.");
+    if (!inspectionRows.length) throw new Error("Add at least one inspection stop.");
+    const invalid = [];
+    const visits = inspectionRows.map((row, index) => {
+        if (!row.property_id && row.property_label) {
+            const match = resolvePropertySearchValue(row.property_label);
+            if (match) row.property_id = inspectionNumber(match.id, 0);
+        }
+        if (!row.property_id) invalid.push(index + 1);
+        if (row.earliest_time && row.latest_time && row.earliest_time > row.latest_time) {
+            throw new Error(`Inspection ${index + 1} has a latest arrival earlier than its earliest arrival.`);
+        }
+        return {
+            client_id: String(row.client_id),
+            property_id: inspectionNumber(row.property_id, 0),
+            agent_ids: row.agent_ids.filter((id) => inspectionAvailableAgentIds.has(id)),
+            duration_minutes: Math.min(480, Math.max(5, inspectionNumber(row.duration_minutes, 30))),
+            buffer_minutes: Math.min(240, Math.max(0, inspectionNumber(row.buffer_minutes, 0))),
+            earliest_time: row.earliest_time || null,
+            latest_time: row.latest_time || null,
+            notes: String(row.notes || "").trim() || null,
+        };
+    });
+    if (invalid.length) {
+        renderInspectionRows();
+        throw new Error(`Select a property from the managed register for inspection${invalid.length === 1 ? "" : "s"} ${invalid.join(", ")}.`);
+    }
+    return {
+        plan_name: planName,
+        plan_date: planDate,
+        day_start: dayStart,
+        day_end: dayEnd,
+        start_address: String(document.getElementById("inspectionStartAddress")?.value || "").trim() || null,
+        available_agent_ids: availableAgentIds,
+        allow_agent_overlap: !!document.getElementById("inspectionAllowAgentOverlap")?.checked,
+        visits,
+    };
+}
+
+async function optimizeInspectionPlan() {
+    let payload;
+    try {
+        payload = collectInspectionPayload();
+    } catch (error) {
+        setInspectionMessage(error?.message || "Review the inspection plan.", "error");
+        return;
+    }
+    const requestMailbox = normalizeMailbox(currentMailbox);
+    setInspectionBusy(true, `Calculating the best timings and routes for ${payload.visits.length} inspection${payload.visits.length === 1 ? "" : "s"}…`);
+    try {
+        const response = await apiFetch("/inspections/optimize", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+        });
+        const data = await response.json().catch(() => null);
+        if (requestMailbox !== normalizeMailbox(currentMailbox)) return;
+        if (!response.ok) throw new Error(inspectionApiError(data, `Optimisation failed (${response.status}).`));
+        const rawResult = data || {};
+        const optimizedVisitCount = inspectionResultVisits(normalizeInspectionOptimization(rawResult)).length;
+        inspectionLastOptimization = optimizedVisitCount ? rawResult : null;
+        renderInspectionOptimization(rawResult);
+        if (!optimizedVisitCount) {
+            setInspectionMessage("No inspections could be scheduled. Review the visible warnings, availability, and time windows, then try again.", "error");
+        } else if (optimizedVisitCount < payload.visits.length) {
+            setInspectionMessage(`${optimizedVisitCount} of ${payload.visits.length} inspections were scheduled. Review the warnings before saving.`, "success");
+        } else {
+            setInspectionMessage("Routes and inspection timings are ready. Review any warnings, then save the plan.", "success");
+        }
+    } catch (error) {
+        if (requestMailbox !== normalizeMailbox(currentMailbox)) return;
+        inspectionLastOptimization = null;
+        setInspectionMessage(error?.message || "Could not optimise this inspection plan.", "error");
+    } finally {
+        setInspectionBusy(false);
+    }
+}
+
+async function saveInspectionPlan() {
+    if (!inspectionLastOptimization) {
+        setInspectionMessage("Optimise the plan before saving it.", "error");
+        return;
+    }
+    let input;
+    try { input = collectInspectionPayload(); }
+    catch (error) {
+        setInspectionMessage(error?.message || "Review the inspection plan.", "error");
+        return;
+    }
+    const payload = {
+        name: input.plan_name,
+        status: "PLANNED",
+        plan_date: input.plan_date,
+        day_start: input.day_start,
+        day_end: input.day_end,
+        start_address: input.start_address,
+        allow_agent_overlap: input.allow_agent_overlap,
+        optimization_result: inspectionLastOptimization,
+    };
+    const requestMailbox = normalizeMailbox(currentMailbox);
+    setInspectionBusy(true, "Saving the inspection plan…");
+    try {
+        const response = await apiFetch("/inspections/plans", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+        });
+        const data = await response.json().catch(() => null);
+        if (requestMailbox !== normalizeMailbox(currentMailbox)) return;
+        if (!response.ok) throw new Error(inspectionApiError(data, `Could not save the plan (${response.status}).`));
+        const saved = data?.plan || data?.item || data?.data || data || {};
+        inspectionCurrentPlanId = saved?.id ?? saved?.plan_id ?? inspectionCurrentPlanId;
+        await loadInspectionPlans(true);
+        if (requestMailbox !== normalizeMailbox(currentMailbox)) return;
+        inspectionLastOptimization = null;
+        setInspectionMessage("Inspection plan saved successfully.", "success");
+    } catch (error) {
+        if (requestMailbox !== normalizeMailbox(currentMailbox)) return;
+        setInspectionMessage(error?.message || "Could not save the inspection plan.", "error");
+    } finally {
+        setInspectionBusy(false);
+    }
+}
+
+function inspectionPlanStatusLabel(status) {
+    const value = String(status || "PLANNED").toUpperCase();
+    const labels = {
+        DRAFT: "Draft",
+        PLANNED: "Planned",
+        CONFIRMED: "Confirmed",
+        IN_PROGRESS: "In progress",
+        COMPLETED: "Completed",
+        CANCELLED: "Cancelled",
+    };
+    return labels[value] || value.replaceAll("_", " ").toLowerCase().replace(/^./, (char) => char.toUpperCase());
+}
+
+function inspectionPlanStatusOptions(selected) {
+    const value = String(selected || "PLANNED").toUpperCase();
+    const statuses = ["PLANNED", "CONFIRMED", "IN_PROGRESS", "COMPLETED", "CANCELLED"];
+    if (!statuses.includes(value)) statuses.unshift(value);
+    return statuses.map((status) => `<option value="${inspectionEscape(status)}" ${status === value ? "selected" : ""}>${inspectionEscape(inspectionPlanStatusLabel(status))}</option>`).join("");
+}
+
+function inspectionFormatPlanDate(value) {
+    const raw = String(value || "");
+    if (!raw) return "No date";
+    try {
+        return new Date(`${raw.slice(0, 10)}T12:00:00`).toLocaleDateString("en-AU", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+    } catch { return raw; }
+}
+
+function renderInspectionPlans() {
+    const target = document.getElementById("inspectionSavedPlans");
+    const meta = document.getElementById("inspectionSavedMeta");
+    if (!target) return;
+    if (meta) meta.textContent = `${inspectionPlans.length} recent saved plan${inspectionPlans.length === 1 ? "" : "s"}.`;
+    if (!inspectionPlans.length) {
+        target.innerHTML = `<div class="inspection-empty">No saved inspection plans yet. Optimise and save your first plan.</div>`;
+        return;
+    }
+    target.innerHTML = inspectionPlans.map((plan) => {
+        const id = plan?.id ?? plan?.plan_id;
+        const name = plan?.name || plan?.plan_name || `Inspection plan ${id || ""}`;
+        const date = plan?.plan_date || plan?.date;
+        const status = plan?.status || "PLANNED";
+        const current = inspectionCurrentPlanId != null && String(inspectionCurrentPlanId) === String(id);
+        return `<article class="inspection-saved-plan" ${current ? `style="border-color:#d0ad53;background:#fffdf6"` : ""}>
+            <div><h4>${inspectionEscape(name)}</h4><p>${inspectionEscape(inspectionFormatPlanDate(date))} · ${inspectionEscape(inspectionPlanStatusLabel(status))}</p></div>
+            <div class="inspection-saved-actions">
+                <select data-inspection-plan-status="${inspectionEscape(id)}" aria-label="Plan status">${inspectionPlanStatusOptions(status)}</select>
+                <button class="btn" type="button" data-inspection-open-plan="${inspectionEscape(id)}">Open</button>
+            </div>
+        </article>`;
+    }).join("");
+}
+
+async function loadInspectionPlans(force = false) {
+    const target = document.getElementById("inspectionSavedPlans");
+    const requestMailbox = normalizeMailbox(currentMailbox);
+    if (target && (force || !inspectionPlans.length)) target.innerHTML = `<div class="inspection-empty">Loading recent inspection plans…</div>`;
+    try {
+        const response = await apiFetch("/inspections/plans?limit=12");
+        const data = await response.json().catch(() => null);
+        if (requestMailbox !== normalizeMailbox(currentMailbox)) return [];
+        if (!response.ok) throw new Error(inspectionApiError(data, "Could not load saved plans."));
+        const parsed = inspectionParseJson(data);
+        inspectionPlans = Array.isArray(parsed)
+            ? parsed
+            : inspectionArray(parsed?.items || parsed?.plans || parsed?.results || parsed?.data);
+        renderInspectionPlans();
+        return inspectionPlans;
+    } catch (error) {
+        if (requestMailbox !== normalizeMailbox(currentMailbox)) return [];
+        inspectionPlans = [];
+        if (target) target.innerHTML = `<div class="inspection-empty">${inspectionEscape(error?.message || "Could not load saved plans.")}</div>`;
+        return [];
+    }
+}
+
+function normalizeInspectionOptimization(raw) {
+    let current = inspectionParseJson(raw);
+    if (Array.isArray(current)) return { visits: current };
+    if (!current || typeof current !== "object") return {};
+    for (let depth = 0; depth < 4; depth += 1) {
+        const optimization = inspectionParseJson(current?.optimization_result ?? current?.optimization);
+        if (optimization && typeof optimization === "object" && optimization !== current) {
+            current = optimization;
+            continue;
+        }
+        const result = inspectionParseJson(current?.result);
+        if (result && typeof result === "object" && (result.visits || result.routes || result.metrics || result.schedule)) {
+            current = result;
+            continue;
+        }
+        const data = inspectionParseJson(current?.data);
+        if (data && typeof data === "object" && (data.visits || data.routes || data.metrics || data.schedule || data.optimization_result)) {
+            current = data;
+            continue;
+        }
+        break;
+    }
+    return current && typeof current === "object" ? current : {};
+}
+
+function inspectionResultVisits(result) {
+    return inspectionArray(result?.visits || result?.optimized_visits || result?.schedule || result?.appointments || result?.stops);
+}
+
+function inspectionResultRoutes(result) {
+    const routes = inspectionParseJson(result?.routes || result?.agent_routes || result?.route_plans);
+    if (Array.isArray(routes)) return routes;
+    if (routes && typeof routes === "object") {
+        return Object.entries(routes).map(([key, value]) => ({
+            ...(value && typeof value === "object" ? value : { visits: value }),
+            agent_id: value?.agent_id ?? key,
+        }));
+    }
+    return [];
+}
+
+function inspectionSourceVisits(plan, optimization) {
+    const request = inspectionParseJson(plan?.request_payload || plan?.input || plan?.plan_input);
+    const optimizedVisits = inspectionResultVisits(optimization);
+    if (optimizedVisits.length) return optimizedVisits;
+    return inspectionArray(plan?.visits || plan?.inspection_visits || request?.visits);
+}
+
+async function loadInspectionPlan(planId) {
+    if (!planId) return;
+    const requestMailbox = normalizeMailbox(currentMailbox);
+    setInspectionBusy(true, "Loading the saved inspection plan…");
+    try {
+        const response = await apiFetch(`/inspections/plans/${encodeURIComponent(planId)}`);
+        const data = await response.json().catch(() => null);
+        if (requestMailbox !== normalizeMailbox(currentMailbox)) return;
+        if (!response.ok) throw new Error(inspectionApiError(data, "Could not load this plan."));
+        let plan = inspectionParseJson(data?.plan || data?.item || data?.data || data) || {};
+        if (plan?.plan && typeof plan.plan === "object") plan = plan.plan;
+        const optimizationRaw = inspectionParseJson(plan?.optimization_result || plan?.optimization || data?.optimization_result || data?.result);
+        const optimization = normalizeInspectionOptimization(optimizationRaw);
+        const date = String(plan?.plan_date || plan?.date || inspectionToday()).slice(0, 10);
+        const values = {
+            inspectionPlanName: plan?.name || plan?.plan_name || inspectionDefaultPlanName(date),
+            inspectionPlanDate: date,
+            inspectionDayStart: String(plan?.day_start || plan?.start_time || "09:00").slice(0, 5),
+            inspectionDayEnd: String(plan?.day_end || plan?.end_time || "17:30").slice(0, 5),
+            inspectionStartAddress: plan?.start_address || plan?.departure_address || "",
+        };
+        Object.entries(values).forEach(([id, value]) => {
+            const control = document.getElementById(id);
+            if (control) control.value = String(value || "");
+        });
+        const overlap = document.getElementById("inspectionAllowAgentOverlap");
+        if (overlap) overlap.checked = !!(plan?.allow_agent_overlap ?? plan?.allow_overlap);
+        const sourceVisits = inspectionSourceVisits(plan, optimization);
+        inspectionRows = sourceVisits.length ? sourceVisits.map(createInspectionRow) : [createInspectionRow()];
+        let planAgentIds = inspectionExtractAgentIds(plan?.available_agent_ids || optimization?.available_agent_ids);
+        if (!planAgentIds.length) {
+            planAgentIds = [...new Set(sourceVisits.flatMap((visit) => inspectionExtractAgentIds(
+                visit?.agent_ids ?? visit?.assigned_agent_ids ?? visit?.agents ?? visit?.agent_id
+            )))];
+        }
+        planAgentIds = planAgentIds.filter((agentId) => !!inspectionAgentById(agentId));
+        if (planAgentIds.length) {
+            inspectionAvailableAgentIds = new Set(planAgentIds);
+            inspectionAvailabilityInitialized = true;
+        }
+        inspectionCurrentPlanId = plan?.id ?? plan?.plan_id ?? planId;
+        const loadedOptimization = optimizationRaw && typeof optimizationRaw === "object" ? optimizationRaw : null;
+        inspectionLastOptimization = null;
+        renderInspectionAvailableAgents();
+        renderInspectionPropertyOptions();
+        renderInspectionRows();
+        renderInspectionPlans();
+        if (loadedOptimization) renderInspectionOptimization(loadedOptimization);
+        else clearInspectionResults();
+        const save = document.getElementById("inspectionSaveBtn");
+        if (save) save.disabled = true;
+        setInspectionMessage(`Loaded ${values.inspectionPlanName}.`, "success");
+    } catch (error) {
+        if (requestMailbox !== normalizeMailbox(currentMailbox)) return;
+        setInspectionMessage(error?.message || "Could not load the saved inspection plan.", "error");
+    } finally {
+        setInspectionBusy(false);
+    }
+}
+
+async function updateInspectionPlanStatus(planId, status, control = null) {
+    if (!planId || !status) return;
+    const requestMailbox = normalizeMailbox(currentMailbox);
+    if (control) control.disabled = true;
+    try {
+        const response = await apiFetch(`/inspections/plans/${encodeURIComponent(planId)}/status`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ status }),
+        });
+        const data = await response.json().catch(() => null);
+        if (requestMailbox !== normalizeMailbox(currentMailbox)) return;
+        if (!response.ok) throw new Error(inspectionApiError(data, "Could not update plan status."));
+        const plan = inspectionPlans.find((item) => String(item?.id ?? item?.plan_id) === String(planId));
+        if (plan) plan.status = data?.status || data?.plan?.status || status;
+        renderInspectionPlans();
+        setInspectionMessage(`Plan marked ${inspectionPlanStatusLabel(status).toLowerCase()}.`, "success");
+    } catch (error) {
+        if (requestMailbox !== normalizeMailbox(currentMailbox)) return;
+        setInspectionMessage(error?.message || "Could not update plan status.", "error");
+        await loadInspectionPlans(true);
+    } finally {
+        if (control?.isConnected) control.disabled = false;
+    }
+}
+
+function inspectionProviderLabel(provider) {
+    if (!provider) return "Route engine";
+    if (typeof provider === "string") return provider;
+    return String(provider.name || provider.label || provider.provider || provider.model || "Route engine");
+}
+
+function inspectionHumanize(value) {
+    return String(value || "")
+        .replace(/([a-z])([A-Z])/g, "$1 $2")
+        .replaceAll("_", " ")
+        .replace(/^./, (char) => char.toUpperCase());
+}
+
+function inspectionFormatMinutes(value) {
+    const minutes = Math.round(inspectionNumber(value, 0));
+    if (minutes <= 0) return "0 min";
+    if (minutes < 60) return `${minutes} min`;
+    const hours = Math.floor(minutes / 60);
+    const remainder = minutes % 60;
+    return remainder ? `${hours}h ${remainder}m` : `${hours}h`;
+}
+
+function inspectionFormatMetricValue(key, value) {
+    if (value == null || value === "") return "-";
+    const name = String(key || "").toLowerCase();
+    if (typeof value === "boolean") return value ? "Yes" : "No";
+    if (name.includes("minute") || name.endsWith("_mins") || name.includes("duration")) return inspectionFormatMinutes(value);
+    if (name.includes("distance") && typeof value === "number") return `${value.toFixed(value < 10 ? 1 : 0)} km`;
+    if (typeof value === "number") return Number.isInteger(value) ? String(value) : value.toFixed(1);
+    return String(value);
+}
+
+function renderInspectionMetrics(result, visits, routes) {
+    const target = document.getElementById("inspectionMetrics");
+    if (!target) return;
+    const raw = inspectionParseJson(result?.metrics || result?.summary || {});
+    let entries = [];
+    if (Array.isArray(raw)) {
+        entries = raw.map((item, index) => [item?.label || item?.name || `Metric ${index + 1}`, item?.value ?? item?.total ?? item]);
+    } else if (raw && typeof raw === "object") {
+        entries = Object.entries(raw).filter(([, value]) => value == null || ["string", "number", "boolean"].includes(typeof value));
+    }
+    if (!entries.length) {
+        entries = [
+            ["scheduled_visits", visits.length],
+            ["agents_used", routes.length],
+            ["warnings", inspectionArray(result?.warnings).length],
+        ];
+    }
+    target.innerHTML = entries.slice(0, 8).map(([key, value]) => `<div class="inspection-metric">
+        <span>${inspectionEscape(inspectionHumanize(key))}</span>
+        <strong>${inspectionEscape(inspectionFormatMetricValue(key, value))}</strong>
+    </div>`).join("");
+}
+
+function inspectionRouteAgentIds(route) {
+    return inspectionExtractAgentIds(route?.agent_ids || route?.agents || route?.agent_id || route?.assigned_agent_id || route?.user_id || route?.agent);
+}
+
+function inspectionVisitAgentIds(visit) {
+    return inspectionExtractAgentIds(visit?.agent_ids || visit?.assigned_agent_ids || visit?.agents || visit?.agent_id || visit?.assigned_agent_id || visit?.assigned_user_id || visit?.agent);
+}
+
+function inspectionRouteDistance(route) {
+    const direct = route?.distance_km ?? route?.total_distance_km ?? route?.distance;
+    if (direct != null && direct !== "") {
+        const number = inspectionNumber(direct, NaN);
+        if (Number.isFinite(number)) return number;
+    }
+    const metres = inspectionNumber(route?.distance_metres ?? route?.distance_meters ?? route?.total_distance_meters, NaN);
+    return Number.isFinite(metres) ? metres / 1000 : null;
+}
+
+function inspectionRouteDuration(route) {
+    const minutes = route?.drive_minutes ?? route?.travel_minutes ?? route?.total_travel_minutes ?? route?.duration_minutes ?? route?.total_duration_minutes;
+    if (minutes != null && minutes !== "") return inspectionNumber(minutes, 0);
+    const seconds = inspectionNumber(route?.duration_seconds ?? route?.travel_seconds, NaN);
+    return Number.isFinite(seconds) ? seconds / 60 : null;
+}
+
+function inspectionRouteColour(route, index) {
+    const colour = String(route?.color || route?.colour || "").trim();
+    return /^#[0-9a-f]{3,8}$/i.test(colour) ? colour : INSPECTION_ROUTE_COLOURS[index % INSPECTION_ROUTE_COLOURS.length];
+}
+
+function renderInspectionRouteLegend(routes) {
+    const target = document.getElementById("inspectionRouteLegend");
+    if (!target) return;
+    if (!routes.length) {
+        target.innerHTML = `<div class="inspection-empty">No per-agent route details were returned.</div>`;
+        return;
+    }
+    target.innerHTML = routes.map((route, index) => {
+        const ids = inspectionRouteAgentIds(route);
+        const returnedNames = inspectionArray(route?.agent_names);
+        const names = ids.length
+            ? ids.map((id, agentIndex) => inspectionAgentName(id, returnedNames[agentIndex] || route?.agent_name)).join(" + ")
+            : String(route?.agent_name || route?.name || `Route ${index + 1}`);
+        const stops = inspectionArray(route?.visits || route?.stops || route?.appointments).length || inspectionNumber(route?.visit_count ?? route?.stops_count, 0);
+        const distance = inspectionRouteDistance(route);
+        const duration = inspectionRouteDuration(route);
+        const detail = [stops ? `${stops} stop${stops === 1 ? "" : "s"}` : "", distance != null ? `${distance.toFixed(1)} km` : ""].filter(Boolean).join(" · ") || "Optimised route";
+        return `<div class="inspection-route-item" style="--route-colour:${inspectionRouteColour(route, index)}">
+            <span class="inspection-route-swatch"></span>
+            <span><strong>${inspectionEscape(names)}</strong><small>${inspectionEscape(detail)}</small></span>
+            <span>${duration != null ? inspectionEscape(inspectionFormatMinutes(duration)) : ""}</span>
+        </div>`;
+    }).join("");
+}
+
+function inspectionFormatClock(value) {
+    if (!value) return "Flexible";
+    const raw = String(value);
+    const timeMatch = raw.match(/(?:T|^)(\d{2}):(\d{2})/);
+    if (timeMatch) {
+        const hour = Number(timeMatch[1]);
+        const minute = timeMatch[2];
+        const suffix = hour >= 12 ? "pm" : "am";
+        return `${hour % 12 || 12}:${minute}${suffix}`;
+    }
+    try {
+        return new Intl.DateTimeFormat("en-AU", { timeZone: "Australia/Melbourne", hour: "numeric", minute: "2-digit" }).format(new Date(raw));
+    } catch { return raw; }
+}
+
+function inspectionVisitAddress(visit) {
+    const property = visit?.property && typeof visit.property === "object" ? visit.property : null;
+    const row = inspectionRowByClientId(visit?.client_id || visit?.visit_id);
+    return String(
+        visit?.property_label || visit?.address || visit?.property_address || visit?.full_address ||
+        property?.label || property?.full_address || property?.property_address ||
+        inspectionPropertyLabel(visit?.property_id || property?.id, row?.property_label || "Inspection stop")
+    );
+}
+
+function renderInspectionSchedule(visits) {
+    const target = document.getElementById("inspectionSchedule");
+    if (!target) return;
+    if (!visits.length) {
+        target.innerHTML = `<div class="inspection-empty">No calculated visits were returned.</div>`;
+        return;
+    }
+    target.innerHTML = visits.map((visit, index) => {
+        const start = visit?.scheduled_start || visit?.start_time || visit?.appointment_start || visit?.arrival_time || visit?.scheduled_time;
+        const end = visit?.scheduled_end || visit?.end_time || visit?.appointment_end || visit?.departure_time;
+        const ids = inspectionVisitAgentIds(visit);
+        const returnedNames = inspectionArray(visit?.agent_names);
+        const agentNames = ids.length
+            ? ids.map((id, agentIndex) => inspectionAgentName(id, returnedNames[agentIndex])).join(", ")
+            : String(returnedNames.join(", ") || visit?.agent_name || "Auto-allocated");
+        const duration = visit?.duration_minutes ?? inspectionRowByClientId(visit?.client_id)?.duration_minutes;
+        const detail = [agentNames, duration ? inspectionFormatMinutes(duration) : "", end ? `until ${inspectionFormatClock(end)}` : ""].filter(Boolean).join(" · ");
+        return `<div class="inspection-schedule-row">
+            <span class="inspection-schedule-time">${inspectionEscape(inspectionFormatClock(start))}</span>
+            <span class="inspection-schedule-seq">${index + 1}</span>
+            <span class="inspection-schedule-copy"><strong>${inspectionEscape(inspectionVisitAddress(visit))}</strong><small>${inspectionEscape(detail)}</small></span>
+        </div>`;
+    }).join("");
+}
+
+function inspectionNoticeText(item) {
+    if (item == null) return "";
+    if (typeof item === "string" || typeof item === "number") return String(item);
+    return String(item.message || item.detail || item.text || item.title || item.warning || item.insight || JSON.stringify(item));
+}
+
+function renderInspectionNotices(id, sectionId, values, kind = "") {
+    const target = document.getElementById(id);
+    const section = document.getElementById(sectionId);
+    const items = inspectionArray(values).map(inspectionNoticeText).filter(Boolean);
+    if (section) section.classList.toggle("hidden", !items.length);
+    if (target) target.innerHTML = items.map((item) => `<div class="inspection-notice ${kind}">${inspectionEscape(item)}</div>`).join("");
+}
+
+function inspectionCoordinate(value) {
+    const parsed = inspectionParseJson(value);
+    if (!parsed) return null;
+    if (typeof parsed === "string" && parsed.includes(",")) {
+        return inspectionCoordinate(parsed.split(",").map((part) => Number(part.trim())));
+    }
+    if (Array.isArray(parsed) && parsed.length >= 2 && !Array.isArray(parsed[0])) {
+        const first = inspectionNumber(parsed[0], NaN);
+        const second = inspectionNumber(parsed[1], NaN);
+        if (!Number.isFinite(first) || !Number.isFinite(second)) return null;
+        const point = Math.abs(first) > 90 ? [second, first] : (Math.abs(second) > 90 ? [first, second] : [second, first]);
+        return Math.abs(point[0]) <= 90 && Math.abs(point[1]) <= 180 ? point : null;
+    }
+    if (parsed && typeof parsed === "object") {
+        const lat = inspectionNumber(parsed.lat ?? parsed.latitude, NaN);
+        const lng = inspectionNumber(parsed.lng ?? parsed.lon ?? parsed.long ?? parsed.longitude, NaN);
+        if (Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180) return [lat, lng];
+        if (parsed.coordinates) return inspectionCoordinate(parsed.coordinates);
+        if (parsed.location) return inspectionCoordinate(parsed.location);
+    }
+    return null;
+}
+
+function decodeInspectionPolyline(encoded, precision = 5) {
+    if (typeof encoded !== "string" || encoded.length < 4) return [];
+    let index = 0;
+    let lat = 0;
+    let lng = 0;
+    const coordinates = [];
+    const factor = 10 ** precision;
+    try {
+        while (index < encoded.length) {
+            let result = 0;
+            let shift = 0;
+            let byte;
+            do {
+                byte = encoded.charCodeAt(index++) - 63;
+                result |= (byte & 0x1f) << shift;
+                shift += 5;
+            } while (byte >= 0x20 && index <= encoded.length);
+            lat += (result & 1) ? ~(result >> 1) : (result >> 1);
+            result = 0;
+            shift = 0;
+            do {
+                byte = encoded.charCodeAt(index++) - 63;
+                result |= (byte & 0x1f) << shift;
+                shift += 5;
+            } while (byte >= 0x20 && index <= encoded.length);
+            lng += (result & 1) ? ~(result >> 1) : (result >> 1);
+            const point = [lat / factor, lng / factor];
+            if (Math.abs(point[0]) <= 90 && Math.abs(point[1]) <= 180) coordinates.push(point);
+        }
+    } catch { return []; }
+    return coordinates;
+}
+
+function inspectionGeometryPoints(value) {
+    const geometry = inspectionParseJson(value);
+    if (!geometry) return [];
+    if (typeof geometry === "string") return decodeInspectionPolyline(geometry);
+    if (Array.isArray(geometry)) {
+        if (geometry.length >= 2 && !Array.isArray(geometry[0]) && typeof geometry[0] !== "object") {
+            const point = inspectionCoordinate(geometry);
+            return point ? [point] : [];
+        }
+        return geometry.flatMap((part) => inspectionGeometryPoints(part));
+    }
+    if (geometry.type === "Feature") return inspectionGeometryPoints(geometry.geometry);
+    if (geometry.type === "FeatureCollection") return inspectionArray(geometry.features).flatMap((feature) => inspectionGeometryPoints(feature));
+    if (geometry.coordinates) return inspectionGeometryPoints(geometry.coordinates);
+    if (geometry.geometry) return inspectionGeometryPoints(geometry.geometry);
+    return [];
+}
+
+function inspectionVisitCoordinate(visit) {
+    const property = visit?.property && typeof visit.property === "object" ? visit.property : null;
+    return inspectionCoordinate(visit) || inspectionCoordinate(visit?.location) || inspectionCoordinate(visit?.coordinates) || inspectionCoordinate(visit?.geometry) || inspectionCoordinate(property);
+}
+
+function inspectionRoutePath(route) {
+    const directCandidates = [route?.geometry, route?.geojson, route?.route_geometry, route?.polyline, route?.encoded_polyline, route?.coordinates, route?.path, route?.points];
+    for (const candidate of directCandidates) {
+        const points = inspectionGeometryPoints(candidate);
+        if (points.length >= 2) return { points, approximate: false };
+    }
+    const legPoints = inspectionArray(route?.legs || route?.segments).flatMap((leg) => {
+        for (const candidate of [leg?.geometry, leg?.geojson, leg?.polyline, leg?.coordinates, leg?.path, leg?.points]) {
+            const points = inspectionGeometryPoints(candidate);
+            if (points.length) return points;
+        }
+        return [];
+    });
+    if (legPoints.length >= 2) return { points: legPoints, approximate: false };
+    const stopPoints = inspectionArray(route?.visits || route?.stops || route?.appointments)
+        .map(inspectionVisitCoordinate).filter(Boolean);
+    return { points: stopPoints, approximate: stopPoints.length >= 2 };
+}
+
+function setInspectionMapEmpty(title, text, visible = true) {
+    const target = document.getElementById("inspectionMapEmpty");
+    if (!target) return;
+    const strong = target.querySelector("strong");
+    const span = target.querySelector("span");
+    if (strong) strong.textContent = title || "Route map";
+    if (span) span.textContent = text || "";
+    target.classList.toggle("hidden", !visible);
+}
+
+function ensureInspectionMap() {
+    const target = document.getElementById("inspectionMap");
+    const status = document.getElementById("inspectionMapStatus");
+    if (!target) return null;
+    if (inspectionMap) {
+        invalidateInspectionMap();
+        return inspectionMap;
+    }
+    if (!window.L || typeof window.L.map !== "function") {
+        if (status) {
+            status.textContent = "Interactive map unavailable. Timings and route summaries will still work.";
+            status.classList.add("error");
+        }
+        setInspectionMapEmpty("Map unavailable", "The map library could not be loaded. You can still optimise and save this plan.", true);
+        return null;
+    }
+    try {
+        inspectionMap = window.L.map(target, { zoomControl: true, attributionControl: true, preferCanvas: true }).setView([-37.8136, 144.9631], 10);
+        const tiles = window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+            maxZoom: 19,
+            attribution: "&copy; OpenStreetMap contributors",
+        });
+        let tileErrorShown = false;
+        tiles.on("tileerror", () => {
+            if (tileErrorShown) return;
+            tileErrorShown = true;
+            if (status) {
+                status.textContent = "Map tiles are temporarily unavailable. Route summaries remain available.";
+                status.classList.add("error");
+            }
+        });
+        tiles.addTo(inspectionMap);
+        inspectionMapRouteLayer = window.L.layerGroup().addTo(inspectionMap);
+        inspectionMapMarkerLayer = window.L.layerGroup().addTo(inspectionMap);
+        setInspectionMapEmpty("", "", false);
+        if (status) {
+            status.textContent = "Map ready. Optimise the plan to draw agent routes.";
+            status.classList.remove("error");
+        }
+        setTimeout(invalidateInspectionMap, 80);
+    } catch (error) {
+        inspectionMap = null;
+        if (status) {
+            status.textContent = "Interactive map unavailable. Timings and route summaries will still work.";
+            status.classList.add("error");
+        }
+        setInspectionMapEmpty("Map unavailable", error?.message || "The map could not be initialised.", true);
+    }
+    return inspectionMap;
+}
+
+function invalidateInspectionMap() {
+    if (!inspectionMap) return;
+    try { inspectionMap.invalidateSize({ pan: false }); } catch { /* map may be detaching */ }
+}
+
+function clearInspectionMapLayers() {
+    if (inspectionMapRouteLayer) inspectionMapRouteLayer.clearLayers();
+    if (inspectionMapMarkerLayer) inspectionMapMarkerLayer.clearLayers();
+}
+
+function renderInspectionMap(result, visits, routes) {
+    const map = ensureInspectionMap();
+    const status = document.getElementById("inspectionMapStatus");
+    if (!map || !window.L) return;
+    clearInspectionMapLayers();
+    const bounds = [];
+    const agentColours = new Map();
+    routes.forEach((route, index) => inspectionRouteAgentIds(route).forEach((id) => agentColours.set(id, inspectionRouteColour(route, index))));
+    let drawnRoutes = 0;
+    routes.forEach((route, index) => {
+        const routePath = inspectionRoutePath(route);
+        if (routePath.points.length < 2) return;
+        const colour = inspectionRouteColour(route, index);
+        window.L.polyline(routePath.points, {
+            color: colour,
+            weight: routePath.approximate ? 3 : 5,
+            opacity: routePath.approximate ? .65 : .86,
+            dashArray: routePath.approximate ? "6 8" : null,
+            lineCap: "round",
+            lineJoin: "round",
+        }).addTo(inspectionMapRouteLayer);
+        bounds.push(...routePath.points);
+        drawnRoutes += 1;
+    });
+    let markers = 0;
+    visits.forEach((visit, index) => {
+        const point = inspectionVisitCoordinate(visit);
+        if (!point) return;
+        const agentId = inspectionVisitAgentIds(visit)[0];
+        const colour = agentColours.get(agentId) || "#111827";
+        const icon = window.L.divIcon({
+            className: "",
+            html: `<span class="inspection-leaflet-stop" style="background:${colour}">${index + 1}</span>`,
+            iconSize: [26, 26],
+            iconAnchor: [13, 13],
+        });
+        const marker = window.L.marker(point, { icon, keyboard: true });
+        const returnedNames = inspectionArray(visit?.agent_names);
+        const names = inspectionVisitAgentIds(visit).map((id, agentIndex) => inspectionAgentName(id, returnedNames[agentIndex])).join(", ") || returnedNames.join(", ") || visit?.agent_name || "Auto-allocated";
+        marker.bindPopup(`<strong>${inspectionEscape(inspectionVisitAddress(visit))}</strong><br>${inspectionEscape(inspectionFormatClock(visit?.scheduled_start || visit?.start_time || visit?.arrival_time))} · ${inspectionEscape(names)}`);
+        marker.addTo(inspectionMapMarkerLayer);
+        bounds.push(point);
+        markers += 1;
+    });
+    setInspectionMapEmpty("", "", false);
+    if (bounds.length) {
+        try { map.fitBounds(bounds, { padding: [36, 36], maxZoom: 15 }); } catch { /* keep current view */ }
+    } else {
+        map.setView([-37.8136, 144.9631], 10);
+    }
+    if (status) {
+        status.classList.remove("error");
+        status.textContent = bounds.length
+            ? `Showing ${markers} inspection stop${markers === 1 ? "" : "s"} and ${drawnRoutes} mapped route${drawnRoutes === 1 ? "" : "s"}.`
+            : "Optimisation completed, but the route provider did not return map coordinates.";
+    }
+    setTimeout(invalidateInspectionMap, 50);
+}
+
+function renderInspectionOptimization(raw) {
+    const result = normalizeInspectionOptimization(raw);
+    const visits = inspectionResultVisits(result);
+    const routes = inspectionResultRoutes(result);
+    const provider = document.getElementById("inspectionProvider");
+    if (provider) provider.textContent = inspectionProviderLabel(result?.provider || inspectionParseJson(raw)?.provider);
+    renderInspectionMetrics(result, visits, routes);
+    renderInspectionRouteLegend(routes);
+    renderInspectionSchedule(visits);
+    const warnings = [...inspectionArray(result?.warnings || result?.conflicts || inspectionParseJson(raw)?.warnings)];
+    inspectionArray(result?.unscheduled).forEach((item) => {
+        const reason = inspectionNoticeText(item?.reason || item);
+        const clientId = item?.client_id ? ` (${item.client_id})` : "";
+        if (reason) warnings.push(`Unscheduled inspection${clientId}: ${reason}`);
+    });
+    renderInspectionNotices("inspectionWarnings", "inspectionWarningsSection", warnings, "");
+    renderInspectionNotices("inspectionInsights", "inspectionInsightsSection", result?.insights || result?.recommendations || inspectionParseJson(raw)?.insights, "insight");
+    renderInspectionMap(result, visits, routes);
+    const save = document.getElementById("inspectionSaveBtn");
+    if (save) save.disabled = !inspectionLastOptimization;
+}
+
+function clearInspectionResults() {
+    const metrics = document.getElementById("inspectionMetrics");
+    const legend = document.getElementById("inspectionRouteLegend");
+    const schedule = document.getElementById("inspectionSchedule");
+    if (metrics) metrics.innerHTML = `<div class="inspection-empty" style="grid-column:1/-1">Metrics appear after optimisation.</div>`;
+    if (legend) legend.innerHTML = `<div class="inspection-empty">No routes calculated yet.</div>`;
+    if (schedule) schedule.innerHTML = `<div class="inspection-empty">The calculated visit order and timings will appear here.</div>`;
+    renderInspectionNotices("inspectionWarnings", "inspectionWarningsSection", [], "");
+    renderInspectionNotices("inspectionInsights", "inspectionInsightsSection", [], "insight");
+    clearInspectionMapLayers();
+    const provider = document.getElementById("inspectionProvider");
+    if (provider) provider.textContent = "OpenStreetMap";
+    if (inspectionMap) {
+        inspectionMap.setView([-37.8136, 144.9631], 10);
+        const status = document.getElementById("inspectionMapStatus");
+        if (status) {
+            status.textContent = "Map ready. Optimise the plan to draw agent routes.";
+            status.classList.remove("error");
+        }
+    }
 }
 
 function maintenanceStatusLabel(status) {
@@ -5426,6 +6743,34 @@ async function importPropertiesWorkbook() {
     await refreshPropertyOptions();
 }
 
+function clearPropertyOptionsState() {
+    propertyOptionsCache = [];
+    propertyOptionsByLabel = {};
+    addressSuggestionsByLabel = {};
+    [
+        "compliancePropertyOptions",
+        "maintenancePropertyOptions",
+        "inspectionPropertyOptions",
+        "rentPropertyOptions",
+        "landlordReportPropertyOptions",
+        "leaseRenewalPropertyOptions",
+        "propertyAddressSuggestions",
+    ].forEach((id) => {
+        const list = document.getElementById(id);
+        if (list) list.innerHTML = "";
+    });
+    [
+        "compliancePropertyId",
+        "maintenancePropertyId",
+        "rentNewPropertyId",
+        "landlordReportPropertyId",
+        "leaseRenewalPropertyId",
+    ].forEach((id) => {
+        const hidden = document.getElementById(id);
+        if (hidden) hidden.value = "";
+    });
+}
+
 async function refreshPropertyOptions() {
     const search = document.getElementById("compliancePropertySearch");
     const hidden = document.getElementById("compliancePropertyId");
@@ -5442,23 +6787,16 @@ async function refreshPropertyOptions() {
     const rentSearch = document.getElementById("rentNewPropertySearch");
     const rentHidden = document.getElementById("rentNewPropertyId");
     const rentList = document.getElementById("rentPropertyOptions");
+    const requestMailbox = normalizeMailbox(currentMailbox);
     try {
         const r = await apiFetch("/properties/options");
+        if (requestMailbox !== normalizeMailbox(currentMailbox)) return;
         if (!r.ok) {
-            if (complianceList) complianceList.innerHTML = "";
-            if (maintenanceList) maintenanceList.innerHTML = "";
-            if (leaseList) leaseList.innerHTML = "";
-            if (landlordReportList) landlordReportList.innerHTML = "";
-            if (rentList) rentList.innerHTML = "";
-            renderAddressSuggestionOptions();
-            if (hidden) hidden.value = "";
-            if (maintenanceHidden) maintenanceHidden.value = "";
-            if (leaseHidden) leaseHidden.value = "";
-            if (landlordReportHidden) landlordReportHidden.value = "";
-            if (rentHidden) rentHidden.value = "";
+            clearPropertyOptionsState();
             return;
         }
         const data = await r.json();
+        if (requestMailbox !== normalizeMailbox(currentMailbox)) return;
         propertyOptionsCache = Array.isArray(data.items) ? data.items : [];
         propertyOptionsByLabel = {};
         propertyOptionsCache.forEach((p) => {
@@ -5481,6 +6819,7 @@ async function refreshPropertyOptions() {
         if (leaseList) leaseList.innerHTML = optionsHtml;
         if (landlordReportList) landlordReportList.innerHTML = optionsHtml;
         if (rentList) rentList.innerHTML = optionsHtml;
+        renderInspectionPropertyOptions();
         renderAddressSuggestionOptions();
         if (search && hidden) {
             const match = resolvePropertySearchValue(search.value);
@@ -5503,15 +6842,8 @@ async function refreshPropertyOptions() {
             rentHidden.value = match ? String(match.id) : "";
         }
     } catch {
-        if (complianceList) complianceList.innerHTML = "";
-        if (maintenanceList) maintenanceList.innerHTML = "";
-        if (leaseList) leaseList.innerHTML = "";
-        if (landlordReportList) landlordReportList.innerHTML = "";
-        renderAddressSuggestionOptions();
-        if (hidden) hidden.value = "";
-        if (maintenanceHidden) maintenanceHidden.value = "";
-        if (leaseHidden) leaseHidden.value = "";
-        if (landlordReportHidden) landlordReportHidden.value = "";
+        if (requestMailbox !== normalizeMailbox(currentMailbox)) return;
+        clearPropertyOptionsState();
     }
 }
 
