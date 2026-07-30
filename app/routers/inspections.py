@@ -6,7 +6,7 @@ from hashlib import blake2b
 from threading import Lock
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import text
 from sqlalchemy.orm import Session, selectinload
@@ -21,6 +21,8 @@ from app.services.inspection_planner import (
     InspectionPlannerError,
     load_existing_windows,
     optimize_inspections,
+    resolve_vicmap_address,
+    suggest_vicmap_addresses,
     validate_optimization_result,
 )
 
@@ -83,6 +85,11 @@ class InspectionPlanCreateIn(BaseModel):
 
 class InspectionPlanStatusIn(BaseModel):
     status: InspectionPlanStatus
+
+
+class InspectionAddressResolveIn(BaseModel):
+    label: str = Field(min_length=3, max_length=200)
+    magic_key: str = Field(min_length=8, max_length=512)
 
 
 def _status_value(value: InspectionPlanStatus | str) -> str:
@@ -217,6 +224,46 @@ def _plan_activation_conflicts(db: Session, row: InspectionPlan) -> list[dict[st
                     }
                 )
     return conflicts
+
+
+@router.get("/address-suggestions")
+def inspection_address_suggestions(
+    response: Response,
+    q: str = Query(min_length=3, max_length=100),
+    _mailbox: str = Depends(get_current_mailbox),
+    _user: User = Depends(require_page_access("inspections")),
+):
+    response.headers["Cache-Control"] = "private, no-store"
+    try:
+        return {"items": suggest_vicmap_addresses(q)}
+    except InspectionPlannerError as exc:
+        raise _planner_http_error(exc) from exc
+
+
+@router.post("/address-suggestions/resolve")
+def resolve_inspection_address_suggestion(
+    payload: InspectionAddressResolveIn,
+    response: Response,
+    mailbox: str = Depends(get_current_mailbox),
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_page_access("inspections")),
+):
+    response.headers["Cache-Control"] = "private, no-store"
+    try:
+        item = resolve_vicmap_address(
+            db,
+            mailbox=mailbox,
+            label=payload.label,
+            magic_key=payload.magic_key,
+        )
+        db.commit()
+        return {"item": item}
+    except InspectionPlannerError as exc:
+        db.rollback()
+        raise _planner_http_error(exc) from exc
+    except Exception:
+        db.rollback()
+        raise
 
 
 @router.post("/optimize")

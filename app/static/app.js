@@ -512,6 +512,12 @@ let inspectionLastOptimization = null;
 let inspectionMap = null;
 let inspectionMapRouteLayer = null;
 let inspectionMapMarkerLayer = null;
+let inspectionAddressSuggestionTimer = null;
+let inspectionAddressSuggestionController = null;
+let inspectionAddressSuggestionRequest = 0;
+let inspectionAddressSuggestionItems = [];
+let inspectionAddressSuggestionsByLabel = new Map();
+let inspectionAddressSuggestionQuery = "";
 let activityLoadedOnce = false;
 let currentActivityPage = 1;
 let activityTotalPages = 1;
@@ -3334,6 +3340,11 @@ function inspectionExtractAgentIds(value) {
 function createInspectionRow(seed = {}) {
     const property = seed.property && typeof seed.property === "object" ? seed.property : null;
     const propertyId = inspectionNumber(seed.property_id ?? property?.id, 0) || null;
+    const latitude = inspectionNumber(seed.latitude ?? seed.lat ?? seed.location?.latitude ?? seed.location?.lat, NaN);
+    const longitude = inspectionNumber(seed.longitude ?? seed.lng ?? seed.lon ?? seed.location?.longitude ?? seed.location?.lng, NaN);
+    const hasSavedCoordinates = Number.isFinite(latitude) && Number.isFinite(longitude)
+        && latitude >= -39.5 && latitude <= -33.5
+        && longitude >= 140.5 && longitude <= 150.5;
     const clientId = String(seed.client_id || seed.visit_id || `inspection-${Date.now()}-${++inspectionRowSequence}`);
     const singleAgent = seed.agent_id ?? seed.assigned_agent_id ?? seed.assigned_user_id;
     const agentIds = inspectionExtractAgentIds(seed.agent_ids ?? seed.assigned_agent_ids ?? seed.agents ?? singleAgent);
@@ -3351,6 +3362,11 @@ function createInspectionRow(seed = {}) {
         latest_time: String(seed.latest_time || seed.window_end || seed.latest || ""),
         notes: String(seed.notes || seed.note || ""),
         property_invalid: false,
+        address_verified: !!propertyId || seed.address_verified === true || (!propertyId && hasSavedCoordinates),
+        address_verification_pending: false,
+        address_status: "",
+        address_status_type: "",
+        address_verification_request: 0,
     };
 }
 
@@ -3390,15 +3406,213 @@ function inspectionPropertyColour(source = {}, index = 0) {
     return INSPECTION_PROPERTY_COLOURS[Math.abs(hash) % INSPECTION_PROPERTY_COLOURS.length];
 }
 
-function renderInspectionPropertyOptions() {
+function inspectionAddressKey(value) {
+    return String(value || "").trim().toLocaleLowerCase("en-AU").replace(/\s+/g, " ");
+}
+
+function inspectionAddressStatusForRow(row) {
+    if (row?.address_status) return { message: row.address_status, type: row.address_status_type || "" };
+    if (row?.property_invalid) return { message: "Choose a managed property or a verified Victorian address.", type: "error" };
+    if (row?.property_id) return { message: "Managed property selected.", type: "verified" };
+    if (row?.address_verified && row?.property_label) return { message: "Verified Victorian address selected.", type: "verified" };
+    return { message: "Type at least 3 characters, then select a managed or verified Victorian address.", type: "" };
+}
+
+function updateInspectionAddressStatus(card, row) {
+    if (!card || !row) return;
+    const status = card.querySelector("[data-inspection-address-status]");
+    const input = card.querySelector('[data-inspection-field="property_label"]');
+    const current = inspectionAddressStatusForRow(row);
+    if (status) {
+        status.textContent = current.message;
+        status.className = `inspection-address-status${current.type ? ` ${current.type}` : ""}`;
+    }
+    if (input) {
+        input.setAttribute("aria-busy", row.address_verification_pending ? "true" : "false");
+        input.classList.toggle("invalid", !!row.property_invalid);
+        input.classList.toggle("verified", !!row.address_verified && !row.property_invalid);
+    }
+}
+
+function setInspectionAddressStatus(row, message = "", type = "", card = null) {
+    if (!row) return;
+    row.address_status = String(message || "");
+    row.address_status_type = String(type || "");
+    updateInspectionAddressStatus(card || inspectionAddressCard(row.client_id), row);
+}
+
+function inspectionAddressCard(clientId) {
+    return [...document.querySelectorAll("[data-inspection-client-id]")]
+        .find((card) => String(card.dataset.inspectionClientId) === String(clientId)) || null;
+}
+
+function renderInspectionPropertyOptions(remoteItems = inspectionAddressSuggestionItems) {
     const target = document.getElementById("inspectionPropertyOptions");
     if (!target) return;
-    target.innerHTML = propertyOptionsCache
-        .map((property) => `<option value="${inspectionEscape(property?.label || propertyFullAddress(property || {}))}"></option>`)
-        .join("");
+    const managedLabels = new Set();
+    const managedOptions = propertyOptionsCache.map((property) => {
+        const label = String(property?.label || propertyFullAddress(property || {})).trim();
+        if (label) managedLabels.add(inspectionAddressKey(label));
+        return label ? `<option value="${inspectionEscape(label)}" label="Managed property"></option>` : "";
+    }).filter(Boolean);
+    inspectionAddressSuggestionsByLabel = new Map();
+    const remoteOptions = [];
+    inspectionArray(remoteItems).slice(0, 10).forEach((item) => {
+        const label = String(item?.label || item?.text || "").trim();
+        const magicKey = String(item?.magic_key || item?.magicKey || "").trim();
+        const key = inspectionAddressKey(label);
+        if (!label || !magicKey || managedLabels.has(key) || inspectionAddressSuggestionsByLabel.has(key)) return;
+        const normalized = { label, magic_key: magicKey, source: "vicmap" };
+        inspectionAddressSuggestionsByLabel.set(key, normalized);
+        remoteOptions.push(`<option value="${inspectionEscape(label)}" label="Verified Victorian address"></option>`);
+    });
+    target.innerHTML = [...remoteOptions, ...managedOptions].join("");
     inspectionRows.forEach((row) => {
         if (row.property_id && !row.property_label) row.property_label = inspectionPropertyLabel(row.property_id, "");
     });
+}
+
+function cancelInspectionAddressSuggestionSearch(clearItems = false) {
+    if (inspectionAddressSuggestionTimer) clearTimeout(inspectionAddressSuggestionTimer);
+    inspectionAddressSuggestionTimer = null;
+    if (inspectionAddressSuggestionController) inspectionAddressSuggestionController.abort();
+    inspectionAddressSuggestionController = null;
+    inspectionAddressSuggestionRequest += 1;
+    if (clearItems) {
+        inspectionAddressSuggestionItems = [];
+        inspectionAddressSuggestionQuery = "";
+        inspectionAddressSuggestionsByLabel = new Map();
+        renderInspectionPropertyOptions();
+    }
+}
+
+function scheduleInspectionAddressSuggestionSearch(row, control) {
+    cancelInspectionAddressSuggestionSearch(false);
+    const query = String(control?.value || "").trim();
+    const clientId = String(row?.client_id || "");
+    if (!row || !control || query.length < 3) {
+        inspectionAddressSuggestionItems = [];
+        inspectionAddressSuggestionQuery = "";
+        renderInspectionPropertyOptions();
+        setInspectionAddressStatus(row, "", "", control?.closest("[data-inspection-client-id]"));
+        return;
+    }
+    if (inspectionAddressKey(query) === inspectionAddressKey(inspectionAddressSuggestionQuery)
+        && inspectionAddressSuggestionItems.length) {
+        renderInspectionPropertyOptions();
+        setInspectionAddressStatus(
+            row,
+            "Select a verified Victorian address from the suggestions.",
+            "choices",
+            control.closest("[data-inspection-client-id]"),
+        );
+        return;
+    }
+    const requestId = inspectionAddressSuggestionRequest;
+    const requestMailbox = normalizeMailbox(currentMailbox);
+    inspectionAddressSuggestionItems = [];
+    inspectionAddressSuggestionQuery = query;
+    renderInspectionPropertyOptions();
+    setInspectionAddressStatus(row, "Searching verified Victorian addresses…", "searching", control.closest("[data-inspection-client-id]"));
+    inspectionAddressSuggestionTimer = setTimeout(async () => {
+        inspectionAddressSuggestionTimer = null;
+        const controller = new AbortController();
+        inspectionAddressSuggestionController = controller;
+        const url = new URL("/inspections/address-suggestions", window.location.origin);
+        url.searchParams.set("q", query.slice(0, 100));
+        try {
+            const response = await apiFetch(url.pathname + url.search, { signal: controller.signal });
+            const data = await response.json().catch(() => null);
+            const currentRow = inspectionRowByClientId(clientId);
+            if (requestId !== inspectionAddressSuggestionRequest
+                || requestMailbox !== normalizeMailbox(currentMailbox)
+                || currentRow !== row
+                || !control.isConnected
+                || String(control.value || "").trim() !== query) return;
+            if (!response.ok) throw new Error(inspectionApiError(data, "Verified address suggestions are unavailable."));
+            inspectionAddressSuggestionItems = inspectionArray(data?.items).slice(0, 10);
+            inspectionAddressSuggestionQuery = query;
+            renderInspectionPropertyOptions();
+            setInspectionAddressStatus(
+                row,
+                inspectionAddressSuggestionItems.length
+                    ? "Select a verified Victorian address from the suggestions."
+                    : "No verified match yet. Add more of the street, suburb, or postcode.",
+                inspectionAddressSuggestionItems.length ? "choices" : "warning",
+                control.closest("[data-inspection-client-id]"),
+            );
+        } catch (error) {
+            if (error?.name === "AbortError") return;
+            if (requestId !== inspectionAddressSuggestionRequest
+                || requestMailbox !== normalizeMailbox(currentMailbox)
+                || !control.isConnected
+                || String(control.value || "").trim() !== query) return;
+            inspectionAddressSuggestionItems = [];
+            renderInspectionPropertyOptions();
+            setInspectionAddressStatus(
+                row,
+                error?.message || "Online suggestions are unavailable; managed properties remain available.",
+                "error",
+                control.closest("[data-inspection-client-id]"),
+            );
+        } finally {
+            if (inspectionAddressSuggestionController === controller) inspectionAddressSuggestionController = null;
+        }
+    }, 325);
+}
+
+async function verifyInspectionAddressSuggestion(row, control, suggestion) {
+    if (!row || !control || !suggestion) return;
+    cancelInspectionAddressSuggestionSearch(false);
+    const selectedLabel = String(suggestion.label || "").trim();
+    const selectedKey = String(suggestion.magic_key || "").trim();
+    const requestMailbox = normalizeMailbox(currentMailbox);
+    const verificationRequest = inspectionNumber(row.address_verification_request, 0) + 1;
+    row.address_verification_request = verificationRequest;
+    row.address_verification_pending = true;
+    row.address_verified = false;
+    row.property_id = null;
+    setInspectionAddressStatus(row, "Verifying the selected address with Vicmap…", "searching", control.closest("[data-inspection-client-id]"));
+    try {
+        const response = await apiFetch("/inspections/address-suggestions/resolve", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ label: selectedLabel, magic_key: selectedKey }),
+        });
+        const data = await response.json().catch(() => null);
+        const currentRow = inspectionRowByClientId(row.client_id);
+        if (requestMailbox !== normalizeMailbox(currentMailbox)
+            || currentRow !== row
+            || row.address_verification_request !== verificationRequest
+            || !control.isConnected
+            || inspectionAddressKey(control.value) !== inspectionAddressKey(selectedLabel)) return;
+        if (!response.ok) throw new Error(inspectionApiError(data, "The selected address could not be verified."));
+        const item = data?.item || {};
+        const canonicalAddress = String(item.label || item.property_address || "").trim();
+        if (!canonicalAddress || item.verified !== true) throw new Error("The selected address could not be verified.");
+        row.property_label = canonicalAddress;
+        row.property_id = null;
+        row.address_verified = true;
+        row.address_verification_pending = false;
+        row.property_invalid = false;
+        control.value = canonicalAddress;
+        const hint = control.closest("[data-inspection-client-id]")?.querySelector("[data-inspection-property-hint]");
+        if (hint) hint.textContent = canonicalAddress;
+        setInspectionAddressStatus(row, "Verified Victorian address selected and ready for routing.", "verified", control.closest("[data-inspection-client-id]"));
+        markInspectionPlanDirty();
+    } catch (error) {
+        if (requestMailbox !== normalizeMailbox(currentMailbox)
+            || row.address_verification_request !== verificationRequest) return;
+        row.address_verified = false;
+        row.address_verification_pending = false;
+        row.property_invalid = true;
+        setInspectionAddressStatus(
+            row,
+            error?.message || "The selected address could not be verified. Choose another suggestion.",
+            "error",
+            control.closest("[data-inspection-client-id]"),
+        );
+    }
 }
 
 function availableInspectionAgents() {
@@ -3461,8 +3675,13 @@ function renderInspectionRows() {
         return;
     }
     target.innerHTML = inspectionRows.map((row, index) => {
-        const propertyHint = row.property_label || "Choose a managed property or enter a sales address";
+        const propertyHint = row.property_label || "Choose a managed property or verified sales address";
         const propertyColour = inspectionPropertyColour(row, index);
+        const addressStatus = inspectionAddressStatusForRow(row);
+        const addressStatusType = ["verified", "searching", "choices", "warning", "error"].includes(addressStatus.type)
+            ? addressStatus.type : "";
+        const propertyInputId = `inspectionPropertyInput-${index + 1}`;
+        const propertyStatusId = `inspectionPropertyStatus-${index + 1}`;
         return `<article class="inspection-visit-card" data-inspection-client-id="${inspectionEscape(row.client_id)}" style="--property-colour:${propertyColour}">
             <div class="inspection-visit-head">
                 <div class="inspection-visit-title">
@@ -3477,10 +3696,11 @@ function renderInspectionRows() {
             </div>
             <div class="inspection-visit-fields">
                 <div class="field property-field">
-                    <label class="label">Property / sales address</label>
-                    <input type="text" list="inspectionPropertyOptions" autocomplete="off" maxlength="500" data-inspection-field="property_label"
-                        class="${row.property_invalid ? "invalid" : ""}" value="${inspectionEscape(row.property_label)}" placeholder="Search managed properties or type a full sales address…" />
-                    <div class="small muted" style="margin-top:4px">Choose a suggestion or continue typing a complete address.</div>
+                    <label class="label" for="${propertyInputId}">Property / sales address</label>
+                    <input id="${propertyInputId}" type="text" list="inspectionPropertyOptions" autocomplete="off" maxlength="500" data-inspection-field="property_label"
+                        aria-autocomplete="list" aria-describedby="${propertyStatusId}" aria-busy="${row.address_verification_pending ? "true" : "false"}"
+                        class="${row.property_invalid ? "invalid" : (row.address_verified ? "verified" : "")}" value="${inspectionEscape(row.property_label)}" placeholder="Search managed properties or type a Victorian address…" />
+                    <div id="${propertyStatusId}" class="inspection-address-status${addressStatusType ? ` ${addressStatusType}` : ""}" data-inspection-address-status aria-live="polite">${inspectionEscape(addressStatus.message)}</div>
                 </div>
                 <div class="field">
                     <label class="label">Inspection time</label>
@@ -3558,12 +3778,27 @@ function bindInspectionEvents() {
             if (!field) return;
             if (field === "property_label") {
                 row.property_label = control.value || "";
+                row.address_verification_request = inspectionNumber(row.address_verification_request, 0) + 1;
+                row.address_verification_pending = false;
+                row.address_verified = false;
+                row.address_status = "";
+                row.address_status_type = "";
                 const match = inspectionResolveManagedProperty(row.property_label);
+                const onlineSuggestion = inspectionAddressSuggestionsByLabel.get(inspectionAddressKey(row.property_label));
                 row.property_id = match ? inspectionNumber(match.id, 0) : null;
                 row.property_invalid = !String(row.property_label).trim();
-                control.classList.toggle("invalid", row.property_invalid);
+                if (match) {
+                    row.address_verified = true;
+                    cancelInspectionAddressSuggestionSearch(false);
+                    setInspectionAddressStatus(row, "Managed property selected.", "verified", card);
+                } else if (onlineSuggestion) {
+                    row.property_invalid = false;
+                    verifyInspectionAddressSuggestion(row, control, onlineSuggestion);
+                } else {
+                    scheduleInspectionAddressSuggestionSearch(row, control);
+                }
                 const hint = card.querySelector("[data-inspection-property-hint]");
-                if (hint) hint.textContent = row.property_label || "Choose a managed property or enter a sales address";
+                if (hint) hint.textContent = row.property_label || "Choose a managed property or verified sales address";
                 visits.querySelectorAll("[data-inspection-client-id]").forEach((rowCard, rowIndex) => {
                     rowCard.style.setProperty(
                         "--property-colour",
@@ -3579,6 +3814,14 @@ function bindInspectionEvents() {
             }
             markInspectionPlanDirty();
         });
+        visits.addEventListener("focusin", (event) => {
+            const control = event.target.closest('[data-inspection-field="property_label"]');
+            if (!control) return;
+            const card = control.closest("[data-inspection-client-id]");
+            const row = inspectionRowByClientId(card?.dataset.inspectionClientId);
+            if (!row || row.property_id || row.address_verified || String(control.value || "").trim().length < 3) return;
+            scheduleInspectionAddressSuggestionSearch(row, control);
+        });
         visits.addEventListener("change", (event) => {
             const control = event.target;
             const card = control.closest("[data-inspection-client-id]");
@@ -3593,7 +3836,7 @@ function bindInspectionEvents() {
                 markInspectionPlanDirty();
                 return;
             }
-            if (control.dataset.inspectionField === "property_label") {
+            if (control.dataset.inspectionField === "property_label" && row.property_label !== control.value) {
                 control.dispatchEvent(new Event("input", { bubbles: true }));
             }
             markInspectionPlanDirty();
@@ -3606,6 +3849,7 @@ function bindInspectionEvents() {
             const index = inspectionRows.findIndex((row) => String(row.client_id) === String(clientId));
             if (index < 0) return;
             const action = button.dataset.inspectionAction;
+            if (["remove", "up", "down"].includes(action)) cancelInspectionAddressSuggestionSearch(false);
             if (action === "remove") inspectionRows.splice(index, 1);
             if (action === "up" && index > 0) [inspectionRows[index - 1], inspectionRows[index]] = [inspectionRows[index], inspectionRows[index - 1]];
             if (action === "down" && index < inspectionRows.length - 1) [inspectionRows[index], inspectionRows[index + 1]] = [inspectionRows[index + 1], inspectionRows[index]];
@@ -3702,6 +3946,7 @@ function addInspectionVisit(seed = {}) {
 }
 
 function resetInspectionWorkspace(options = {}) {
+    cancelInspectionAddressSuggestionSearch(true);
     const preserveDate = !!options.preserveDate;
     const preserveAgents = !!options.preserveAgents;
     const dateControl = document.getElementById("inspectionPlanDate");
@@ -3795,15 +4040,37 @@ function collectInspectionPayload() {
     const availableAgentIds = [...inspectionAvailableAgentIds].filter((id) => id > 0).sort((a, b) => a - b);
     if (!availableAgentIds.length) throw new Error("Select at least one available agent.");
     if (!inspectionRows.length) throw new Error("Add at least one inspection stop.");
-    const invalid = [];
+    const missing = [];
+    const unverified = [];
+    const pending = [];
     const visits = inspectionRows.map((row, index) => {
         const propertyAddress = String(row.property_label || "").trim();
         if (!row.property_id && propertyAddress) {
             const match = inspectionResolveManagedProperty(propertyAddress);
-            if (match) row.property_id = inspectionNumber(match.id, 0);
+            if (match) {
+                row.property_id = inspectionNumber(match.id, 0);
+                row.address_verified = true;
+            }
         }
-        row.property_invalid = !row.property_id && !propertyAddress;
-        if (row.property_invalid) invalid.push(index + 1);
+        const inspectionNumberLabel = index + 1;
+        if (row.address_verification_pending) {
+            pending.push(inspectionNumberLabel);
+            row.property_invalid = true;
+            row.address_status = "Wait for Vicmap to finish verifying this address.";
+            row.address_status_type = "warning";
+        } else if (!row.property_id && !propertyAddress) {
+            missing.push(inspectionNumberLabel);
+            row.property_invalid = true;
+            row.address_status = "Choose a managed property or a verified Victorian address.";
+            row.address_status_type = "error";
+        } else if (!row.property_id && !row.address_verified) {
+            unverified.push(inspectionNumberLabel);
+            row.property_invalid = true;
+            row.address_status = "Select this address from the verified Vicmap suggestions before optimising.";
+            row.address_status_type = "error";
+        } else {
+            row.property_invalid = false;
+        }
         if (row.earliest_time && row.latest_time && row.earliest_time > row.latest_time) {
             throw new Error(`Inspection ${index + 1} has a latest arrival earlier than its earliest arrival.`);
         }
@@ -3819,9 +4086,15 @@ function collectInspectionPayload() {
             notes: String(row.notes || "").trim() || null,
         };
     });
-    if (invalid.length) {
+    if (pending.length || missing.length || unverified.length) {
         renderInspectionRows();
-        throw new Error(`Choose a managed property or enter a full address for inspection${invalid.length === 1 ? "" : "s"} ${invalid.join(", ")}.`);
+        if (pending.length) {
+            throw new Error(`Wait for address verification to finish for inspection${pending.length === 1 ? "" : "s"} ${pending.join(", ")}.`);
+        }
+        if (unverified.length) {
+            throw new Error(`Select a verified Victorian address for inspection${unverified.length === 1 ? "" : "s"} ${unverified.join(", ")}.`);
+        }
+        throw new Error(`Choose a managed property or verified address for inspection${missing.length === 1 ? "" : "s"} ${missing.join(", ")}.`);
     }
     return {
         plan_name: planName,
@@ -6806,6 +7079,7 @@ async function importPropertiesWorkbook() {
 }
 
 function clearPropertyOptionsState() {
+    cancelInspectionAddressSuggestionSearch(true);
     propertyOptionsCache = [];
     propertyOptionsByLabel = {};
     addressSuggestionsByLabel = {};

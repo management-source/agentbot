@@ -145,8 +145,9 @@ def _install_geocoder_transport(monkeypatch, handler):
     real_client = httpx.Client
     transport = httpx.MockTransport(handler)
 
-    def client_factory(*_args, **_kwargs):
-        return real_client(transport=transport)
+    def client_factory(*args, **kwargs):
+        kwargs["transport"] = transport
+        return real_client(*args, **kwargs)
 
     monkeypatch.setattr(planner.httpx, "Client", client_factory)
 
@@ -419,6 +420,7 @@ def test_property_option_state_is_cleared_across_mailboxes_and_failed_loads():
 
     assert "propertyOptionsCache = [];" in helper
     assert "propertyOptionsByLabel = {};" in helper
+    assert "cancelInspectionAddressSuggestionSearch(true);" in helper
     for datalist_id in (
         "compliancePropertyOptions",
         "maintenancePropertyOptions",
@@ -455,6 +457,26 @@ def test_inspection_ui_supports_custom_addresses_fixed_departure_date_names_and_
     assert 'id="inspectionStartAddress" maxlength="500" readonly' in template
     assert 'value="24 Coral-Pea Way, Cranbourne West"' in template
     assert "background:var(--property-colour)" in template
+
+
+def test_inspection_ui_requires_safe_verified_online_address_selection():
+    script = Path("app/static/app.js").read_text(encoding="utf-8")
+    template = Path("app/templates/index.html").read_text(encoding="utf-8")
+
+    assert 'new URL("/inspections/address-suggestions", window.location.origin)' in script
+    assert 'apiFetch("/inspections/address-suggestions/resolve"' in script
+    assert "new AbortController()" in script
+    assert "requestId !== inspectionAddressSuggestionRequest" in script
+    assert "requestMailbox !== normalizeMailbox(currentMailbox)" in script
+    assert "!control.isConnected" in script
+    assert "row.address_verification_request !== verificationRequest" in script
+    assert "!row.property_id && !row.address_verified" in script
+    assert "Select a verified Victorian address" in script
+    assert "corp-geo.mapshare.vic.gov.au" not in script
+    assert 'aria-autocomplete="list"' in script
+    assert 'data-inspection-address-status aria-live="polite"' in script
+    assert "© State of Victoria" in template
+    assert "CC BY 4.0" in template
 
 
 def test_existing_sqlite_inspection_visits_are_migrated_to_nullable_property_ids():
@@ -624,6 +646,232 @@ def _inspection_api_client(db, seeded):
     api.dependency_overrides[get_current_mailbox] = lambda: MAILBOX
     api.dependency_overrides[get_current_user] = lambda: seeded["alice"]
     return TestClient(api)
+
+
+def test_inspection_address_suggestions_use_fixed_vicmap_endpoint_and_cache(
+    db,
+    seeded,
+    monkeypatch,
+):
+    with planner._VICMAP_SUGGESTION_CACHE_LOCK:
+        planner._VICMAP_SUGGESTION_CACHE.clear()
+    requests = []
+    client_options = []
+
+    def handler(request):
+        requests.append(request)
+        assert request.url.scheme == "https"
+        assert request.url.host == "corp-geo.mapshare.vic.gov.au"
+        assert request.url.path.endswith("/GeocodeServer/suggest")
+        assert request.url.params["text"] == "G05/16 dalgety"
+        assert request.url.params["maxSuggestions"] == "10"
+        assert request.url.params["f"] == "json"
+        return httpx.Response(
+            200,
+            json={
+                "suggestions": [
+                    {
+                        "text": "G05/16 DALGETY STREET OAKLEIGH 3166",
+                        "magicKey": "ValidMagicKeyOne123",
+                        "isCollection": False,
+                    },
+                    {
+                        "text": "G05/16 DALGETY STREET OAKLEIGH 3166",
+                        "magicKey": "DuplicateMagicKey123",
+                        "isCollection": False,
+                    },
+                    {
+                        "text": "DALGETY STREET OAKLEIGH",
+                        "magicKey": "IncompleteMagicKey123",
+                        "isCollection": True,
+                    },
+                    {
+                        "text": "DALGETY STREET OAKLEIGH",
+                        "magicKey": "IncompleteMagicKey456",
+                        "isCollection": False,
+                    },
+                ]
+            },
+        )
+
+    real_client = httpx.Client
+    transport = httpx.MockTransport(handler)
+
+    def client_factory(*args, **kwargs):
+        client_options.append(dict(kwargs))
+        kwargs["transport"] = transport
+        return real_client(*args, **kwargs)
+
+    monkeypatch.setattr(planner.httpx, "Client", client_factory)
+    client = _inspection_api_client(db, seeded)
+
+    first = client.get(
+        "/inspections/address-suggestions",
+        params={"q": "G05/16   dalgety"},
+    )
+    second = client.get(
+        "/inspections/address-suggestions",
+        params={"q": "g05/16 dalgety"},
+    )
+
+    assert first.status_code == 200
+    assert first.headers["cache-control"] == "private, no-store"
+    assert first.json() == {
+        "items": [
+            {
+                "label": "G05/16 DALGETY STREET OAKLEIGH 3166",
+                "magic_key": "ValidMagicKeyOne123",
+                "source": "vicmap",
+            }
+        ]
+    }
+    assert second.json() == first.json()
+    assert len(requests) == 1
+    assert len(client_options) == 1
+    assert client_options[0]["follow_redirects"] is False
+    assert client_options[0]["timeout"].connect <= 3.0
+    assert client_options[0]["timeout"].read <= 5.0
+
+
+def test_inspection_address_resolve_caches_verified_coordinates_for_optimization(
+    db,
+    seeded,
+    monkeypatch,
+):
+    label = "G05/16 DALGETY STREET OAKLEIGH 3166"
+    magic_key = "ValidMagicKeyForResolve123"
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        assert request.url.scheme == "https"
+        assert request.url.host == "corp-geo.mapshare.vic.gov.au"
+        assert request.url.path.endswith("/GeocodeServer/findAddressCandidates")
+        assert request.url.params["SingleLine"] == label
+        assert request.url.params["magicKey"] == magic_key
+        assert request.url.params["maxLocations"] == "1"
+        return httpx.Response(
+            200,
+            json={
+                "candidates": [
+                    {
+                        "address": label,
+                        "location": {"x": 145.0905677109, "y": -37.8921258802},
+                        "score": 100,
+                        "attributes": {"Score": 100, "Ref_ID": "430346318"},
+                    }
+                ]
+            },
+        )
+
+    _install_geocoder_transport(monkeypatch, handler)
+    client = _inspection_api_client(db, seeded)
+    response = client.post(
+        "/inspections/address-suggestions/resolve",
+        json={"label": label, "magic_key": magic_key},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "private, no-store"
+    assert response.json() == {
+        "item": {
+            "label": label,
+            "property_address": label,
+            "latitude": pytest.approx(-37.8921258802),
+            "longitude": pytest.approx(145.0905677109),
+            "source": "vicmap",
+            "verified": True,
+        }
+    }
+    assert len(requests) == 1
+    cache = db.query(InspectionGeocodeCache).one()
+    assert cache.mailbox == MAILBOX
+    assert cache.query_address == "G05/16 DALGETY STREET OAKLEIGH 3166"
+    assert magic_key not in (cache.provider_payload_json or "")
+
+    point, warning = planner.geocode_address(
+        db,
+        mailbox=MAILBOX,
+        address=label,
+        allow_network=False,
+    )
+    assert warning is None
+    assert point is not None
+    assert point.formatted_address == label
+    assert point.latitude == pytest.approx(-37.8921258802)
+    assert point.longitude == pytest.approx(145.0905677109)
+
+
+def test_inspection_address_provider_failures_are_safe_and_mismatches_are_not_cached(
+    db,
+    seeded,
+    monkeypatch,
+):
+    with planner._VICMAP_SUGGESTION_CACHE_LOCK:
+        planner._VICMAP_SUGGESTION_CACHE.clear()
+    provider_mode = {"value": "timeout"}
+
+    def provider_handler(request):
+        if provider_mode["value"] == "timeout":
+            raise httpx.ReadTimeout("private upstream detail", request=request)
+        return httpx.Response(
+            200,
+            json={
+                "candidates": [
+                    {
+                        "address": "10 JOHN STREET MALVERN EAST 3145",
+                        "location": {"x": 145.038, "y": -37.873},
+                        "score": 100,
+                    }
+                ]
+            },
+        )
+
+    _install_geocoder_transport(monkeypatch, provider_handler)
+    client = _inspection_api_client(db, seeded)
+    unavailable = client.get(
+        "/inspections/address-suggestions",
+        params={"q": "10 timeout street"},
+    )
+    assert unavailable.status_code == 502
+    assert unavailable.json()["detail"] == (
+        "Vicmap address suggestions are temporarily unavailable. Please try again."
+    )
+    assert "private upstream detail" not in unavailable.text
+
+    provider_mode["value"] = "mismatch"
+    mismatch = client.post(
+        "/inspections/address-suggestions/resolve",
+        json={
+            "label": "2 JOHN STREET MALVERN EAST 3145",
+            "magic_key": "ValidButMismatchedKey123",
+        },
+    )
+    assert mismatch.status_code == 400
+    assert "could not be verified" in mismatch.json()["detail"]
+    assert db.query(InspectionGeocodeCache).count() == 0
+
+
+def test_inspection_address_endpoints_require_inspections_page_access(db, seeded):
+    client = _inspection_api_client(db, seeded)
+    client.app.dependency_overrides[get_current_user] = lambda: seeded["restricted"]
+
+    suggestions = client.get(
+        "/inspections/address-suggestions",
+        params={"q": "2 John Street"},
+    )
+    resolved = client.post(
+        "/inspections/address-suggestions/resolve",
+        json={
+            "label": "2 JOHN STREET MALVERN EAST 3145",
+            "magic_key": "ValidMagicKey123",
+        },
+    )
+
+    assert suggestions.status_code == 403
+    assert resolved.status_code == 403
+    assert suggestions.json()["detail"] == "Insufficient page access"
+    assert resolved.json()["detail"] == "Insufficient page access"
 
 
 def _persist_plan_with_visit(

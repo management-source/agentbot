@@ -22,6 +22,7 @@ SKIP_EXACT_PATHS = {
     "/user-auth/forgot-password",
     "/user-auth/reset-password",
     "/landlord-reports/preview",
+    "/inspections/address-suggestions/resolve",
 }
 
 AREA_LABELS = {

@@ -6,9 +6,13 @@ import json
 import math
 import re
 import time
+import unicodedata
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
+from threading import Lock
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 from sqlalchemy.orm import Session
@@ -29,7 +33,16 @@ VICMAP_WFS_URL = settings.INSPECTIONS_VICMAP_WFS_URL.rstrip("/")
 OSRM_BASE_URL = settings.INSPECTIONS_OSRM_BASE_URL.rstrip("/")
 HTTP_TIMEOUT_SECONDS = max(1.0, float(settings.INSPECTIONS_HTTP_TIMEOUT_SECONDS))
 PROVIDER_BUDGET_SECONDS = max(5.0, float(settings.INSPECTIONS_PROVIDER_BUDGET_SECONDS))
+VICMAP_SUGGEST_TIMEOUT_SECONDS = min(5.0, HTTP_TIMEOUT_SECONDS)
+VICMAP_RESOLVE_TIMEOUT_SECONDS = min(8.0, HTTP_TIMEOUT_SECONDS)
 VICMAP_MINIMUM_SCORE = 90.0
+VICMAP_SUGGESTION_CACHE_TTL_SECONDS = 300.0
+VICMAP_SUGGESTION_CACHE_MAX_ITEMS = 512
+_VICMAP_SUGGESTION_CACHE: OrderedDict[
+    str,
+    tuple[float, tuple[tuple[str, str], ...]],
+] = OrderedDict()
+_VICMAP_SUGGESTION_CACHE_LOCK = Lock()
 ROAD_TYPE_ALIASES = {
     "AVE": "AVENUE",
     "BLVD": "BOULEVARD",
@@ -375,6 +388,306 @@ def _provider_error(payload: dict[str, Any]) -> None:
         else:
             message = _clean_text(error) or "Vicmap returned an error."
         raise ValueError(message)
+
+
+def _vicmap_operation_url(operation: str) -> str:
+    """Build a provider operation URL without accepting any request-owned URL parts."""
+
+    if operation not in {"suggest", "findAddressCandidates"}:
+        raise InspectionPlannerError("The Vicmap address service is misconfigured.", status_code=502)
+    parsed = urlsplit(VICMAP_GEOCODER_URL)
+    if (
+        parsed.scheme.casefold() != "https"
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise InspectionPlannerError("The Vicmap address service is misconfigured.", status_code=502)
+    path = parsed.path.rstrip("/")
+    leaf = path.rsplit("/", 1)[-1].casefold()
+    if leaf == "findaddresscandidates":
+        service_path = path.rsplit("/", 1)[0]
+    elif leaf == "geocodeserver":
+        service_path = path
+    else:
+        raise InspectionPlannerError("The Vicmap address service is misconfigured.", status_code=502)
+    return urlunsplit(("https", parsed.netloc, f"{service_path}/{operation}", "", ""))
+
+
+def _validated_address_lookup_text(
+    value: Any,
+    *,
+    field_name: str,
+    minimum_length: int,
+    maximum_length: int,
+) -> str:
+    raw = str(value or "")
+    if any(unicodedata.category(character).startswith("C") for character in raw):
+        raise InspectionPlannerError(f"{field_name} contains unsupported characters.")
+    cleaned = _clean_text(raw)
+    if len(cleaned) < minimum_length:
+        raise InspectionPlannerError(
+            f"{field_name} must contain at least {minimum_length} characters."
+        )
+    if len(cleaned) > maximum_length:
+        raise InspectionPlannerError(
+            f"{field_name} must contain no more than {maximum_length} characters."
+        )
+    if not any(character.isalnum() for character in cleaned):
+        raise InspectionPlannerError(f"{field_name} must contain letters or numbers.")
+    return cleaned
+
+
+def _validated_vicmap_magic_key(value: Any) -> str:
+    raw = str(value or "").strip()
+    if (
+        len(raw) < 8
+        or len(raw) > 512
+        or any(character.isspace() for character in raw)
+        or not re.fullmatch(r"[A-Za-z0-9._~+/=-]+", raw)
+    ):
+        raise InspectionPlannerError(
+            "The address suggestion is invalid or has expired. Search again and select an address."
+        )
+    return raw
+
+
+def _is_complete_victorian_address(value: str) -> bool:
+    try:
+        number_parts = _address_number_parts(value)
+    except InspectionPlannerError:
+        return False
+    postcode = _address_postcode(value)
+    if not number_parts or not postcode:
+        return False
+    postcode_number = int(postcode)
+    return 3000 <= postcode_number <= 3999 or 8000 <= postcode_number <= 8999
+
+
+def _vicmap_timeout(seconds: float) -> httpx.Timeout:
+    timeout = max(1.0, float(seconds))
+    return httpx.Timeout(
+        timeout,
+        connect=min(3.0, timeout),
+        read=timeout,
+        write=min(3.0, timeout),
+        pool=min(2.0, timeout),
+    )
+
+
+def _cached_vicmap_suggestions(cache_key: str) -> list[dict[str, str]] | None:
+    now = time.monotonic()
+    with _VICMAP_SUGGESTION_CACHE_LOCK:
+        expired = [
+            key
+            for key, (expires_at, _items) in _VICMAP_SUGGESTION_CACHE.items()
+            if expires_at <= now
+        ]
+        for key in expired:
+            _VICMAP_SUGGESTION_CACHE.pop(key, None)
+        cached = _VICMAP_SUGGESTION_CACHE.get(cache_key)
+        if cached is None:
+            return None
+        _VICMAP_SUGGESTION_CACHE.move_to_end(cache_key)
+        return [
+            {"label": label, "magic_key": magic_key, "source": "vicmap"}
+            for label, magic_key in cached[1]
+        ]
+
+
+def _cache_vicmap_suggestions(cache_key: str, items: list[dict[str, str]]) -> None:
+    stored = tuple((item["label"], item["magic_key"]) for item in items)
+    with _VICMAP_SUGGESTION_CACHE_LOCK:
+        _VICMAP_SUGGESTION_CACHE[cache_key] = (
+            time.monotonic() + VICMAP_SUGGESTION_CACHE_TTL_SECONDS,
+            stored,
+        )
+        _VICMAP_SUGGESTION_CACHE.move_to_end(cache_key)
+        while len(_VICMAP_SUGGESTION_CACHE) > VICMAP_SUGGESTION_CACHE_MAX_ITEMS:
+            _VICMAP_SUGGESTION_CACHE.popitem(last=False)
+
+
+def suggest_vicmap_addresses(query: str) -> list[dict[str, str]]:
+    cleaned_query = _validated_address_lookup_text(
+        query,
+        field_name="Search query",
+        minimum_length=3,
+        maximum_length=100,
+    )
+    cache_key = cleaned_query.casefold()
+    cached = _cached_vicmap_suggestions(cache_key)
+    if cached is not None:
+        return cached
+
+    url = _vicmap_operation_url("suggest")
+    try:
+        with httpx.Client(
+            timeout=_vicmap_timeout(VICMAP_SUGGEST_TIMEOUT_SECONDS),
+            follow_redirects=False,
+        ) as client:
+            response = client.get(
+                url,
+                params={
+                    "text": cleaned_query,
+                    "maxSuggestions": "10",
+                    "f": "json",
+                },
+            )
+            response.raise_for_status()
+            if len(response.content) > 262_144:
+                raise ValueError("Vicmap returned an oversized response.")
+            payload = response.json()
+        if not isinstance(payload, dict):
+            raise ValueError("Vicmap returned an invalid response.")
+        _provider_error(payload)
+        suggestions = payload.get("suggestions")
+        if not isinstance(suggestions, list):
+            raise ValueError("Vicmap returned an invalid response.")
+    except (httpx.HTTPError, TypeError, ValueError) as exc:
+        raise InspectionPlannerError(
+            "Vicmap address suggestions are temporarily unavailable. Please try again.",
+            status_code=502,
+        ) from exc
+
+    items: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for suggestion in suggestions:
+        if not isinstance(suggestion, dict) or suggestion.get("isCollection") is True:
+            continue
+        label = _clean_text(suggestion.get("text"))
+        magic_key = _clean_text(suggestion.get("magicKey"))
+        if (
+            not label
+            or len(label) > 200
+            or not _is_complete_victorian_address(label)
+            or not re.fullmatch(r"[A-Za-z0-9._~+/=-]{8,512}", magic_key)
+        ):
+            continue
+        identity = label.casefold()
+        if identity in seen:
+            continue
+        seen.add(identity)
+        items.append({"label": label, "magic_key": magic_key, "source": "vicmap"})
+        if len(items) == 10:
+            break
+
+    _cache_vicmap_suggestions(cache_key, items)
+    return [dict(item) for item in items]
+
+
+def resolve_vicmap_address(
+    db: Session,
+    *,
+    mailbox: str,
+    label: str,
+    magic_key: str,
+) -> dict[str, Any]:
+    cleaned_label = _validated_address_lookup_text(
+        label,
+        field_name="Address",
+        minimum_length=3,
+        maximum_length=200,
+    )
+    cleaned_magic_key = _validated_vicmap_magic_key(magic_key)
+    if not _is_complete_victorian_address(cleaned_label):
+        raise InspectionPlannerError(
+            "Select a complete Victorian street address from the suggestions."
+        )
+    canonical_address = _canonical_geocode_address(cleaned_label)
+    url = _vicmap_operation_url("findAddressCandidates")
+    try:
+        with httpx.Client(
+            timeout=_vicmap_timeout(VICMAP_RESOLVE_TIMEOUT_SECONDS),
+            follow_redirects=False,
+        ) as client:
+            response = client.get(
+                url,
+                params={
+                    "SingleLine": cleaned_label,
+                    "magicKey": cleaned_magic_key,
+                    "outFields": "Score,Match_addr,Ref_ID",
+                    "outSR": "4326",
+                    "maxLocations": "1",
+                    "f": "json",
+                },
+            )
+            response.raise_for_status()
+            if len(response.content) > 262_144:
+                raise ValueError("Vicmap returned an oversized response.")
+            payload = response.json()
+        if not isinstance(payload, dict):
+            raise ValueError("Vicmap returned an invalid response.")
+        _provider_error(payload)
+    except (httpx.HTTPError, TypeError, ValueError) as exc:
+        raise InspectionPlannerError(
+            "Vicmap could not verify that address right now. Please try again.",
+            status_code=502,
+        ) from exc
+
+    point, provider_candidate = _point_from_locator_payload(
+        payload,
+        query_address=canonical_address,
+    )
+    if point is None:
+        raise InspectionPlannerError(
+            "That address suggestion could not be verified. Search again and select a current suggestion."
+        )
+    try:
+        resolved_canonical = _canonical_geocode_address(point.formatted_address)
+    except InspectionPlannerError as exc:
+        raise InspectionPlannerError(
+            "Vicmap returned an invalid address. Search again and select another suggestion.",
+            status_code=502,
+        ) from exc
+    if resolved_canonical != canonical_address:
+        raise InspectionPlannerError(
+            "That address suggestion no longer matches. Search again and select a current suggestion."
+        )
+    if not (-39.5 <= point.latitude <= -33.5 and 140.5 <= point.longitude <= 150.5):
+        raise InspectionPlannerError(
+            "Vicmap returned coordinates outside Victoria. Search again and select another suggestion.",
+            status_code=502,
+        )
+
+    normalized_mailbox = _clean_text(mailbox).lower()
+    if not normalized_mailbox:
+        raise InspectionPlannerError("A mailbox is required to verify an address.")
+    cache_key = _address_cache_key(normalized_mailbox, canonical_address)
+    cached = (
+        db.query(InspectionGeocodeCache)
+        .filter(InspectionGeocodeCache.cache_key == cache_key)
+        .first()
+    )
+    if cached is None:
+        cached = InspectionGeocodeCache(
+            mailbox=normalized_mailbox,
+            cache_key=cache_key,
+            query_address=canonical_address,
+        )
+        db.add(cached)
+    cached.query_address = canonical_address
+    cached.formatted_address = point.formatted_address
+    cached.latitude = point.latitude
+    cached.longitude = point.longitude
+    cached.provider = point.provider
+    cached.provider_payload_json = json.dumps(
+        provider_candidate or {},
+        ensure_ascii=False,
+        default=str,
+    )[:20000]
+    cached.updated_at = datetime.utcnow()
+    db.flush()
+
+    return {
+        "label": point.formatted_address,
+        "property_address": point.formatted_address,
+        "latitude": point.latitude,
+        "longitude": point.longitude,
+        "source": "vicmap",
+        "verified": True,
+    }
 
 
 def geocode_address(

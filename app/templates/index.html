@@ -4238,7 +4238,8 @@
     .inspection-visit-fields{display:grid;grid-template-columns:minmax(110px,.7fr) minmax(110px,.7fr) minmax(120px,.7fr) minmax(120px,.7fr) minmax(170px,1fr);gap:10px;align-items:start}
     .inspection-visit-fields .property-field{grid-column:span 3}.inspection-visit-fields .notes-field{grid-column:1 / -1}.inspection-visit-fields .agents-field{grid-column:span 3}
     .inspection-visit-fields input,.inspection-visit-fields textarea,.inspection-visit-fields select{width:100%;min-width:0;padding:10px 11px;border:1px solid #d7e0ea;border-radius:12px;background:#fff;color:#101828;font:inherit;font-size:12px;outline:none;transition:border-color .2s,box-shadow .2s}
-    .inspection-visit-fields textarea{min-height:64px;resize:vertical;line-height:1.45}.inspection-visit-fields input:focus,.inspection-visit-fields textarea:focus{border-color:#c49b36;box-shadow:0 0 0 3px rgba(196,155,54,.12)}.inspection-visit-fields input.invalid{border-color:#ef4444;background:#fff7f7}
+    .inspection-visit-fields textarea{min-height:64px;resize:vertical;line-height:1.45}.inspection-visit-fields input:focus,.inspection-visit-fields textarea:focus{border-color:#c49b36;box-shadow:0 0 0 3px rgba(196,155,54,.12)}.inspection-visit-fields input.invalid{border-color:#ef4444;background:#fff7f7}.inspection-visit-fields input.verified{border-color:#22a06b;background:#f5fffa}
+    .inspection-address-status{min-height:15px;margin-top:5px;color:#667085;font-size:9px;line-height:1.35}.inspection-address-status.searching{color:#175cd3}.inspection-address-status.choices{color:#6941c6}.inspection-address-status.verified{color:#067647;font-weight:800}.inspection-address-status.warning{color:#a15c07}.inspection-address-status.error{color:#b42318;font-weight:750}.inspection-address-attribution{margin:8px 2px 0;color:#98a2b3;font-size:8px;line-height:1.35}.inspection-address-attribution a{color:inherit;text-decoration:underline}
     .inspection-agent-picker{position:relative}.inspection-agent-picker summary{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:39px;padding:9px 11px;border:1px solid #d7e0ea;border-radius:12px;background:#fff;color:#344054;font-size:11px;font-weight:800;cursor:pointer;list-style:none}.inspection-agent-picker summary::-webkit-details-marker{display:none}.inspection-agent-picker summary::after{content:"▾";color:#8f6f1d}.inspection-agent-picker[open] summary{border-color:#c49b36;box-shadow:0 0 0 3px rgba(196,155,54,.1)}
     .inspection-agent-menu{position:absolute;z-index:26;left:0;right:0;top:44px;display:grid;gap:5px;max-height:230px;overflow:auto;padding:8px;border:1px solid #d7e0ea;border-radius:13px;background:#fff;box-shadow:0 18px 40px rgba(15,23,42,.17)}
     .inspection-agent-option{display:flex;align-items:center;gap:8px;padding:8px;border-radius:10px;color:#344054;font-size:11px;font-weight:750;cursor:pointer}.inspection-agent-option:hover{background:#f6f8fb}.inspection-agent-option input{width:16px;height:16px;padding:0;accent-color:#9a7820}.inspection-agent-auto{padding:7px 8px;border:0;border-radius:9px;background:#fff8e6;color:#785b16;text-align:left;font-size:10px;font-weight:900;cursor:pointer}
@@ -5690,7 +5691,7 @@
                         <div class="inspection-section-head">
                           <div>
                             <h3 id="inspectionStopsHeading">Inspection stops</h3>
-                            <p>Choose a managed property or type a sales address, then set the appointment length, custom
+                            <p>Choose a managed property or type at least 3 characters and select a verified Victorian address, then set the appointment length, custom
                               travel buffer, time window, and any specifically required agents.</p>
                           </div>
                           <div class="inspection-section-actions">
@@ -5701,6 +5702,7 @@
                         </div>
                         <div class="inspection-visits" id="inspectionVisits"></div>
                         <datalist id="inspectionPropertyOptions"></datalist>
+                        <p class="inspection-address-attribution">Verified address suggestions © State of Victoria (Department of Transport and Planning), licensed under <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer">CC BY 4.0</a>.</p>
                       </section>
 
                       <section class="inspection-saved-card" aria-labelledby="inspectionSavedHeading">
