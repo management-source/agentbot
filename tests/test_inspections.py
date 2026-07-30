@@ -10,7 +10,7 @@ import httpx
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -20,6 +20,7 @@ os.environ.setdefault("DATABASE_URL", "sqlite:///./app.db")
 from app.authz import ROLE_PAGE_ACCESS_KEY, get_current_user, has_page_access
 from app.db import get_db
 from app.deps import get_current_mailbox
+from app.db_migrate import migrate
 from app.models import (
     AppState,
     Base,
@@ -439,7 +440,81 @@ def test_property_option_state_is_cleared_across_mailboxes_and_failed_loads():
     assert 'catch {\n        if (requestMailbox !== normalizeMailbox(currentMailbox)) return;\n        clearPropertyOptionsState();' in refresh
 
 
-def _install_local_route_provider(monkeypatch, seeded, travel=None, *, default_minutes=0):
+def test_inspection_ui_supports_custom_addresses_fixed_departure_date_names_and_colours():
+    script = Path("app/static/app.js").read_text(encoding="utf-8")
+    template = Path("app/templates/index.html").read_text(encoding="utf-8")
+
+    assert 'const INSPECTION_DEFAULT_DEPARTURE_ADDRESS = "24 Coral-Pea Way, Cranbourne West";' in script
+    assert "const INSPECTION_PROPERTY_COLOURS" in script
+    assert "function inspectionPropertyColour" in script
+    assert "property_id: row.property_id ? inspectionNumber(row.property_id, 0) : null" in script
+    assert "property_address: row.property_id ? null : propertyAddress" in script
+    assert "inspectionPlanName: inspectionDefaultPlanName(date)" in script
+    assert "start_address: INSPECTION_DEFAULT_DEPARTURE_ADDRESS" in script
+    assert 'id="inspectionPlanName" maxlength="160" readonly' in template
+    assert 'id="inspectionStartAddress" maxlength="500" readonly' in template
+    assert 'value="24 Coral-Pea Way, Cranbourne West"' in template
+    assert "background:var(--property-colour)" in template
+
+
+def test_existing_sqlite_inspection_visits_are_migrated_to_nullable_property_ids():
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                CREATE TABLE inspection_visits (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    property_id INTEGER NOT NULL,
+                    property_address VARCHAR NOT NULL
+                )
+                """
+            )
+        )
+        connection.execute(
+            text("CREATE INDEX ix_inspection_visits_property_id ON inspection_visits(property_id)")
+        )
+        connection.execute(
+            text(
+                "INSERT INTO inspection_visits (property_id, property_address) "
+                "VALUES (7, 'Managed property')"
+            )
+        )
+
+    migrate(engine)
+    migrate(engine)
+
+    columns = {column["name"]: column for column in inspect(engine).get_columns("inspection_visits")}
+    assert columns["property_id"]["nullable"] is True
+    assert "ix_inspection_visits_property_id" in {
+        index["name"] for index in inspect(engine).get_indexes("inspection_visits")
+    }
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO inspection_visits (property_id, property_address) "
+                "VALUES (NULL, 'Custom sales property')"
+            )
+        )
+        rows = connection.execute(
+            text("SELECT property_id, property_address FROM inspection_visits ORDER BY id")
+        ).all()
+    assert rows == [(7, "Managed property"), (None, "Custom sales property")]
+    engine.dispose()
+
+
+def _install_local_route_provider(
+    monkeypatch,
+    seeded,
+    travel=None,
+    *,
+    default_minutes=0,
+    custom_addresses=None,
+):
     points = {
         "office": (0.0, 0.0),
         "a": (1.0, 1.0),
@@ -448,9 +523,16 @@ def _install_local_route_provider(monkeypatch, seeded, travel=None, *, default_m
         "other": (4.0, 4.0),
         "inactive": (5.0, 5.0),
     }
-    addresses = {"Office": "office"}
+    addresses = {
+        "Office": "office",
+        planner.DEFAULT_DEPARTURE_ADDRESS: "office",
+    }
     for key in ("a", "b", "c", "other", "inactive"):
         addresses[planner.full_property_address(seeded[key])] = key
+    for index, (address, coordinate) in enumerate((custom_addresses or {}).items(), start=1):
+        label = f"custom-{index}"
+        points[label] = coordinate
+        addresses[address] = label
     labels_by_point = {point: label for label, point in points.items()}
     travel = travel or {}
 
@@ -511,7 +593,7 @@ def _optimize(db, seeded, visits, **overrides):
         "plan_date": PLAN_DATE,
         "day_start": "09:00",
         "day_end": "13:00",
-        "start_address": "Office",
+        "start_address": planner.DEFAULT_DEPARTURE_ADDRESS,
         "available_agent_ids": [seeded["alice"].id, seeded["bob"].id],
         "allow_agent_overlap": False,
         "visits": visits,
@@ -631,8 +713,8 @@ def test_route_order_uses_matrix_and_is_deterministic(db, seeded, monkeypatch):
     assert first["provider"] == "vicmap+test-matrix"
 
 
-@pytest.mark.parametrize("start_address", [None, "   "])
-def test_optional_departure_starts_route_at_first_stop(db, seeded, monkeypatch, start_address):
+@pytest.mark.parametrize("start_address", [None, "   ", "Another office"])
+def test_company_departure_is_always_used(db, seeded, monkeypatch, start_address):
     points = _install_local_route_provider(monkeypatch, seeded, default_minutes=25)
     result = _optimize(
         db,
@@ -643,10 +725,99 @@ def test_optional_departure_starts_route_at_first_stop(db, seeded, monkeypatch, 
     )
 
     assert len(result["visits"]) == 1
-    assert result["visits"][0]["travel_minutes"] == 0
-    assert result["routes"][0]["drive_minutes"] == 0
-    assert result["routes"][0]["geometry"] == [[points["a"][0], points["a"][1]]]
-    assert any("No departure address" in warning for warning in result["warnings"])
+    assert result["start_address"] == planner.DEFAULT_DEPARTURE_ADDRESS
+    assert result["visits"][0]["travel_minutes"] == 25
+    assert result["routes"][0]["drive_minutes"] == 25
+    assert result["routes"][0]["geometry"] == [
+        [points["office"][0], points["office"][1]],
+        [points["a"][0], points["a"][1]],
+    ]
+    assert not any("No departure address" in warning for warning in result["warnings"])
+
+
+def test_mixed_managed_and_custom_sales_addresses_are_optimized(db, seeded, monkeypatch):
+    custom_address = "8 Sales Street, Richmond VIC 3121"
+    _install_local_route_provider(
+        monkeypatch,
+        seeded,
+        default_minutes=10,
+        custom_addresses={custom_address: (6.0, 6.0)},
+    )
+
+    result = _optimize(
+        db,
+        seeded,
+        [
+            _visit("managed", seeded["a"], [seeded["alice"].id]),
+            {
+                "client_id": "custom-sales",
+                "property_id": None,
+                "property_address": custom_address,
+                "agent_ids": [seeded["alice"].id],
+                "duration_minutes": 30,
+                "buffer_minutes": 5,
+                "earliest_time": None,
+                "latest_time": None,
+                "notes": "Sales listing",
+            },
+        ],
+        available_agent_ids=[seeded["alice"].id],
+    )
+
+    by_client_id = {visit["client_id"]: visit for visit in result["visits"]}
+    assert set(by_client_id) == {"managed", "custom-sales"}
+    assert by_client_id["managed"]["property_id"] == seeded["a"].id
+    assert by_client_id["custom-sales"]["property_id"] is None
+    assert by_client_id["custom-sales"]["property_address"] == custom_address
+    assert by_client_id["custom-sales"]["buffer_minutes"] == 5
+
+
+def test_supplied_property_id_never_falls_back_to_custom_address(db, seeded, monkeypatch):
+    custom_address = "8 Sales Street, Richmond VIC 3121"
+    _install_local_route_provider(
+        monkeypatch,
+        seeded,
+        custom_addresses={custom_address: (6.0, 6.0)},
+    )
+    visit = _visit("wrong-mailbox", seeded["other"], [seeded["alice"].id])
+    visit["property_address"] = custom_address
+
+    result = _optimize(
+        db,
+        seeded,
+        [visit],
+        available_agent_ids=[seeded["alice"].id],
+    )
+
+    assert result["visits"] == []
+    assert result["unscheduled"][0]["reason"] == "The property is not active in this mailbox."
+
+
+def test_optimize_api_requires_managed_property_or_custom_address(db, seeded):
+    client = _inspection_api_client(db, seeded)
+
+    response = client.post(
+        "/inspections/optimize",
+        json={
+            "plan_name": PLAN_DATE.isoformat(),
+            "plan_date": PLAN_DATE.isoformat(),
+            "day_start": "09:00",
+            "day_end": "13:00",
+            "available_agent_ids": [seeded["alice"].id],
+            "visits": [
+                {
+                    "client_id": "missing-location",
+                    "property_id": None,
+                    "property_address": "   ",
+                    "agent_ids": [seeded["alice"].id],
+                    "duration_minutes": 30,
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 422
+    assert "Select a managed property or enter a full address" in response.text
 
 
 def test_post_inspection_buffer_delays_the_next_stop(db, seeded, monkeypatch):
@@ -1014,7 +1185,12 @@ def test_inactive_agents_and_wrong_mailbox_properties_are_not_scheduled(db, seed
 
 
 def test_plan_api_save_detail_status_mailbox_and_permission_roundtrip(db, seeded, monkeypatch):
-    _install_local_route_provider(monkeypatch, seeded)
+    custom_address = "8 Sales Street, Richmond VIC 3121"
+    _install_local_route_provider(
+        monkeypatch,
+        seeded,
+        custom_addresses={custom_address: (6.0, 6.0)},
+    )
     db.add(
         AppState(
             key=ROLE_PAGE_ACCESS_KEY,
@@ -1046,7 +1222,7 @@ def test_plan_api_save_detail_status_mailbox_and_permission_roundtrip(db, seeded
         "plan_date": PLAN_DATE.isoformat(),
         "day_start": "09:00",
         "day_end": "13:00",
-        "start_address": "Office",
+        "start_address": planner.DEFAULT_DEPARTURE_ADDRESS,
         "available_agent_ids": [seeded["alice"].id],
         "allow_agent_overlap": False,
         "visits": [
@@ -1056,12 +1232,23 @@ def test_plan_api_save_detail_status_mailbox_and_permission_roundtrip(db, seeded
                 [seeded["alice"].id],
                 earliest_time="09:00",
                 latest_time="09:00",
-            )
+            ),
+            {
+                "client_id": "saved-custom-stop",
+                "property_id": None,
+                "property_address": custom_address,
+                "agent_ids": [seeded["alice"].id],
+                "duration_minutes": 30,
+                "buffer_minutes": 10,
+                "earliest_time": None,
+                "latest_time": None,
+                "notes": "Sales listing",
+            },
         ],
     }
     optimized = client.post("/inspections/optimize", json=optimize_payload)
     assert optimized.status_code == 200
-    assert optimized.json()["metrics"]["inspection_count"] == 1
+    assert optimized.json()["metrics"]["inspection_count"] == 2
     assert optimized.json()["integrity_token"]
     assert optimized.json()["available_agent_ids"] == [seeded["alice"].id]
 
@@ -1071,7 +1258,7 @@ def test_plan_api_save_detail_status_mailbox_and_permission_roundtrip(db, seeded
         "plan_date": PLAN_DATE.isoformat(),
         "day_start": "09:00",
         "day_end": "13:00",
-        "start_address": "Office",
+        "start_address": planner.DEFAULT_DEPARTURE_ADDRESS,
         "allow_agent_overlap": False,
         "optimization_result": optimized.json(),
     }
@@ -1085,8 +1272,13 @@ def test_plan_api_save_detail_status_mailbox_and_permission_roundtrip(db, seeded
     assert saved.status_code == 201
     plan = saved.json()["plan"]
     plan_id = plan["id"]
-    assert plan["visit_count"] == 1
-    assert plan["visits"][0]["client_id"] == "saved-stop"
+    assert plan["name"] == PLAN_DATE.isoformat()
+    assert plan["start_address"] == planner.DEFAULT_DEPARTURE_ADDRESS
+    assert plan["visit_count"] == 2
+    saved_visits = {visit["client_id"]: visit for visit in plan["visits"]}
+    assert saved_visits["saved-stop"]["property_id"] == seeded["a"].id
+    assert saved_visits["saved-custom-stop"]["property_id"] is None
+    assert saved_visits["saved-custom-stop"]["property_address"] == custom_address
 
     listed = client.get("/inspections/plans")
     detail = client.get(f"/inspections/plans/{plan_id}")
@@ -1096,8 +1288,14 @@ def test_plan_api_save_detail_status_mailbox_and_permission_roundtrip(db, seeded
     assert detail.status_code == 200
     assert detail.json()["plan"]["optimization_result"]["provider"] == "vicmap+test-matrix"
     assert detail.json()["plan"]["optimization_result"]["available_agent_ids"] == [seeded["alice"].id]
-    assert detail.json()["plan"]["optimization_result"]["visits"][0]["earliest_time"] == "09:00"
-    assert detail.json()["plan"]["optimization_result"]["visits"][0]["latest_time"] == "09:00"
+    detail_visits = {
+        visit["client_id"]: visit
+        for visit in detail.json()["plan"]["optimization_result"]["visits"]
+    }
+    assert detail_visits["saved-stop"]["earliest_time"] == "09:00"
+    assert detail_visits["saved-stop"]["latest_time"] == "09:00"
+    assert detail_visits["saved-custom-stop"]["property_id"] is None
+    assert detail_visits["saved-custom-stop"]["property_address"] == custom_address
     assert updated.status_code == 200
     assert updated.json()["plan"]["status"] == "CONFIRMED"
 

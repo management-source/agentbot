@@ -75,6 +75,7 @@ ROAD_TYPE_WORDS = {
     "WAY",
 }
 DEFAULT_TIMEZONE = "Australia/Melbourne"
+DEFAULT_DEPARTURE_ADDRESS = "24 Coral-Pea Way, Cranbourne West"
 ROUTE_COLORS = (
     "#2563eb",
     "#dc2626",
@@ -127,7 +128,7 @@ class ExistingInspectionWindow:
     blocked_until: datetime
     plan_id: int
     plan_name: str
-    property_id: int
+    property_id: int | None
     property_address: str
     latitude: float
     longitude: float
@@ -1006,26 +1007,27 @@ def optimize_inspections(
     warnings: list[str] = []
     unscheduled: list[dict[str, Any]] = []
     geocode_provider_state = GeocodeProviderState()
-    cleaned_start_address = _clean_text(start_address)
+    # Every route starts from the office. Keep the request argument for API
+    # compatibility, but do not allow clients to silently change the origin.
+    cleaned_start_address = DEFAULT_DEPARTURE_ADDRESS
     start_point: GeocodePoint | None = None
-    if cleaned_start_address:
-        start_point, geocode_warning = geocode_address(
-            db,
-            mailbox=mailbox,
-            address=cleaned_start_address,
-            allow_network=time.monotonic() < provider_deadline,
-            provider_state=geocode_provider_state,
-        )
-        if geocode_warning:
-            warnings.append(geocode_warning)
-    else:
-        warnings.append("No departure address was supplied, so travel to each agent's first inspection is excluded.")
+    start_point, geocode_warning = geocode_address(
+        db,
+        mailbox=mailbox,
+        address=cleaned_start_address,
+        allow_network=time.monotonic() < provider_deadline,
+        provider_state=geocode_provider_state,
+    )
+    if geocode_warning:
+        warnings.append(geocode_warning)
 
     property_ids = sorted(
         {
             int(visit.get("property_id"))
             for visit in visits
-            if visit.get("property_id") is not None and str(visit.get("property_id")).isdigit()
+            if visit.get("property_id") is not None
+            and str(visit.get("property_id")).isdigit()
+            and int(visit.get("property_id")) > 0
         }
     )
     properties = {
@@ -1040,21 +1042,50 @@ def optimize_inspections(
     points_by_address: dict[str, GeocodePoint] = {}
     for position, raw_visit in enumerate(visits):
         client_id = _clean_text(raw_visit.get("client_id")) or f"visit-{position + 1}"
-        try:
-            property_id = int(raw_visit.get("property_id"))
-        except (TypeError, ValueError):
-            unscheduled.append({"client_id": client_id, "property_id": None, "reason": "Select a property."})
-            continue
-        prop = properties.get(property_id)
-        if not prop:
-            unscheduled.append(
-                {
-                    "client_id": client_id,
-                    "property_id": property_id,
-                    "reason": "The property is not active in this mailbox.",
-                }
-            )
-            continue
+        raw_property_id = raw_visit.get("property_id")
+        property_id: int | None = None
+        prop: ManagedProperty | None = None
+        if raw_property_id not in (None, "", 0, "0"):
+            try:
+                property_id = int(raw_property_id)
+            except (TypeError, ValueError):
+                unscheduled.append(
+                    {"client_id": client_id, "property_id": None, "reason": "The property id is invalid."}
+                )
+                continue
+            prop = properties.get(property_id)
+            if not prop:
+                # A supplied id is authoritative. Never turn a stale or
+                # cross-mailbox id into an unverified custom-address visit.
+                unscheduled.append(
+                    {
+                        "client_id": client_id,
+                        "property_id": property_id,
+                        "reason": "The property is not active in this mailbox.",
+                    }
+                )
+                continue
+            property_address = full_property_address(prop)
+        else:
+            property_address = _clean_text(raw_visit.get("property_address"))
+            if not property_address:
+                unscheduled.append(
+                    {
+                        "client_id": client_id,
+                        "property_id": None,
+                        "reason": "Select a managed property or enter a full address.",
+                    }
+                )
+                continue
+            if len(property_address) > 500:
+                unscheduled.append(
+                    {
+                        "client_id": client_id,
+                        "property_id": None,
+                        "reason": "The custom property address is too long.",
+                    }
+                )
+                continue
 
         try:
             duration_minutes = int(raw_visit.get("duration_minutes") or 0)
@@ -1064,7 +1095,7 @@ def optimize_inspections(
                 {
                     "client_id": client_id,
                     "property_id": property_id,
-                    "property_address": full_property_address(prop),
+                    "property_address": property_address,
                     "reason": "Duration and custom buffer must be whole minutes.",
                 }
             )
@@ -1074,7 +1105,7 @@ def optimize_inspections(
                 {
                     "client_id": client_id,
                     "property_id": property_id,
-                    "property_address": full_property_address(prop),
+                    "property_address": property_address,
                     "reason": "Duration or custom buffer is outside the supported range.",
                 }
             )
@@ -1086,7 +1117,7 @@ def optimize_inspections(
                 {
                     "client_id": client_id,
                     "property_id": property_id,
-                    "property_address": full_property_address(prop),
+                    "property_address": property_address,
                     "reason": "A requested agent is not available for this plan.",
                 }
             )
@@ -1102,7 +1133,7 @@ def optimize_inspections(
                 {
                     "client_id": client_id,
                     "property_id": property_id,
-                    "property_address": full_property_address(prop),
+                    "property_address": property_address,
                     "reason": str(exc.detail),
                 }
             )
@@ -1114,13 +1145,12 @@ def optimize_inspections(
                 {
                     "client_id": client_id,
                     "property_id": property_id,
-                    "property_address": full_property_address(prop),
+                    "property_address": property_address,
                     "reason": "The requested inspection window is outside the working day.",
                 }
             )
             continue
 
-        property_address = full_property_address(prop)
         point = points_by_address.get(property_address.casefold())
         if not point:
             point, warning = geocode_address(
@@ -1171,7 +1201,10 @@ def optimize_inspections(
     if start_point is not None:
         coordinates.append((start_point.latitude, start_point.longitude))
         start_coordinate_index = 0
-    for visit in sorted(prepared, key=lambda row: (row["property_id"], row["input_position"])):
+    for visit in sorted(
+        prepared,
+        key=lambda row: (row["property_id"] is None, row["property_id"] or 0, row["input_position"]),
+    ):
         coordinate = (visit["latitude"], visit["longitude"])
         try:
             coordinate_index = coordinates.index(coordinate)
@@ -1443,7 +1476,7 @@ def validate_optimization_result(
         "plan_date": plan_date.isoformat(),
         "day_start": day_start,
         "day_end": day_end,
-        "start_address": _clean_text(start_address) or None,
+        "start_address": DEFAULT_DEPARTURE_ADDRESS,
         "allow_agent_overlap": allow_agent_overlap,
     }
     actual_snapshot = {key: optimization_result.get(key) for key in expected_snapshot}
@@ -1466,7 +1499,12 @@ def validate_optimization_result(
         if not isinstance(raw, dict) or not raw.get("scheduled_start") or not raw.get("scheduled_end"):
             continue
         try:
-            property_ids.add(int(raw.get("property_id")))
+            raw_property_id = raw.get("property_id")
+            if raw_property_id not in (None, "", 0, "0"):
+                property_id = int(raw_property_id)
+                if property_id <= 0:
+                    raise ValueError
+                property_ids.add(property_id)
             agent_ids.update(int(agent_id) for agent_id in (raw.get("agent_ids") or []))
         except (TypeError, ValueError) as exc:
             raise InspectionPlannerError("A scheduled visit contains an invalid property or agent id.") from exc
@@ -1503,8 +1541,23 @@ def validate_optimization_result(
         if client_id in seen_client_ids:
             raise InspectionPlannerError("Scheduled visit client ids must be unique.")
         seen_client_ids.add(client_id)
-        property_id = int(raw["property_id"])
-        prop = properties[property_id]
+        raw_property_id = raw.get("property_id")
+        property_id: int | None = None
+        if raw_property_id not in (None, "", 0, "0"):
+            try:
+                property_id = int(raw_property_id)
+            except (TypeError, ValueError) as exc:
+                raise InspectionPlannerError(f"{client_id} contains an invalid property id.") from exc
+            prop = properties.get(property_id)
+            if prop is None:
+                raise InspectionPlannerError("A scheduled property is no longer active in this mailbox.")
+            property_address = full_property_address(prop)
+        else:
+            property_address = _clean_text(raw.get("property_address"))
+            if not property_address:
+                raise InspectionPlannerError(f"{client_id} has no property address.")
+            if len(property_address) > 500:
+                raise InspectionPlannerError(f"{client_id} has a property address longer than 500 characters.")
         selected_agent_ids = sorted({int(agent_id) for agent_id in (raw.get("agent_ids") or [])})
         if not selected_agent_ids:
             raise InspectionPlannerError(f"{client_id} has no assigned agent.")
@@ -1587,7 +1640,7 @@ def validate_optimization_result(
         cleaned_visit = {
             "client_id": client_id,
             "property_id": property_id,
-            "property_address": full_property_address(prop),
+            "property_address": property_address,
             "latitude": latitude,
             "longitude": longitude,
             "agent_ids": selected_agent_ids,

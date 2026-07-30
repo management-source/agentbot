@@ -18,6 +18,7 @@ Supported:
 from __future__ import annotations
 
 import logging
+import re
 from typing import Iterable
 
 from sqlalchemy import inspect, text
@@ -44,6 +45,224 @@ def _column_exists(engine: Engine, table: str, column: str) -> bool:
         return column in cols
     except Exception:
         return False
+
+
+def _column_is_nullable(engine: Engine, table: str, column: str) -> bool | None:
+    """Return a column's nullability, or None when it cannot be inspected."""
+    try:
+        insp = inspect(engine)
+        for candidate in insp.get_columns(table):
+            if candidate["name"] == column:
+                return bool(candidate.get("nullable", True))
+    except Exception:
+        pass
+    return None
+
+
+def _quote_sqlite_identifier(value: str) -> str:
+    return '"' + value.replace('"', '""') + '"'
+
+
+def _sqlite_nullable_table_sql(
+    create_sql: str,
+    *,
+    temporary_table: str,
+    column: str,
+) -> str:
+    """Rewrite one SQLite column definition without its NOT NULL constraint."""
+    opening = create_sql.find("(")
+    if opening < 0:
+        raise ValueError("SQLite table definition has no column list")
+
+    # Locate the matching closing parenthesis while respecting quoted strings
+    # and nested type/default expressions.
+    closing = -1
+    depth = 0
+    quote: str | None = None
+    bracket_quote = False
+    index = opening
+    while index < len(create_sql):
+        char = create_sql[index]
+        if bracket_quote:
+            if char == "]":
+                bracket_quote = False
+        elif quote:
+            if char == quote:
+                if index + 1 < len(create_sql) and create_sql[index + 1] == quote:
+                    index += 1
+                else:
+                    quote = None
+        elif char == "[":
+            bracket_quote = True
+        elif char in ('"', "'", "`"):
+            quote = char
+        elif char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+            if depth == 0:
+                closing = index
+                break
+        index += 1
+
+    if closing < 0:
+        raise ValueError("SQLite table definition has an unmatched column list")
+
+    body = create_sql[opening + 1 : closing]
+    segments: list[str] = []
+    segment_start = 0
+    depth = 0
+    quote = None
+    bracket_quote = False
+    index = 0
+    while index < len(body):
+        char = body[index]
+        if bracket_quote:
+            if char == "]":
+                bracket_quote = False
+        elif quote:
+            if char == quote:
+                if index + 1 < len(body) and body[index + 1] == quote:
+                    index += 1
+                else:
+                    quote = None
+        elif char == "[":
+            bracket_quote = True
+        elif char in ('"', "'", "`"):
+            quote = char
+        elif char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+        elif char == "," and depth == 0:
+            segments.append(body[segment_start:index])
+            segment_start = index + 1
+        index += 1
+    segments.append(body[segment_start:])
+
+    escaped_column = re.escape(column)
+    column_prefix = re.compile(
+        rf"^\s*(?:{escaped_column}|\"{escaped_column}\"|`{escaped_column}`|"
+        rf"\[{escaped_column}\]|'{escaped_column}')(?=\s)",
+        re.IGNORECASE,
+    )
+    not_null = re.compile(
+        r"\bNOT\s+NULL\b(?:\s+ON\s+CONFLICT\s+(?:ROLLBACK|ABORT|FAIL|IGNORE|REPLACE))?",
+        re.IGNORECASE,
+    )
+
+    changed = False
+    for segment_index, segment in enumerate(segments):
+        if not column_prefix.search(segment):
+            continue
+        rewritten, count = not_null.subn("", segment, count=1)
+        if count != 1:
+            raise ValueError(f"SQLite column {column!r} has no explicit NOT NULL constraint")
+        segments[segment_index] = rewritten
+        changed = True
+        break
+
+    if not changed:
+        raise ValueError(f"SQLite column {column!r} was not found in the table definition")
+
+    return (
+        f"CREATE TABLE {_quote_sqlite_identifier(temporary_table)} "
+        f"({','.join(segments)}){create_sql[closing + 1:]}"
+    )
+
+
+def _sqlite_make_column_nullable(engine: Engine, table: str, column: str) -> None:
+    """Rebuild a SQLite table atomically so one existing column is nullable."""
+    temporary_table = f"__migration_{table}_{column}_nullable"
+    quoted_table = _quote_sqlite_identifier(table)
+    quoted_temporary_table = _quote_sqlite_identifier(temporary_table)
+    raw_connection = engine.raw_connection()
+    cursor = None
+    foreign_keys_enabled = False
+
+    try:
+        cursor = raw_connection.cursor()
+        foreign_key_row = cursor.execute("PRAGMA foreign_keys").fetchone()
+        foreign_keys_enabled = bool(foreign_key_row and foreign_key_row[0])
+
+        # SQLite only accepts a foreign_keys change outside a transaction.
+        raw_connection.rollback()
+        cursor.execute("PRAGMA foreign_keys = OFF")
+        cursor.execute("BEGIN IMMEDIATE")
+
+        columns = cursor.execute(f"PRAGMA table_xinfo({quoted_table})").fetchall()
+        target = next((row for row in columns if row[1] == column), None)
+        if target is None:
+            raise ValueError(f"SQLite column {table}.{column} does not exist")
+        if not bool(target[3]):
+            raw_connection.commit()
+            return
+
+        table_row = cursor.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?",
+            (table,),
+        ).fetchone()
+        if not table_row or not table_row[0]:
+            raise ValueError(f"SQLite table definition for {table!r} was not found")
+
+        related_objects = cursor.execute(
+            """
+            SELECT type, name, sql
+            FROM sqlite_master
+            WHERE tbl_name = ?
+              AND type IN ('index', 'trigger')
+              AND sql IS NOT NULL
+            ORDER BY CASE type WHEN 'index' THEN 0 ELSE 1 END, name
+            """,
+            (table,),
+        ).fetchall()
+
+        temporary_exists = cursor.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+            (temporary_table,),
+        ).fetchone()
+        if temporary_exists:
+            raise ValueError(f"Temporary migration table {temporary_table!r} already exists")
+
+        new_table_sql = _sqlite_nullable_table_sql(
+            str(table_row[0]),
+            temporary_table=temporary_table,
+            column=column,
+        )
+        cursor.execute(new_table_sql)
+
+        # Generated columns (table_xinfo hidden values 2 and 3) cannot be
+        # inserted explicitly; all ordinary columns, including the PK, can.
+        copied_columns = [
+            str(row[1])
+            for row in columns
+            if len(row) < 7 or int(row[6] or 0) == 0
+        ]
+        if not copied_columns:
+            raise ValueError(f"SQLite table {table!r} has no copyable columns")
+        column_list = ", ".join(_quote_sqlite_identifier(name) for name in copied_columns)
+        cursor.execute(
+            f"INSERT INTO {quoted_temporary_table} ({column_list}) "
+            f"SELECT {column_list} FROM {quoted_table}"
+        )
+        cursor.execute(f"DROP TABLE {quoted_table}")
+        cursor.execute(f"ALTER TABLE {quoted_temporary_table} RENAME TO {quoted_table}")
+
+        for _object_type, _object_name, object_sql in related_objects:
+            cursor.execute(str(object_sql))
+
+        raw_connection.commit()
+    except Exception:
+        raw_connection.rollback()
+        raise
+    finally:
+        if cursor is not None:
+            try:
+                cursor.execute(f"PRAGMA foreign_keys = {1 if foreign_keys_enabled else 0}")
+            except Exception:
+                logger.warning("Could not restore SQLite foreign_keys setting after migration")
+            cursor.close()
+        raw_connection.close()
 
 
 def _exec_statements(engine: Engine, statements: Iterable[str]) -> None:
@@ -457,3 +676,44 @@ def migrate(engine: Engine) -> None:
                     conn.execute(text(stmt))
                 except Exception:
                     pass
+
+    # -------------------------------------------------------------------------
+    # 9) Custom-address inspection visits (added 2026-07)
+    # -------------------------------------------------------------------------
+    inspection_visits = "inspection_visits"
+    if (
+        _table_exists(engine, inspection_visits)
+        and _column_exists(engine, inspection_visits, "property_id")
+        and _column_is_nullable(engine, inspection_visits, "property_id") is False
+    ):
+        dialect = engine.dialect.name
+        if dialect == "postgresql":
+            logger.info(
+                "Applying DB migration (nullable inspection property)",
+                extra={"table": inspection_visits, "column": "property_id"},
+            )
+            _exec_statements(
+                engine,
+                [
+                    f"ALTER TABLE {inspection_visits} "
+                    "ALTER COLUMN property_id DROP NOT NULL"
+                ],
+            )
+        elif dialect == "sqlite":
+            logger.info(
+                "Applying DB migration (nullable inspection property)",
+                extra={"table": inspection_visits, "column": "property_id"},
+            )
+            try:
+                _sqlite_make_column_nullable(engine, inspection_visits, "property_id")
+            except Exception as exc:
+                # Match the best-effort behavior of the other startup migrations
+                # while leaving the original table untouched on failure.
+                logger.warning(
+                    "SQLite nullable-column migration failed",
+                    extra={
+                        "table": inspection_visits,
+                        "column": "property_id",
+                        "error": str(exc),
+                    },
+                )

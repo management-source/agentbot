@@ -3237,6 +3237,13 @@ const INSPECTION_ROUTE_COLOURS = [
     "#2563eb", "#e11d48", "#059669", "#9333ea", "#ea580c",
     "#0891b2", "#ca8a04", "#4f46e5", "#db2777", "#16a34a",
 ];
+const INSPECTION_PROPERTY_COLOURS = [
+    "#be123c", "#1d4ed8", "#047857", "#7e22ce", "#c2410c",
+    "#0e7490", "#a16207", "#4338ca", "#be185d", "#15803d",
+    "#9f1239", "#0f766e", "#6d28d9", "#9a3412", "#0369a1",
+    "#4d7c0f", "#b91c1c", "#075985", "#5b21b6", "#166534",
+];
+const INSPECTION_DEFAULT_DEPARTURE_ADDRESS = "24 Coral-Pea Way, Cranbourne West";
 
 function inspectionEscape(value) {
     return escapeHtml(String(value == null ? "" : value));
@@ -3258,13 +3265,8 @@ function inspectionToday() {
 }
 
 function inspectionDefaultPlanName(dateValue = "") {
-    const raw = String(dateValue || inspectionToday());
-    try {
-        const date = new Date(`${raw}T12:00:00`);
-        return `Inspections - ${date.toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })}`;
-    } catch {
-        return `Inspection plan ${raw}`;
-    }
+    const raw = String(dateValue || inspectionToday()).slice(0, 10);
+    return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : inspectionToday();
 }
 
 function inspectionParseJson(value) {
@@ -3312,6 +3314,15 @@ function inspectionPropertyLabel(propertyId, fallback = "") {
     return String(property?.label || propertyFullAddress(property || {}) || fallback || "");
 }
 
+function inspectionResolveManagedProperty(value) {
+    const needle = String(value || "").trim().toLocaleLowerCase("en-AU");
+    if (!needle) return null;
+    return propertyOptionsCache.find((property) => {
+        const label = String(property?.label || propertyFullAddress(property || {})).trim().toLocaleLowerCase("en-AU");
+        return label === needle;
+    }) || null;
+}
+
 function inspectionExtractAgentIds(value) {
     const source = Array.isArray(value) ? value : (value == null ? [] : [value]);
     return [...new Set(source.map((item) => {
@@ -3339,11 +3350,44 @@ function createInspectionRow(seed = {}) {
         earliest_time: String(seed.earliest_time || seed.window_start || seed.earliest || ""),
         latest_time: String(seed.latest_time || seed.window_end || seed.latest || ""),
         notes: String(seed.notes || seed.note || ""),
+        property_invalid: false,
     };
 }
 
 function inspectionRowByClientId(clientId) {
     return inspectionRows.find((row) => String(row.client_id) === String(clientId)) || null;
+}
+
+function inspectionPropertyKey(source = {}, index = 0) {
+    const property = source?.property && typeof source.property === "object" ? source.property : null;
+    const clientId = String(source?.client_id || source?.visit_id || "");
+    const row = clientId ? inspectionRowByClientId(clientId) : null;
+    const propertyId = inspectionNumber(source?.property_id ?? property?.id ?? row?.property_id, 0);
+    if (propertyId > 0) return `property:${propertyId}`;
+    const address = String(
+        row?.property_label || source?.property_address || source?.address || source?.property_label ||
+        source?.full_address || property?.property_address || property?.full_address || ""
+    ).trim().toLocaleLowerCase("en-AU").replace(/\s+/g, " ");
+    if (address) return `address:${address}`;
+    return `visit:${clientId || index}`;
+}
+
+function inspectionPropertyColour(source = {}, index = 0) {
+    const key = inspectionPropertyKey(source, index);
+    const propertyKeys = [];
+    inspectionRows.forEach((row, rowIndex) => {
+        const rowKey = inspectionPropertyKey(row, rowIndex);
+        if (!propertyKeys.includes(rowKey)) propertyKeys.push(rowKey);
+    });
+    const matchedIndex = propertyKeys.indexOf(key);
+    if (matchedIndex >= 0) {
+        if (matchedIndex < INSPECTION_PROPERTY_COLOURS.length) return INSPECTION_PROPERTY_COLOURS[matchedIndex];
+        const hue = (matchedIndex * 137.508) % 360;
+        return `hsl(${hue.toFixed(1)} 68% 38%)`;
+    }
+    let hash = 0;
+    for (let position = 0; position < key.length; position += 1) hash = ((hash << 5) - hash + key.charCodeAt(position)) | 0;
+    return INSPECTION_PROPERTY_COLOURS[Math.abs(hash) % INSPECTION_PROPERTY_COLOURS.length];
 }
 
 function renderInspectionPropertyOptions() {
@@ -3417,8 +3461,9 @@ function renderInspectionRows() {
         return;
     }
     target.innerHTML = inspectionRows.map((row, index) => {
-        const propertyHint = row.property_label || "Choose a managed property";
-        return `<article class="inspection-visit-card" data-inspection-client-id="${inspectionEscape(row.client_id)}">
+        const propertyHint = row.property_label || "Choose a managed property or enter a sales address";
+        const propertyColour = inspectionPropertyColour(row, index);
+        return `<article class="inspection-visit-card" data-inspection-client-id="${inspectionEscape(row.client_id)}" style="--property-colour:${propertyColour}">
             <div class="inspection-visit-head">
                 <div class="inspection-visit-title">
                     <span class="inspection-stop-number">${index + 1}</span>
@@ -3432,9 +3477,10 @@ function renderInspectionRows() {
             </div>
             <div class="inspection-visit-fields">
                 <div class="field property-field">
-                    <label class="label">Property</label>
-                    <input type="text" list="inspectionPropertyOptions" autocomplete="off" data-inspection-field="property_label"
-                        class="${row.property_label && !row.property_id ? "invalid" : ""}" value="${inspectionEscape(row.property_label)}" placeholder="Search managed property address…" />
+                    <label class="label">Property / sales address</label>
+                    <input type="text" list="inspectionPropertyOptions" autocomplete="off" maxlength="500" data-inspection-field="property_label"
+                        class="${row.property_invalid ? "invalid" : ""}" value="${inspectionEscape(row.property_label)}" placeholder="Search managed properties or type a full sales address…" />
+                    <div class="small muted" style="margin-top:4px">Choose a suggestion or continue typing a complete address.</div>
                 </div>
                 <div class="field">
                     <label class="label">Inspection time</label>
@@ -3512,11 +3558,18 @@ function bindInspectionEvents() {
             if (!field) return;
             if (field === "property_label") {
                 row.property_label = control.value || "";
-                const match = resolvePropertySearchValue(row.property_label);
+                const match = inspectionResolveManagedProperty(row.property_label);
                 row.property_id = match ? inspectionNumber(match.id, 0) : null;
-                control.classList.remove("invalid");
+                row.property_invalid = !String(row.property_label).trim();
+                control.classList.toggle("invalid", row.property_invalid);
                 const hint = card.querySelector("[data-inspection-property-hint]");
-                if (hint) hint.textContent = row.property_label || "Choose a managed property";
+                if (hint) hint.textContent = row.property_label || "Choose a managed property or enter a sales address";
+                visits.querySelectorAll("[data-inspection-client-id]").forEach((rowCard, rowIndex) => {
+                    rowCard.style.setProperty(
+                        "--property-colour",
+                        inspectionPropertyColour(inspectionRows[rowIndex], rowIndex),
+                    );
+                });
             } else if (field === "duration_minutes") {
                 row.duration_minutes = Math.min(480, Math.max(5, inspectionNumber(control.value, 5)));
             } else if (field === "buffer_minutes") {
@@ -3542,7 +3595,6 @@ function bindInspectionEvents() {
             }
             if (control.dataset.inspectionField === "property_label") {
                 control.dispatchEvent(new Event("input", { bubbles: true }));
-                control.classList.toggle("invalid", !!row.property_label && !row.property_id);
             }
             markInspectionPlanDirty();
         });
@@ -3585,7 +3637,15 @@ function bindInspectionEvents() {
             markInspectionPlanDirty();
         });
     }
-    ["inspectionPlanDate", "inspectionDayStart", "inspectionDayEnd", "inspectionStartAddress", "inspectionAllowAgentOverlap"].forEach((id) => {
+    const planDateControl = document.getElementById("inspectionPlanDate");
+    if (planDateControl) {
+        planDateControl.addEventListener("change", () => {
+            const planNameControl = document.getElementById("inspectionPlanName");
+            if (planNameControl) planNameControl.value = inspectionDefaultPlanName(planDateControl.value);
+            markInspectionPlanDirty();
+        });
+    }
+    ["inspectionDayStart", "inspectionDayEnd", "inspectionAllowAgentOverlap"].forEach((id) => {
         const control = document.getElementById(id);
         if (control) control.addEventListener("change", markInspectionPlanDirty);
     });
@@ -3659,7 +3719,7 @@ function resetInspectionWorkspace(options = {}) {
         inspectionPlanDate: date,
         inspectionDayStart: "09:00",
         inspectionDayEnd: "17:30",
-        inspectionStartAddress: "",
+        inspectionStartAddress: INSPECTION_DEFAULT_DEPARTURE_ADDRESS,
     };
     Object.entries(values).forEach(([id, value]) => {
         const control = document.getElementById(id);
@@ -3684,11 +3744,13 @@ async function initInspectionsWorkspace(force = false) {
     if (!document.getElementById("inspectionsPanel")) return;
     bindInspectionEvents();
     if (!inspectionRows.length) resetInspectionWorkspace({ preserveAgents: true });
-    if (!document.getElementById("inspectionPlanDate")?.value) {
-        const date = inspectionToday();
-        document.getElementById("inspectionPlanDate").value = date;
-        document.getElementById("inspectionPlanName").value = inspectionDefaultPlanName(date);
-    }
+    const planDateControl = document.getElementById("inspectionPlanDate");
+    const date = planDateControl?.value || inspectionToday();
+    if (planDateControl) planDateControl.value = date;
+    const planNameControl = document.getElementById("inspectionPlanName");
+    if (planNameControl) planNameControl.value = inspectionDefaultPlanName(date);
+    const departureControl = document.getElementById("inspectionStartAddress");
+    if (departureControl) departureControl.value = INSPECTION_DEFAULT_DEPARTURE_ADDRESS;
     renderInspectionRows();
     ensureInspectionMap();
     if (inspectionsLoadedOnce && !force) {
@@ -3722,31 +3784,33 @@ function collectInspectionPayload() {
     const planDate = String(document.getElementById("inspectionPlanDate")?.value || "").trim();
     const dayStart = String(document.getElementById("inspectionDayStart")?.value || "").trim();
     const dayEnd = String(document.getElementById("inspectionDayEnd")?.value || "").trim();
-    let planName = String(document.getElementById("inspectionPlanName")?.value || "").trim();
     if (!planDate) throw new Error("Choose an inspection date.");
     if (!dayStart || !dayEnd) throw new Error("Set both the start and end of the working day.");
     if (dayStart >= dayEnd) throw new Error("The working day must end after it starts.");
-    if (!planName) {
-        planName = inspectionDefaultPlanName(planDate);
-        const control = document.getElementById("inspectionPlanName");
-        if (control) control.value = planName;
-    }
+    const planName = inspectionDefaultPlanName(planDate);
+    const planNameControl = document.getElementById("inspectionPlanName");
+    if (planNameControl) planNameControl.value = planName;
+    const departureControl = document.getElementById("inspectionStartAddress");
+    if (departureControl) departureControl.value = INSPECTION_DEFAULT_DEPARTURE_ADDRESS;
     const availableAgentIds = [...inspectionAvailableAgentIds].filter((id) => id > 0).sort((a, b) => a - b);
     if (!availableAgentIds.length) throw new Error("Select at least one available agent.");
     if (!inspectionRows.length) throw new Error("Add at least one inspection stop.");
     const invalid = [];
     const visits = inspectionRows.map((row, index) => {
-        if (!row.property_id && row.property_label) {
-            const match = resolvePropertySearchValue(row.property_label);
+        const propertyAddress = String(row.property_label || "").trim();
+        if (!row.property_id && propertyAddress) {
+            const match = inspectionResolveManagedProperty(propertyAddress);
             if (match) row.property_id = inspectionNumber(match.id, 0);
         }
-        if (!row.property_id) invalid.push(index + 1);
+        row.property_invalid = !row.property_id && !propertyAddress;
+        if (row.property_invalid) invalid.push(index + 1);
         if (row.earliest_time && row.latest_time && row.earliest_time > row.latest_time) {
             throw new Error(`Inspection ${index + 1} has a latest arrival earlier than its earliest arrival.`);
         }
         return {
             client_id: String(row.client_id),
-            property_id: inspectionNumber(row.property_id, 0),
+            property_id: row.property_id ? inspectionNumber(row.property_id, 0) : null,
+            property_address: row.property_id ? null : propertyAddress,
             agent_ids: row.agent_ids.filter((id) => inspectionAvailableAgentIds.has(id)),
             duration_minutes: Math.min(480, Math.max(5, inspectionNumber(row.duration_minutes, 30))),
             buffer_minutes: Math.min(240, Math.max(0, inspectionNumber(row.buffer_minutes, 0))),
@@ -3757,14 +3821,14 @@ function collectInspectionPayload() {
     });
     if (invalid.length) {
         renderInspectionRows();
-        throw new Error(`Select a property from the managed register for inspection${invalid.length === 1 ? "" : "s"} ${invalid.join(", ")}.`);
+        throw new Error(`Choose a managed property or enter a full address for inspection${invalid.length === 1 ? "" : "s"} ${invalid.join(", ")}.`);
     }
     return {
         plan_name: planName,
         plan_date: planDate,
         day_start: dayStart,
         day_end: dayEnd,
-        start_address: String(document.getElementById("inspectionStartAddress")?.value || "").trim() || null,
+        start_address: INSPECTION_DEFAULT_DEPARTURE_ADDRESS,
         available_agent_ids: availableAgentIds,
         allow_agent_overlap: !!document.getElementById("inspectionAllowAgentOverlap")?.checked,
         visits,
@@ -3995,11 +4059,11 @@ async function loadInspectionPlan(planId) {
         const optimization = normalizeInspectionOptimization(optimizationRaw);
         const date = String(plan?.plan_date || plan?.date || inspectionToday()).slice(0, 10);
         const values = {
-            inspectionPlanName: plan?.name || plan?.plan_name || inspectionDefaultPlanName(date),
+            inspectionPlanName: inspectionDefaultPlanName(date),
             inspectionPlanDate: date,
             inspectionDayStart: String(plan?.day_start || plan?.start_time || "09:00").slice(0, 5),
             inspectionDayEnd: String(plan?.day_end || plan?.end_time || "17:30").slice(0, 5),
-            inspectionStartAddress: plan?.start_address || plan?.departure_address || "",
+            inspectionStartAddress: INSPECTION_DEFAULT_DEPARTURE_ADDRESS,
         };
         Object.entries(values).forEach(([id, value]) => {
             const control = document.getElementById(id);
@@ -4218,7 +4282,8 @@ function renderInspectionSchedule(visits) {
             : String(returnedNames.join(", ") || visit?.agent_name || "Auto-allocated");
         const duration = visit?.duration_minutes ?? inspectionRowByClientId(visit?.client_id)?.duration_minutes;
         const detail = [agentNames, duration ? inspectionFormatMinutes(duration) : "", end ? `until ${inspectionFormatClock(end)}` : ""].filter(Boolean).join(" · ");
-        return `<div class="inspection-schedule-row">
+        const propertyColour = inspectionPropertyColour(visit, index);
+        return `<div class="inspection-schedule-row" style="--property-colour:${propertyColour}">
             <span class="inspection-schedule-time">${inspectionEscape(inspectionFormatClock(start))}</span>
             <span class="inspection-schedule-seq">${index + 1}</span>
             <span class="inspection-schedule-copy"><strong>${inspectionEscape(inspectionVisitAddress(visit))}</strong><small>${inspectionEscape(detail)}</small></span>
@@ -4415,8 +4480,6 @@ function renderInspectionMap(result, visits, routes) {
     if (!map || !window.L) return;
     clearInspectionMapLayers();
     const bounds = [];
-    const agentColours = new Map();
-    routes.forEach((route, index) => inspectionRouteAgentIds(route).forEach((id) => agentColours.set(id, inspectionRouteColour(route, index))));
     let drawnRoutes = 0;
     routes.forEach((route, index) => {
         const routePath = inspectionRoutePath(route);
@@ -4437,11 +4500,10 @@ function renderInspectionMap(result, visits, routes) {
     visits.forEach((visit, index) => {
         const point = inspectionVisitCoordinate(visit);
         if (!point) return;
-        const agentId = inspectionVisitAgentIds(visit)[0];
-        const colour = agentColours.get(agentId) || "#111827";
+        const colour = inspectionPropertyColour(visit, index);
         const icon = window.L.divIcon({
             className: "",
-            html: `<span class="inspection-leaflet-stop" style="background:${colour}">${index + 1}</span>`,
+            html: `<span class="inspection-leaflet-stop" style="--property-colour:${colour}">${index + 1}</span>`,
             iconSize: [26, 26],
             iconAnchor: [13, 13],
         });

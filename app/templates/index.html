@@ -4229,10 +4229,10 @@
     .inspection-section-actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap;justify-content:flex-end}
     .inspection-count-pill{display:inline-flex;align-items:center;justify-content:center;min-width:30px;height:30px;padding:0 9px;border:1px solid #ead7a4;border-radius:999px;background:#fffaf0;color:#805f13;font-size:11px;font-weight:900}
     .inspection-visits{display:grid;gap:11px;margin-top:13px}
-    .inspection-visit-card{position:relative;overflow:visible;padding:14px;border:1px solid #dde5ef;border-radius:18px;background:linear-gradient(145deg,#fff,#f9fbfd);box-shadow:0 7px 18px rgba(15,23,42,.045)}
-    .inspection-visit-card::before{content:"";position:absolute;left:-1px;top:15px;bottom:15px;width:3px;border-radius:0 4px 4px 0;background:linear-gradient(#d4b45f,#8f6f1d)}
+    .inspection-visit-card{--property-colour:#111827;position:relative;overflow:visible;padding:14px;border:1px solid #dde5ef;border-radius:18px;background:linear-gradient(145deg,#fff,#f9fbfd);box-shadow:0 7px 18px rgba(15,23,42,.045)}
+    .inspection-visit-card::before{content:"";position:absolute;left:-1px;top:15px;bottom:15px;width:4px;border-radius:0 4px 4px 0;background:var(--property-colour)}
     .inspection-visit-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:12px;padding-left:3px}
-    .inspection-visit-title{display:flex;align-items:center;gap:9px;min-width:0}.inspection-stop-number{width:28px;height:28px;display:grid;place-items:center;flex:0 0 auto;border-radius:10px;background:#111827;color:#f9e7a7;font-size:11px;font-weight:950}
+    .inspection-visit-title{display:flex;align-items:center;gap:9px;min-width:0}.inspection-stop-number{width:28px;height:28px;display:grid;place-items:center;flex:0 0 auto;border-radius:10px;background:var(--property-colour);color:#fff;font-size:11px;font-weight:950}
     .inspection-visit-title strong{display:block;color:#101828;font-size:12px}.inspection-visit-title small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:360px;margin-top:2px;color:#667085;font-size:10px}
     .inspection-visit-actions{display:flex;gap:5px}.inspection-icon-btn{width:30px;height:30px;display:grid;place-items:center;padding:0;border:1px solid #dce4ee;border-radius:9px;background:#fff;color:#475467;cursor:pointer}.inspection-icon-btn:hover{border-color:#c9a246;background:#fffaf0;color:#765b17}.inspection-icon-btn.danger:hover{border-color:#fecaca;background:#fff1f2;color:#b42318}.inspection-icon-btn:disabled{opacity:.35;cursor:not-allowed}
     .inspection-visit-fields{display:grid;grid-template-columns:minmax(110px,.7fr) minmax(110px,.7fr) minmax(120px,.7fr) minmax(120px,.7fr) minmax(170px,1fr);gap:10px;align-items:start}
@@ -4248,10 +4248,10 @@
     .inspection-result-section+.inspection-result-section{margin-top:15px;padding-top:15px;border-top:1px solid #e8edf3}.inspection-result-title{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:9px}.inspection-result-title strong{color:#101828;font-size:12px}.inspection-result-title span{color:#667085;font-size:9px;text-transform:uppercase;letter-spacing:.08em;font-weight:900}
     .inspection-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.inspection-metric{padding:10px;border:1px solid #e1e7ee;border-radius:13px;background:#f8fafc}.inspection-metric span,.inspection-metric strong{display:block}.inspection-metric span{color:#667085;font-size:9px;font-weight:850;text-transform:uppercase;letter-spacing:.05em}.inspection-metric strong{margin-top:5px;color:#101828;font-size:14px;line-height:1.15}
     .inspection-route-legend{display:grid;gap:7px}.inspection-route-item{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:9px;padding:9px 10px;border:1px solid #e1e7ee;border-radius:13px;background:#fff}.inspection-route-swatch{width:11px;height:11px;border-radius:50%;box-shadow:0 0 0 4px color-mix(in srgb,var(--route-colour) 16%,transparent);background:var(--route-colour)}.inspection-route-item strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#101828;font-size:11px}.inspection-route-item small{display:block;margin-top:2px;color:#667085;font-size:9px}.inspection-route-item>span:last-child{color:#344054;font-size:10px;font-weight:850}
-    .inspection-schedule{display:grid;gap:7px;max-height:350px;overflow:auto;padding-right:2px}.inspection-schedule-row{display:grid;grid-template-columns:66px 28px minmax(0,1fr);align-items:start;gap:8px;padding:8px 9px;border:1px solid #e4e9f0;border-radius:12px;background:#fff}.inspection-schedule-time{color:#805f13;font-size:10px;font-weight:900}.inspection-schedule-seq{width:25px;height:25px;display:grid;place-items:center;border-radius:8px;background:#111827;color:#f9e7a7;font-size:9px;font-weight:950}.inspection-schedule-copy strong{display:block;color:#101828;font-size:10px}.inspection-schedule-copy small{display:block;margin-top:3px;color:#667085;font-size:9px;line-height:1.35}
+    .inspection-schedule{display:grid;gap:7px;max-height:350px;overflow:auto;padding-right:2px}.inspection-schedule-row{--property-colour:#111827;display:grid;grid-template-columns:66px 28px minmax(0,1fr);align-items:start;gap:8px;padding:8px 9px;border:1px solid #e4e9f0;border-left:3px solid var(--property-colour);border-radius:12px;background:#fff}.inspection-schedule-time{color:#805f13;font-size:10px;font-weight:900}.inspection-schedule-seq{width:25px;height:25px;display:grid;place-items:center;border-radius:8px;background:var(--property-colour);color:#fff;font-size:9px;font-weight:950}.inspection-schedule-copy strong{display:block;color:#101828;font-size:10px}.inspection-schedule-copy small{display:block;margin-top:3px;color:#667085;font-size:9px;line-height:1.35}
     .inspection-notice-list{display:grid;gap:7px}.inspection-notice{padding:9px 10px;border-left:3px solid #d8b652;border-radius:8px 12px 12px 8px;background:#fffbeb;color:#765b17;font-size:10px;line-height:1.45}.inspection-notice.insight{border-left-color:#3b82f6;background:#eff6ff;color:#1e4f91}
     .inspection-saved-plans{display:grid;gap:8px;margin-top:12px}.inspection-saved-plan{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:10px;padding:11px 12px;border:1px solid #e1e7ee;border-radius:14px;background:#fff}.inspection-saved-plan h4{margin:0;color:#101828;font-size:11px}.inspection-saved-plan p{margin:4px 0 0;color:#667085;font-size:9px}.inspection-saved-actions{display:flex;align-items:center;gap:6px}.inspection-saved-actions select{min-width:110px;padding:7px 8px;border:1px solid #d7e0ea;border-radius:10px;background:#fff;color:#344054;font-size:10px}.inspection-empty{padding:22px 14px;border:1px dashed #cbd5e1;border-radius:14px;background:#f8fafc;text-align:center;color:#667085;font-size:11px;line-height:1.45}
-    .inspection-leaflet-stop{display:grid;place-items:center;width:26px;height:26px;border:2px solid #fff;border-radius:9px;background:#111827;color:#f9e7a7;box-shadow:0 5px 14px rgba(15,23,42,.3);font-size:10px;font-weight:950}.inspection-map .leaflet-control-attribution{font-size:8px}.inspection-map .leaflet-popup-content{margin:11px 13px;font:11px/1.4 system-ui,sans-serif}
+    .inspection-leaflet-stop{display:grid;place-items:center;width:26px;height:26px;border:2px solid #fff;border-radius:9px;background:var(--property-colour,#111827);color:#fff;box-shadow:0 5px 14px rgba(15,23,42,.3);font-size:10px;font-weight:950}.inspection-map .leaflet-control-attribution{font-size:8px}.inspection-map .leaflet-popup-content{margin:11px 13px;font:11px/1.4 system-ui,sans-serif}
     @media(max-width:1280px){.inspections-layout{grid-template-columns:minmax(420px,.95fr) minmax(430px,1.05fr)}.inspections-plan-grid{grid-template-columns:repeat(4,minmax(0,1fr))}.inspections-plan-grid .inspection-departure-field{grid-column:span 4}.inspection-visit-fields{grid-template-columns:repeat(4,minmax(0,1fr))}.inspection-visit-fields .property-field,.inspection-visit-fields .agents-field{grid-column:span 2}.inspection-visit-fields .notes-field{grid-column:1/-1}.inspection-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
     @media(max-width:1020px){.inspections-layout{grid-template-columns:1fr}.inspection-map-column{position:static}.inspection-map-wrap{min-height:420px}.inspection-map{height:520px}.inspection-visit-title small{max-width:60vw}}
     @media(max-width:720px){.inspections-command-head,.inspection-section-head{align-items:stretch;flex-direction:column}.inspections-command-actions,.inspection-section-actions{justify-content:flex-start}.inspections-plan-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.inspections-plan-grid .inspection-name-field,.inspections-plan-grid .inspection-departure-field{grid-column:1/-1}.inspection-visit-fields{grid-template-columns:repeat(2,minmax(0,1fr))}.inspection-visit-fields .property-field,.inspection-visit-fields .agents-field,.inspection-visit-fields .notes-field{grid-column:1/-1}.inspection-map{height:430px}.inspection-saved-plan{grid-template-columns:1fr}.inspection-saved-actions{align-items:stretch;flex-direction:column}.inspection-saved-actions select{width:100%}}
@@ -5644,8 +5644,8 @@
                     <div class="inspections-plan-grid">
                       <div class="field inspection-name-field">
                         <label class="label" for="inspectionPlanName">Plan name</label>
-                        <input id="inspectionPlanName" maxlength="160"
-                          placeholder="Friday routine inspections" />
+                        <input id="inspectionPlanName" maxlength="160" readonly
+                          aria-label="Plan name, automatically set from the inspection date" />
                       </div>
                       <div class="field">
                         <label class="label" for="inspectionPlanDate">Inspection date</label>
@@ -5660,9 +5660,9 @@
                         <input id="inspectionDayEnd" type="time" value="17:30" />
                       </div>
                       <div class="field inspection-departure-field">
-                        <label class="label" for="inspectionStartAddress">Departure address <span class="muted">(optional)</span></label>
-                        <input id="inspectionStartAddress" maxlength="500"
-                          placeholder="Office, home, or first departure point" />
+                        <label class="label" for="inspectionStartAddress">Departure address</label>
+                        <input id="inspectionStartAddress" maxlength="500" readonly
+                          value="24 Coral-Pea Way, Cranbourne West" />
                       </div>
                     </div>
 
@@ -5690,7 +5690,7 @@
                         <div class="inspection-section-head">
                           <div>
                             <h3 id="inspectionStopsHeading">Inspection stops</h3>
-                            <p>Choose a property, appointment length, custom
+                            <p>Choose a managed property or type a sales address, then set the appointment length, custom
                               travel buffer, time window, and any specifically required agents.</p>
                           </div>
                           <div class="inspection-section-actions">
@@ -5723,7 +5723,7 @@
                         <div class="inspection-map-head">
                           <div>
                             <h3>Route map</h3>
-                            <p>Each agent receives a distinct route colour.</p>
+                            <p>Routes are agent-coloured; every property stop has its own colour.</p>
                           </div>
                           <span class="inspection-map-provider" id="inspectionProvider">OpenStreetMap</span>
                         </div>

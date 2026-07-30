@@ -606,9 +606,10 @@ class InspectionVisit(Base):
         index=True,
     )
     client_id: Mapped[str] = mapped_column(String, index=True)
-    property_id: Mapped[int] = mapped_column(
+    property_id: Mapped[int | None] = mapped_column(
         Integer,
         ForeignKey("managed_properties.id"),
+        nullable=True,
         index=True,
     )
     property_address: Mapped[str] = mapped_column(String, index=True)

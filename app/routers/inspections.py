@@ -7,7 +7,7 @@ from threading import Lock
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import text
 from sqlalchemy.orm import Session, selectinload
 
@@ -16,6 +16,7 @@ from app.db import get_db
 from app.deps import get_current_mailbox
 from app.models import InspectionPlan, InspectionPlanStatus, InspectionVisit, User
 from app.services.inspection_planner import (
+    DEFAULT_DEPARTURE_ADDRESS,
     DEFAULT_TIMEZONE,
     InspectionPlannerError,
     load_existing_windows,
@@ -42,7 +43,8 @@ _INSPECTION_WRITE_LOCKS = tuple(Lock() for _ in range(64))
 
 class InspectionOptimizeVisitIn(BaseModel):
     client_id: str = Field(min_length=1, max_length=120)
-    property_id: int = Field(gt=0)
+    property_id: int | None = Field(default=None, gt=0)
+    property_address: str | None = Field(default=None, max_length=500)
     agent_ids: list[int] = Field(default_factory=list, max_length=20)
     duration_minutes: int = Field(default=45, ge=5, le=480)
     buffer_minutes: int = Field(default=0, ge=0, le=240)
@@ -50,13 +52,19 @@ class InspectionOptimizeVisitIn(BaseModel):
     latest_time: str | None = Field(default=None, max_length=5)
     notes: str | None = Field(default=None, max_length=3000)
 
+    @model_validator(mode="after")
+    def require_property_location(self) -> "InspectionOptimizeVisitIn":
+        if self.property_id is None and not (self.property_address or "").strip():
+            raise ValueError("Select a managed property or enter a full address.")
+        return self
+
 
 class InspectionOptimizeIn(BaseModel):
     plan_name: str = Field(min_length=1, max_length=200)
     plan_date: date
     day_start: str = Field(min_length=4, max_length=5)
     day_end: str = Field(min_length=4, max_length=5)
-    start_address: str | None = Field(default=None, max_length=500)
+    start_address: str | None = Field(default=DEFAULT_DEPARTURE_ADDRESS, max_length=500)
     available_agent_ids: list[int] = Field(min_length=1, max_length=50)
     allow_agent_overlap: bool = False
     visits: list[InspectionOptimizeVisitIn] = Field(min_length=1, max_length=100)
@@ -68,7 +76,7 @@ class InspectionPlanCreateIn(BaseModel):
     plan_date: date
     day_start: str = Field(min_length=4, max_length=5)
     day_end: str = Field(min_length=4, max_length=5)
-    start_address: str | None = Field(default=None, max_length=500)
+    start_address: str | None = Field(default=DEFAULT_DEPARTURE_ADDRESS, max_length=500)
     allow_agent_overlap: bool = False
     optimization_result: dict[str, Any]
 
@@ -298,7 +306,7 @@ def save_inspection_plan(
         now = datetime.utcnow()
         plan = InspectionPlan(
             mailbox=mailbox,
-            name=payload.name.strip(),
+            name=payload.plan_date.isoformat(),
             status=payload.status,
             plan_date=payload.plan_date,
             day_start=payload.day_start,
