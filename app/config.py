@@ -81,9 +81,11 @@ class Settings(BaseSettings):
     OPENAI_MODEL: str = "gpt-4o-mini"
     OPENAI_TRANSCRIBE_MODEL: str = "whisper-1"
 
-    # Inspection route planning providers. Defaults work for development; a
-    # production deployment can point OSRM at a managed/self-hosted instance.
-    INSPECTIONS_VICMAP_URL: str = "https://services-ap1.arcgis.com/P744lA0wf4LlBZ84/ArcGIS/rest/services/Vicmap_Address/FeatureServer/0/query"
+    # Inspection route planning providers. The Vicmap URL is the public address
+    # locator, not the much slower raw FeatureServer query endpoint. A production
+    # deployment can point OSRM at a managed/self-hosted instance.
+    INSPECTIONS_VICMAP_URL: str = "https://corp-geo.mapshare.vic.gov.au/arcgis/rest/services/Geocoder/VMAddressEZIAdd/GeocodeServer/findAddressCandidates"
+    INSPECTIONS_VICMAP_WFS_URL: str = "https://opendata.maps.vic.gov.au/geoserver/wfs"
     INSPECTIONS_OSRM_BASE_URL: str = "https://router.project-osrm.org"
     INSPECTIONS_HTTP_TIMEOUT_SECONDS: float = 12.0
     INSPECTIONS_PROVIDER_BUDGET_SECONDS: float = 60.0

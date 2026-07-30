@@ -5,6 +5,7 @@ import os
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
+import httpx
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -21,6 +22,7 @@ from app.deps import get_current_mailbox
 from app.models import (
     AppState,
     Base,
+    InspectionGeocodeCache,
     InspectionPlan,
     InspectionPlanStatus,
     InspectionVisit,
@@ -135,6 +137,157 @@ def seeded(db):
         "restricted": restricted,
         **properties,
     }
+
+
+def _install_geocoder_transport(monkeypatch, handler):
+    real_client = httpx.Client
+    transport = httpx.MockTransport(handler)
+
+    def client_factory(*_args, **_kwargs):
+        return real_client(transport=transport)
+
+    monkeypatch.setattr(planner.httpx, "Client", client_factory)
+
+
+def test_property_address_and_geocoder_input_remove_duplicate_suburb():
+    prop = ManagedProperty(
+        mailbox=MAILBOX,
+        property_address="1 Delphinium Road Pakenham",
+        suburb="Pakenham",
+        state_code="VIC",
+        postcode="3810",
+    )
+
+    assert planner.full_property_address(prop) == "1 Delphinium Road, Pakenham VIC 3810"
+    assert (
+        planner._canonical_geocode_address(
+            "1 Delphinium Road Pakenham, Pakenham VIC 3810"
+        )
+        == "1 DELPHINIUM ROAD PAKENHAM 3810"
+    )
+
+
+def test_vicmap_locator_uses_canonical_input_and_caches_result(db, monkeypatch):
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        assert str(request.url).startswith(planner.VICMAP_GEOCODER_URL)
+        assert request.url.params["SingleLine"] == "1 DELPHINIUM ROAD PAKENHAM 3810"
+        return httpx.Response(
+            200,
+            json={
+                "candidates": [
+                    {
+                        "address": "1 DELPHINIUM ROAD PAKENHAM 3810",
+                        "location": {"x": 145.4636926, "y": -38.0881278},
+                        "score": 100,
+                        "attributes": {"Score": 100, "Ref_ID": "212913211"},
+                    }
+                ]
+            },
+        )
+
+    _install_geocoder_transport(monkeypatch, handler)
+    first, first_warning = planner.geocode_address(
+        db,
+        mailbox=MAILBOX,
+        address="1 Delphinium Road Pakenham, Pakenham VIC 3810",
+    )
+    second, second_warning = planner.geocode_address(
+        db,
+        mailbox=MAILBOX,
+        address="1 DELPHINIUM ROAD PAKENHAM 3810",
+    )
+
+    assert first_warning is None
+    assert second_warning is None
+    assert first == second
+    assert first.provider == "vicmap-locator"
+    assert first.latitude == pytest.approx(-38.0881278)
+    assert first.longitude == pytest.approx(145.4636926)
+    assert len(requests) == 1
+    assert db.query(InspectionGeocodeCache).count() == 1
+
+
+def test_vicmap_rejects_a_high_score_candidate_with_wrong_house_number(db, monkeypatch):
+    def handler(request):
+        if str(request.url).startswith(planner.VICMAP_GEOCODER_URL):
+            return httpx.Response(
+                200,
+                json={
+                    "candidates": [
+                        {
+                            "address": "10 DELPHINIUM ROAD PAKENHAM 3810",
+                            "location": {"x": 145.46442, "y": -38.086865},
+                            "score": 99,
+                        }
+                    ]
+                },
+            )
+        assert str(request.url).startswith(planner.VICMAP_WFS_URL)
+        return httpx.Response(200, json={"features": []})
+
+    _install_geocoder_transport(monkeypatch, handler)
+    point, warning = planner.geocode_address(
+        db,
+        mailbox=MAILBOX,
+        address="1 Delphinium Road, Pakenham VIC 3810",
+    )
+
+    assert point is None
+    assert warning == "Vicmap could not locate 1 Delphinium Road, Pakenham VIC 3810."
+    assert db.query(InspectionGeocodeCache).count() == 0
+
+
+def test_vicmap_timeout_uses_wfs_and_opens_the_locator_circuit(db, monkeypatch):
+    locator_calls = 0
+    wfs_calls = 0
+
+    def handler(request):
+        nonlocal locator_calls, wfs_calls
+        if str(request.url).startswith(planner.VICMAP_GEOCODER_URL):
+            locator_calls += 1
+            raise httpx.ReadTimeout("locator timeout", request=request)
+        wfs_calls += 1
+        cql_filter = request.url.params["CQL_FILTER"]
+        canonical = cql_filter.removeprefix("ezi_address='").removesuffix("'")
+        house_number = canonical.split()[0]
+        return httpx.Response(
+            200,
+            json={
+                "features": [
+                    {
+                        "properties": {"ezi_address": canonical, "ufi": house_number},
+                        "geometry": {
+                            "type": "Point",
+                            "coordinates": [145.46 + int(house_number) / 1000, -38.08],
+                        },
+                    }
+                ]
+            },
+        )
+
+    _install_geocoder_transport(monkeypatch, handler)
+    provider_state = planner.GeocodeProviderState()
+    first, first_warning = planner.geocode_address(
+        db,
+        mailbox=MAILBOX,
+        address="1 Delphinium Road, Pakenham VIC 3810",
+        provider_state=provider_state,
+    )
+    second, second_warning = planner.geocode_address(
+        db,
+        mailbox=MAILBOX,
+        address="2 Delphinium Road, Pakenham VIC 3810",
+        provider_state=provider_state,
+    )
+
+    assert first_warning is None
+    assert second_warning is None
+    assert first.provider == second.provider == "vicmap-wfs"
+    assert locator_calls == 1
+    assert wfs_calls == 2
 
 
 def test_legacy_default_access_gains_inspections_without_overriding_custom_roles(db):

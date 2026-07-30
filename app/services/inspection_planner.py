@@ -24,10 +24,12 @@ from app.models import (
 )
 
 
-VICMAP_ADDRESS_QUERY_URL = settings.INSPECTIONS_VICMAP_URL.rstrip("/")
+VICMAP_GEOCODER_URL = settings.INSPECTIONS_VICMAP_URL.rstrip("/")
+VICMAP_WFS_URL = settings.INSPECTIONS_VICMAP_WFS_URL.rstrip("/")
 OSRM_BASE_URL = settings.INSPECTIONS_OSRM_BASE_URL.rstrip("/")
 HTTP_TIMEOUT_SECONDS = max(1.0, float(settings.INSPECTIONS_HTTP_TIMEOUT_SECONDS))
 PROVIDER_BUDGET_SECONDS = max(5.0, float(settings.INSPECTIONS_PROVIDER_BUDGET_SECONDS))
+VICMAP_MINIMUM_SCORE = 90.0
 DEFAULT_TIMEZONE = "Australia/Melbourne"
 ROUTE_COLORS = (
     "#2563eb",
@@ -54,6 +56,13 @@ class GeocodePoint:
     longitude: float
     formatted_address: str
     provider: str = "vicmap"
+
+
+@dataclass
+class GeocodeProviderState:
+    """Per-optimization circuit breakers for the external address providers."""
+
+    unavailable: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -95,6 +104,15 @@ def _json_list(value: str | None) -> list[Any]:
 
 def full_property_address(prop: ManagedProperty) -> str:
     street = ", ".join(part for part in (prop.property_address, prop.address_line_2) if _clean_text(part))
+    # Some CRM imports put the suburb in both the street field and the suburb
+    # column. Avoid sending values such as "... Pakenham, Pakenham VIC 3810"
+    # to address locators, while preserving the human-friendly display format.
+    for repeated_part in (prop.postcode, prop.state_code, prop.suburb):
+        repeated = _clean_text(repeated_part)
+        if not repeated or not street:
+            continue
+        suffix = r"\s+".join(re.escape(word) for word in repeated.split())
+        street = re.sub(rf"(?:,\s*|\s+){suffix}\s*$", "", street, flags=re.IGNORECASE).strip(" ,")
     locality = " ".join(part for part in (prop.suburb, prop.state_code, prop.postcode) if _clean_text(part))
     return ", ".join(part for part in (street, locality) if part)
 
@@ -132,14 +150,140 @@ def _optimization_integrity_token(mailbox: str, result: dict[str, Any]) -> str:
     return hmac.new(settings.JWT_SECRET.encode("utf-8"), message, hashlib.sha256).hexdigest()
 
 
-def _vicmap_where(address: str) -> str:
-    words = re.findall(r"[A-Za-z0-9]+", address.upper())[:10]
-    meaningful = [word for word in words if word not in {"VIC", "VICTORIA", "AUSTRALIA"}]
-    if not meaningful:
+def _collapse_adjacent_repeated_phrases(tokens: list[str]) -> list[str]:
+    collapsed = list(tokens)
+    # CRM duplication occurs in the locality at the end of an address. Limit
+    # de-duplication to that position so legitimate unit/house pairs such as
+    # "1 1 Main Street" are never collapsed.
+    locality_end = len(collapsed) - (1 if collapsed and re.fullmatch(r"\d{4}", collapsed[-1]) else 0)
+    for width in range(min(4, locality_end // 2), 0, -1):
+        first_start = locality_end - (2 * width)
+        second_start = locality_end - width
+        if collapsed[first_start:second_start] != collapsed[second_start:locality_end]:
+            continue
+        del collapsed[second_start:locality_end]
+        break
+    return collapsed
+
+
+def _canonical_geocode_address(address: str) -> str:
+    tokens = re.findall(r"[A-Z0-9]+(?:[-/][A-Z0-9]+)*", _clean_text(address).upper())
+    tokens = [token for token in tokens if token not in {"VIC", "VICTORIA", "AUSTRALIA"}]
+    tokens = _collapse_adjacent_repeated_phrases(tokens)
+    if not tokens:
         raise InspectionPlannerError("An address is required for geocoding.")
-    return " AND ".join(
-        ["state = 'VIC'", *(f"UPPER(ezi_address) LIKE '%{word}%'" for word in meaningful)]
+    return " ".join(tokens)
+
+
+def _comparable_address_tokens(address: str) -> set[str]:
+    aliases = {
+        "AVE": "AVENUE",
+        "BLVD": "BOULEVARD",
+        "CRES": "CRESCENT",
+        "CT": "COURT",
+        "DR": "DRIVE",
+        "HWY": "HIGHWAY",
+        "PDE": "PARADE",
+        "PL": "PLACE",
+        "RD": "ROAD",
+        "ST": "STREET",
+        "TCE": "TERRACE",
+    }
+    return {aliases.get(token, token) for token in _canonical_geocode_address(address).split()}
+
+
+def _leading_property_number(address: str) -> str | None:
+    match = re.match(
+        r"^\s*(?:(?:UNIT|APT|APARTMENT|SHOP|LOT)\s+)?(\d+[A-Z]?(?:[-/]\d+[A-Z]?)?)\b",
+        _clean_text(address).upper(),
     )
+    return match.group(1) if match else None
+
+
+def _address_postcode(address: str) -> str | None:
+    matches = re.findall(r"\b\d{4}\b", address)
+    return matches[-1] if matches else None
+
+
+def _candidate_is_safe(query_address: str, candidate_address: str, score: float) -> bool:
+    if score < VICMAP_MINIMUM_SCORE:
+        return False
+    query_number = _leading_property_number(query_address)
+    candidate_number = _leading_property_number(candidate_address)
+    if query_number and query_number != candidate_number:
+        return False
+    query_postcode = _address_postcode(query_address)
+    candidate_postcode = _address_postcode(candidate_address)
+    if query_postcode and query_postcode != candidate_postcode:
+        return False
+    query_tokens = _comparable_address_tokens(query_address)
+    candidate_tokens = _comparable_address_tokens(candidate_address)
+    overlap = len(query_tokens & candidate_tokens) / max(len(query_tokens | candidate_tokens), 1)
+    return overlap >= 0.7
+
+
+def _point_from_locator_payload(
+    payload: dict[str, Any],
+    *,
+    query_address: str,
+) -> tuple[GeocodePoint | None, dict[str, Any] | None]:
+    ranked: list[tuple[float, float, GeocodePoint, dict[str, Any]]] = []
+    query_tokens = _comparable_address_tokens(query_address)
+    for candidate in payload.get("candidates") or []:
+        candidate_address = _clean_text(
+            candidate.get("address") or (candidate.get("attributes") or {}).get("Match_addr")
+        )
+        try:
+            score = float(candidate.get("score", (candidate.get("attributes") or {}).get("Score", 0)))
+            longitude = float((candidate.get("location") or {})["x"])
+            latitude = float((candidate.get("location") or {})["y"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if not candidate_address or not _candidate_is_safe(query_address, candidate_address, score):
+            continue
+        candidate_tokens = _comparable_address_tokens(candidate_address)
+        overlap = len(query_tokens & candidate_tokens) / max(len(query_tokens | candidate_tokens), 1)
+        ranked.append(
+            (
+                score,
+                overlap,
+                GeocodePoint(latitude, longitude, candidate_address, provider="vicmap-locator"),
+                candidate,
+            )
+        )
+    if not ranked:
+        return None, None
+    _, _, point, candidate = max(ranked, key=lambda item: (item[0], item[1]))
+    return point, candidate
+
+
+def _point_from_wfs_payload(
+    payload: dict[str, Any],
+    *,
+    query_address: str,
+) -> tuple[GeocodePoint | None, dict[str, Any] | None]:
+    for feature in payload.get("features") or []:
+        properties = feature.get("properties") or {}
+        candidate_address = _clean_text(properties.get("ezi_address"))
+        coordinates = (feature.get("geometry") or {}).get("coordinates") or []
+        try:
+            longitude, latitude = float(coordinates[0]), float(coordinates[1])
+        except (IndexError, TypeError, ValueError):
+            continue
+        if _canonical_geocode_address(candidate_address) != query_address:
+            continue
+        return GeocodePoint(latitude, longitude, candidate_address, provider="vicmap-wfs"), properties
+    return None, None
+
+
+def _provider_error(payload: dict[str, Any]) -> None:
+    error = payload.get("error")
+    if error:
+        if isinstance(error, dict):
+            message = _clean_text(error.get("message")) or "Vicmap returned an error."
+        else:
+            message = _clean_text(error) or "Vicmap returned an error."
+        raise ValueError(message)
 
 
 def geocode_address(
@@ -148,13 +292,22 @@ def geocode_address(
     mailbox: str,
     address: str,
     allow_network: bool = True,
+    provider_state: GeocodeProviderState | None = None,
 ) -> tuple[GeocodePoint | None, str | None]:
     query_address = _clean_text(address)
     if not query_address:
         return None, "Address is empty."
 
-    cache_key = _address_cache_key(mailbox, query_address)
-    cached = db.query(InspectionGeocodeCache).filter(InspectionGeocodeCache.cache_key == cache_key).first()
+    canonical_address = _canonical_geocode_address(query_address)
+    cache_key = _address_cache_key(mailbox, canonical_address)
+    legacy_cache_key = _address_cache_key(mailbox, query_address)
+    cache_keys = list(dict.fromkeys([cache_key, legacy_cache_key]))
+    cached = (
+        db.query(InspectionGeocodeCache)
+        .filter(InspectionGeocodeCache.cache_key.in_(cache_keys))
+        .order_by(InspectionGeocodeCache.id.desc())
+        .first()
+    )
     if cached:
         return (
             GeocodePoint(
@@ -169,59 +322,83 @@ def geocode_address(
     if not allow_network:
         return None, "The route-provider time budget was reached before this address could be geocoded."
 
-    params = {
-        "where": _vicmap_where(query_address),
-        "outFields": "ezi_address,num_road_address,locality_name,state,postcode",
-        "returnGeometry": "true",
-        "outSR": "4326",
-        "resultRecordCount": "5",
-        "orderByFields": "ezi_address ASC",
-        "f": "json",
-    }
-    try:
-        with httpx.Client(timeout=HTTP_TIMEOUT_SECONDS, follow_redirects=True) as client:
-            response = client.get(VICMAP_ADDRESS_QUERY_URL, params=params)
-            response.raise_for_status()
-            payload = response.json()
-    except Exception as exc:
-        return None, f"Vicmap geocoding was unavailable ({exc.__class__.__name__})."
+    state = provider_state or GeocodeProviderState()
+    point: GeocodePoint | None = None
+    provider_payload: dict[str, Any] | None = None
+    provider_errors: list[str] = []
 
-    candidates: list[tuple[float, dict[str, Any], dict[str, Any]]] = []
-    query_words = set(re.findall(r"[a-z0-9]+", query_address.casefold()))
-    for feature in payload.get("features") or []:
-        attrs = feature.get("attributes") or {}
-        geometry = feature.get("geometry") or {}
+    if "locator" not in state.unavailable:
+        params = {
+            "SingleLine": canonical_address,
+            "outFields": "Score,Match_addr,Ref_ID",
+            "outSR": "4326",
+            "maxLocations": "5",
+            "f": "json",
+        }
         try:
-            longitude = float(geometry["x"])
-            latitude = float(geometry["y"])
-        except (KeyError, TypeError, ValueError):
-            continue
-        candidate_words = set(re.findall(r"[a-z0-9]+", _clean_text(attrs.get("ezi_address")).casefold()))
-        overlap = len(query_words & candidate_words) / max(len(query_words | candidate_words), 1)
-        candidates.append((overlap, attrs, {"latitude": latitude, "longitude": longitude}))
+            with httpx.Client(timeout=HTTP_TIMEOUT_SECONDS, follow_redirects=True) as client:
+                response = client.get(VICMAP_GEOCODER_URL, params=params)
+                response.raise_for_status()
+                payload = response.json()
+            _provider_error(payload)
+            point, provider_payload = _point_from_locator_payload(payload, query_address=canonical_address)
+        except Exception as exc:
+            reason = exc.__class__.__name__
+            state.unavailable["locator"] = reason
+            provider_errors.append(reason)
+    else:
+        provider_errors.append(state.unavailable["locator"])
 
-    if not candidates:
+    if point is None and "wfs" not in state.unavailable:
+        escaped_address = canonical_address.replace("'", "''")
+        params = {
+            "service": "WFS",
+            "version": "2.0.0",
+            "request": "GetFeature",
+            "typeNames": "open-data-platform:address",
+            "outputFormat": "application/json",
+            "srsName": "EPSG:4326",
+            "count": "5",
+            "CQL_FILTER": f"ezi_address='{escaped_address}'",
+        }
+        try:
+            with httpx.Client(timeout=HTTP_TIMEOUT_SECONDS, follow_redirects=True) as client:
+                response = client.get(VICMAP_WFS_URL, params=params)
+                response.raise_for_status()
+                payload = response.json()
+            _provider_error(payload)
+            point, provider_payload = _point_from_wfs_payload(payload, query_address=canonical_address)
+        except Exception as exc:
+            reason = exc.__class__.__name__
+            state.unavailable["wfs"] = reason
+            provider_errors.append(reason)
+    elif point is None:
+        provider_errors.append(state.unavailable["wfs"])
+
+    if point is None:
+        if provider_errors:
+            reasons = ", ".join(dict.fromkeys(provider_errors))
+            return None, f"Vicmap geocoding was unavailable ({reasons})."
         return None, f"Vicmap could not locate {query_address}."
 
-    _, attrs, coordinates = max(candidates, key=lambda item: item[0])
-    formatted_address = _clean_text(attrs.get("ezi_address")) or query_address
     cache = InspectionGeocodeCache(
         mailbox=mailbox.strip().lower(),
         cache_key=cache_key,
-        query_address=query_address,
-        formatted_address=formatted_address,
-        latitude=coordinates["latitude"],
-        longitude=coordinates["longitude"],
-        provider="vicmap",
-        provider_payload_json=json.dumps(attrs, ensure_ascii=False, default=str),
+        query_address=canonical_address,
+        formatted_address=point.formatted_address,
+        latitude=point.latitude,
+        longitude=point.longitude,
+        provider=point.provider,
+        provider_payload_json=json.dumps(provider_payload or {}, ensure_ascii=False, default=str),
     )
     db.add(cache)
     db.flush()
     return (
         GeocodePoint(
-            latitude=coordinates["latitude"],
-            longitude=coordinates["longitude"],
-            formatted_address=formatted_address,
+            latitude=point.latitude,
+            longitude=point.longitude,
+            formatted_address=point.formatted_address,
+            provider=point.provider,
         ),
         None,
     )
@@ -724,6 +901,7 @@ def optimize_inspections(
 
     warnings: list[str] = []
     unscheduled: list[dict[str, Any]] = []
+    geocode_provider_state = GeocodeProviderState()
     cleaned_start_address = _clean_text(start_address)
     start_point: GeocodePoint | None = None
     if cleaned_start_address:
@@ -732,6 +910,7 @@ def optimize_inspections(
             mailbox=mailbox,
             address=cleaned_start_address,
             allow_network=time.monotonic() < provider_deadline,
+            provider_state=geocode_provider_state,
         )
         if geocode_warning:
             warnings.append(geocode_warning)
@@ -845,6 +1024,7 @@ def optimize_inspections(
                 mailbox=mailbox,
                 address=property_address,
                 allow_network=time.monotonic() < provider_deadline,
+                provider_state=geocode_provider_state,
             )
             if warning:
                 warnings.append(warning)
