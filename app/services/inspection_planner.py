@@ -30,6 +30,50 @@ OSRM_BASE_URL = settings.INSPECTIONS_OSRM_BASE_URL.rstrip("/")
 HTTP_TIMEOUT_SECONDS = max(1.0, float(settings.INSPECTIONS_HTTP_TIMEOUT_SECONDS))
 PROVIDER_BUDGET_SECONDS = max(5.0, float(settings.INSPECTIONS_PROVIDER_BUDGET_SECONDS))
 VICMAP_MINIMUM_SCORE = 90.0
+ROAD_TYPE_ALIASES = {
+    "AVE": "AVENUE",
+    "BLVD": "BOULEVARD",
+    "BVD": "BOULEVARD",
+    "CCT": "CIRCUIT",
+    "CL": "CLOSE",
+    "CRES": "CRESCENT",
+    "CRT": "COURT",
+    "CT": "COURT",
+    "DR": "DRIVE",
+    "ESP": "ESPLANADE",
+    "GR": "GROVE",
+    "HWY": "HIGHWAY",
+    "LN": "LANE",
+    "PDE": "PARADE",
+    "PL": "PLACE",
+    "RD": "ROAD",
+    "ST": "STREET",
+    "TCE": "TERRACE",
+    "TRK": "TRACK",
+}
+ROAD_TYPE_WORDS = {
+    *ROAD_TYPE_ALIASES,
+    *ROAD_TYPE_ALIASES.values(),
+    "ALLEY",
+    "APPROACH",
+    "BEND",
+    "CHASE",
+    "CIRCLE",
+    "COURSE",
+    "COVE",
+    "CROSSING",
+    "GLADE",
+    "GREEN",
+    "MEWS",
+    "RISE",
+    "ROW",
+    "SQUARE",
+    "TRAIL",
+    "VIEW",
+    "VISTA",
+    "WALK",
+    "WAY",
+}
 DEFAULT_TIMEZONE = "Australia/Melbourne"
 ROUTE_COLORS = (
     "#2563eb",
@@ -172,32 +216,60 @@ def _canonical_geocode_address(address: str) -> str:
     tokens = _collapse_adjacent_repeated_phrases(tokens)
     if not tokens:
         raise InspectionPlannerError("An address is required for geocoding.")
+    # The Vicmap EZI locator accepts full road types more consistently than CRM
+    # abbreviations (for example, CRESCENT succeeds where CRES does not). Stop
+    # after the first road-type token so a locality such as ST KILDA is untouched.
+    for index in range(1, len(tokens)):
+        if tokens[index] not in ROAD_TYPE_WORDS:
+            continue
+        tokens[index] = ROAD_TYPE_ALIASES.get(tokens[index], tokens[index])
+        break
     return " ".join(tokens)
 
 
 def _comparable_address_tokens(address: str) -> set[str]:
-    aliases = {
-        "AVE": "AVENUE",
-        "BLVD": "BOULEVARD",
-        "CRES": "CRESCENT",
-        "CT": "COURT",
-        "DR": "DRIVE",
-        "HWY": "HIGHWAY",
-        "PDE": "PARADE",
-        "PL": "PLACE",
-        "RD": "ROAD",
-        "ST": "STREET",
-        "TCE": "TERRACE",
+    return {
+        ROAD_TYPE_ALIASES.get(token, token)
+        for token in _canonical_geocode_address(address).split()
     }
-    return {aliases.get(token, token) for token in _canonical_geocode_address(address).split()}
 
 
-def _leading_property_number(address: str) -> str | None:
+def _normalize_address_number_part(value: str | None) -> str | None:
+    if not value:
+        return None
+    return value.upper()
+
+
+def _address_number_parts(address: str) -> tuple[str | None, str, str | None] | None:
     match = re.match(
-        r"^\s*(?:(?:UNIT|APT|APARTMENT|SHOP|LOT)\s+)?(\d+[A-Z]?(?:[-/]\d+[A-Z]?)?)\b",
-        _clean_text(address).upper(),
+        r"^\s*(?:(?:UNIT|APT|APARTMENT|SHOP|LOT)\s+)?"
+        r"(?:(?P<unit>[A-Z]*\d+[A-Z]?)/)?"
+        r"(?P<start>\d+[A-Z]?)(?:-(?P<end>\d+[A-Z]?))?\b",
+        _canonical_geocode_address(address),
     )
-    return match.group(1) if match else None
+    if not match:
+        return None
+    return (
+        _normalize_address_number_part(match.group("unit")),
+        _normalize_address_number_part(match.group("start")) or "",
+        _normalize_address_number_part(match.group("end")),
+    )
+
+
+def _vicmap_query_variants(canonical_address: str) -> list[str]:
+    variants = [canonical_address]
+    number_parts = _address_number_parts(canonical_address)
+    if not number_parts:
+        return variants
+    unit, house_start, house_end = number_parts
+    if not house_end:
+        return variants
+    number_match = re.match(r"^(?:[A-Z]*\d+[A-Z]?/)?\d+[A-Z]?(?:-\d+[A-Z]?)?\b", canonical_address)
+    if not number_match:
+        return variants
+    normalized_number = f"{unit}/{house_start}" if unit else house_start
+    variants.append(f"{normalized_number}{canonical_address[number_match.end():]}")
+    return list(dict.fromkeys(variants))
 
 
 def _address_postcode(address: str) -> str | None:
@@ -208,18 +280,32 @@ def _address_postcode(address: str) -> str | None:
 def _candidate_is_safe(query_address: str, candidate_address: str, score: float) -> bool:
     if score < VICMAP_MINIMUM_SCORE:
         return False
-    query_number = _leading_property_number(query_address)
-    candidate_number = _leading_property_number(candidate_address)
-    if query_number and query_number != candidate_number:
-        return False
+    query_number = _address_number_parts(query_address)
+    candidate_number = _address_number_parts(candidate_address)
+    if query_number:
+        if not candidate_number:
+            return False
+        query_unit, query_start, query_end = query_number
+        candidate_unit, candidate_start, candidate_end = candidate_number
+        if query_unit != candidate_unit or query_start != candidate_start:
+            return False
+        # A CRM can carry a building range while Vicmap records units against
+        # its lower street number. Accept the omitted upper bound only; never
+        # accept a different unit, lower number, or competing explicit range.
+        if query_end and candidate_end and query_end != candidate_end:
+            return False
     query_postcode = _address_postcode(query_address)
     candidate_postcode = _address_postcode(candidate_address)
     if query_postcode and query_postcode != candidate_postcode:
         return False
     query_tokens = _comparable_address_tokens(query_address)
     candidate_tokens = _comparable_address_tokens(candidate_address)
+    if query_number:
+        query_tokens.discard(_canonical_geocode_address(query_address).split()[0])
+    if candidate_number:
+        candidate_tokens.discard(_canonical_geocode_address(candidate_address).split()[0])
     overlap = len(query_tokens & candidate_tokens) / max(len(query_tokens | candidate_tokens), 1)
-    return overlap >= 0.7
+    return overlap >= 0.8
 
 
 def _point_from_locator_payload(
@@ -261,7 +347,9 @@ def _point_from_wfs_payload(
     payload: dict[str, Any],
     *,
     query_address: str,
+    query_variants: list[str],
 ) -> tuple[GeocodePoint | None, dict[str, Any] | None]:
+    accepted_addresses = set(query_variants)
     for feature in payload.get("features") or []:
         properties = feature.get("properties") or {}
         candidate_address = _clean_text(properties.get("ezi_address"))
@@ -270,7 +358,9 @@ def _point_from_wfs_payload(
             longitude, latitude = float(coordinates[0]), float(coordinates[1])
         except (IndexError, TypeError, ValueError):
             continue
-        if _canonical_geocode_address(candidate_address) != query_address:
+        if _canonical_geocode_address(candidate_address) not in accepted_addresses:
+            continue
+        if not _candidate_is_safe(query_address, candidate_address, 100.0):
             continue
         return GeocodePoint(latitude, longitude, candidate_address, provider="vicmap-wfs"), properties
     return None, None
@@ -323,25 +413,34 @@ def geocode_address(
         return None, "The route-provider time budget was reached before this address could be geocoded."
 
     state = provider_state or GeocodeProviderState()
+    query_variants = _vicmap_query_variants(canonical_address)
     point: GeocodePoint | None = None
     provider_payload: dict[str, Any] | None = None
     provider_errors: list[str] = []
 
     if "locator" not in state.unavailable:
-        params = {
-            "SingleLine": canonical_address,
-            "outFields": "Score,Match_addr,Ref_ID",
-            "outSR": "4326",
-            "maxLocations": "5",
-            "f": "json",
-        }
         try:
             with httpx.Client(timeout=HTTP_TIMEOUT_SECONDS, follow_redirects=True) as client:
-                response = client.get(VICMAP_GEOCODER_URL, params=params)
-                response.raise_for_status()
-                payload = response.json()
-            _provider_error(payload)
-            point, provider_payload = _point_from_locator_payload(payload, query_address=canonical_address)
+                for locator_query in query_variants:
+                    response = client.get(
+                        VICMAP_GEOCODER_URL,
+                        params={
+                            "SingleLine": locator_query,
+                            "outFields": "Score,Match_addr,Ref_ID",
+                            "outSR": "4326",
+                            "maxLocations": "5",
+                            "f": "json",
+                        },
+                    )
+                    response.raise_for_status()
+                    payload = response.json()
+                    _provider_error(payload)
+                    point, provider_payload = _point_from_locator_payload(
+                        payload,
+                        query_address=canonical_address,
+                    )
+                    if point is not None:
+                        break
         except Exception as exc:
             reason = exc.__class__.__name__
             state.unavailable["locator"] = reason
@@ -350,7 +449,8 @@ def geocode_address(
         provider_errors.append(state.unavailable["locator"])
 
     if point is None and "wfs" not in state.unavailable:
-        escaped_address = canonical_address.replace("'", "''")
+        escaped_addresses = [address.replace("'", "''") for address in query_variants]
+        exact_filter = ",".join(f"'{address}'" for address in escaped_addresses)
         params = {
             "service": "WFS",
             "version": "2.0.0",
@@ -359,7 +459,7 @@ def geocode_address(
             "outputFormat": "application/json",
             "srsName": "EPSG:4326",
             "count": "5",
-            "CQL_FILTER": f"ezi_address='{escaped_address}'",
+            "CQL_FILTER": f"ezi_address IN ({exact_filter})",
         }
         try:
             with httpx.Client(timeout=HTTP_TIMEOUT_SECONDS, follow_redirects=True) as client:
@@ -367,7 +467,11 @@ def geocode_address(
                 response.raise_for_status()
                 payload = response.json()
             _provider_error(payload)
-            point, provider_payload = _point_from_wfs_payload(payload, query_address=canonical_address)
+            point, provider_payload = _point_from_wfs_payload(
+                payload,
+                query_address=canonical_address,
+                query_variants=query_variants,
+            )
         except Exception as exc:
             reason = exc.__class__.__name__
             state.unavailable["wfs"] = reason

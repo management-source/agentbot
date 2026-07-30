@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -251,7 +252,7 @@ def test_vicmap_timeout_uses_wfs_and_opens_the_locator_circuit(db, monkeypatch):
             raise httpx.ReadTimeout("locator timeout", request=request)
         wfs_calls += 1
         cql_filter = request.url.params["CQL_FILTER"]
-        canonical = cql_filter.removeprefix("ezi_address='").removesuffix("'")
+        canonical = re.findall(r"'([^']+)'", cql_filter)[0]
         house_number = canonical.split()[0]
         return httpx.Response(
             200,
@@ -288,6 +289,88 @@ def test_vicmap_timeout_uses_wfs_and_opens_the_locator_circuit(db, monkeypatch):
     assert first.provider == second.provider == "vicmap-wfs"
     assert locator_calls == 1
     assert wfs_calls == 2
+
+
+def test_vicmap_expands_unit_address_road_type(db, monkeypatch):
+    queries = []
+
+    def handler(request):
+        queries.append(request.url.params["SingleLine"])
+        return httpx.Response(
+            200,
+            json={
+                "candidates": [
+                    {
+                        "address": "G15/2 BAILEY CRESCENT OAK PARK 3046",
+                        "location": {"x": 144.9220213562, "y": -37.7206853615},
+                        "score": 98.75,
+                        "attributes": {"Ref_ID": "427919480"},
+                    }
+                ]
+            },
+        )
+
+    _install_geocoder_transport(monkeypatch, handler)
+    point, warning = planner.geocode_address(
+        db,
+        mailbox=MAILBOX,
+        address="G15/2 Bailey Cres, Oak Park VIC 3046",
+    )
+
+    assert warning is None
+    assert point.formatted_address == "G15/2 BAILEY CRESCENT OAK PARK 3046"
+    assert point.latitude == pytest.approx(-37.7206853615)
+    assert point.longitude == pytest.approx(144.9220213562)
+    assert queries == ["G15/2 BAILEY CRESCENT OAK PARK 3046"]
+
+
+def test_vicmap_unit_range_retries_lower_bound_without_changing_unit(db, monkeypatch):
+    queries = []
+
+    def handler(request):
+        query = request.url.params["SingleLine"]
+        queries.append(query)
+        if query == "G05/16-18 DALGETY STREET OAKLEIGH 3166":
+            return httpx.Response(200, json={"candidates": []})
+        assert query == "G05/16 DALGETY STREET OAKLEIGH 3166"
+        return httpx.Response(
+            200,
+            json={
+                "candidates": [
+                    {
+                        "address": "G06/16 DALGETY STREET OAKLEIGH 3166",
+                        "location": {"x": 145.090574, "y": -37.892113},
+                        "score": 100,
+                    },
+                    {
+                        "address": "G05/16 DALGETY STREET OAKLEIGH 3166",
+                        "location": {"x": 145.0905677109, "y": -37.8921258802},
+                        "score": 98.75,
+                        "attributes": {"Ref_ID": "430346318"},
+                    },
+                ]
+            },
+        )
+
+    _install_geocoder_transport(monkeypatch, handler)
+    point, warning = planner.geocode_address(
+        db,
+        mailbox=MAILBOX,
+        address="G05/16-18 Dalgety Street, Oakleigh VIC 3166",
+    )
+
+    assert warning is None
+    assert point.formatted_address == "G05/16 DALGETY STREET OAKLEIGH 3166"
+    assert point.latitude == pytest.approx(-37.8921258802)
+    assert queries == [
+        "G05/16-18 DALGETY STREET OAKLEIGH 3166",
+        "G05/16 DALGETY STREET OAKLEIGH 3166",
+    ]
+    assert not planner._candidate_is_safe(
+        "G15/2 BAILEY CRESCENT OAK PARK 3046",
+        "G5/2 BAILEY CRESCENT OAK PARK 3046",
+        100,
+    )
 
 
 def test_legacy_default_access_gains_inspections_without_overriding_custom_roles(db):
