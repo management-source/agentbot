@@ -1,11 +1,12 @@
 from io import BytesIO
+import base64
 from xml.sax.saxutils import escape
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
 
 
 def generate_checklist_pdf(report: dict) -> bytes:
@@ -30,5 +31,13 @@ def generate_checklist_pdf(report: dict) -> bytes:
     story.append(checks)
     for label, key in [("Evidence / reference","default_evidence"),("Key positive points","key_positive_points"),("Outstanding / follow-up items","outstanding_items"),("Property owner update / comment","owner_comment")]:
         story += [Paragraph(label, heading), Paragraph(escape(str(p.get(key) or "Not recorded")).replace("\n","<br/>"), body)]
+    story += [Paragraph("Approval", heading), Paragraph(escape(str(p.get("approval_status") or "Not requested").replace("_", " ").title()), body)]
+    signature = str(p.get("signature_data") or "")
+    if signature.startswith("data:image/") and "," in signature:
+        try:
+            image = Image(BytesIO(base64.b64decode(signature.split(",", 1)[1])), width=50*mm, height=20*mm, kind="proportional")
+            story += [Spacer(1, 4), image, Paragraph("Jessica Gale — Property Manager", body)]
+        except Exception:
+            pass
     doc.build(story)
     return stream.getvalue()

@@ -4123,15 +4123,17 @@
     .checklist-field input,.checklist-field select,.checklist-field textarea{width:100%;min-height:46px;padding:11px 13px;background:#fff;line-height:1.5}
     .checklist-field textarea{min-height:105px;resize:vertical}
     .checklist-field:has([data-cf="date_checked"]){display:none}
-    .checklist-checks{display:grid;gap:15px;margin:20px 0}
-    .checklist-check{padding:18px;border:1px solid #dbe4ef;border-left:5px solid #94a3b8;border-radius:18px;background:#fff;box-shadow:0 7px 20px rgba(15,23,42,.04);transition:border-color .25s ease,box-shadow .25s ease,transform .25s ease}
+    .checklist-checks{display:grid;gap:8px;margin:16px 0}
+    .checklist-check{padding:11px 13px;border:1px solid #dbe4ef;border-left:4px solid #94a3b8;border-radius:13px;background:#fff;box-shadow:0 3px 10px rgba(15,23,42,.035);transition:border-color .25s ease,box-shadow .25s ease,transform .25s ease}
     .checklist-check:hover{transform:translateY(-1px);box-shadow:0 12px 25px rgba(15,23,42,.07)}
     .checklist-check.status-positive{border-left-color:#22a06b;background:linear-gradient(90deg,#f2fff8,#fff 18%)}
     .checklist-check.status-pending{border-left-color:#d59b21;background:linear-gradient(90deg,#fff9e9,#fff 18%)}
     .checklist-check.status-concern{border-left-color:#dc3545;background:linear-gradient(90deg,#fff4f4,#fff 18%)}
     .checklist-check.status-na{border-left-color:#7c8799;background:linear-gradient(90deg,#f5f7fa,#fff 18%)}
-    .checklist-check-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:15px}.checklist-check-head h4{margin:0;color:#101828;font-size:15px}
-    .checklist-check-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:13px}.checklist-check-grid .description{grid-column:span 2}
+    .checklist-check-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}.checklist-check-head h4{margin:0;color:#101828;font-size:13px}
+    .checklist-check-grid{display:grid;grid-template-columns:180px 220px minmax(260px,1fr) minmax(220px,.8fr);gap:9px;align-items:start}.checklist-check-grid .description{grid-column:auto}
+    .checklist-check .checklist-field textarea{min-height:64px}.checklist-check .checklist-field input,.checklist-check .checklist-field select{min-height:39px;padding:8px 10px}.checklist-check .checklist-field label{font-size:10px}
+    .checklist-approval{margin-top:18px;padding:18px;border:1px solid #dfca8d;border-radius:17px;background:#fffbef}.checklist-signature-preview{display:block;max-width:260px;max-height:100px;margin:12px 0;padding:8px;border:1px solid #dbe4ef;border-radius:10px;background:#fff}
     .checklist-status-select.status-positive{border-color:#6bc79c;background:#effcf5;color:#087443}.checklist-status-select.status-pending{border-color:#e7bc5e;background:#fff8e7;color:#8a5b00}.checklist-status-select.status-concern{border-color:#ee8d96;background:#fff1f2;color:#a71927}.checklist-status-select.status-na{border-color:#b9c1cc;background:#f4f6f8;color:#4b5563}
     .checklist-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:20px}
     @media(max-width:1050px){.checklist-check-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.checklist-check-grid .description{grid-column:span 1}}
