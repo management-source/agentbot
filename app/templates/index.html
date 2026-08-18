@@ -4472,6 +4472,16 @@
                   d="M5 4h14v16H5z"></path><path d="M8 8h8"></path><path
                   d="M8 12h5"></path><path d="m15 15 2 2 4-5"></path></svg></span><span
               class="nav-label">Inspections</span></a>
+          <div class="side-nav-group subnav-collapsed" id="checklistNavGroup" data-side-subnav-group="checklist">
+            <div class="side-nav-row">
+              <a id="navChecklist" href="javascript:void(0)" onclick="openChecklistView('start')" title="Checklist"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v16H5z"></path><path d="m8 9 1.5 1.5L12 8"></path><path d="M13 10h3"></path><path d="m8 15 1.5 1.5L12 14"></path><path d="M13 16h3"></path></svg></span><span class="nav-label">Checklist</span></a>
+              <button class="side-subnav-toggle" type="button" onclick="toggleSideSubnav('checklist')" aria-label="Toggle checklist menu" aria-expanded="false"><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"></path></svg></button>
+            </div>
+            <div class="side-subnav">
+              <button type="button" data-checklist-view="start" onclick="openChecklistView('start')">Application Screening</button>
+              <button type="button" data-checklist-view="reports" onclick="openChecklistView('reports')">Reports</button>
+            </div>
+          </div>
           <a id="navRentTracker" href="javascript:void(0)"
             onclick="switchDashboardTab('rent')" title="Rent Tracker"><span
               class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path
@@ -7184,6 +7194,18 @@
                       </div>
                     </div>
                   </section>
+                </section>
+              </div>
+
+              <div id="checklistPanel" class="hidden">
+                <section class="system-workspace">
+                  <div class="system-hero page-banner"><div class="page-banner-kicker">Process Workspace</div><h2>Checklists</h2><p>Start a structured process, save progress, and review completed screening reports.</p></div>
+                  <div id="checklistStartView">
+                    <div class="card"><h3>Start a process</h3><div class="grid2"><div class="field"><div class="label">Process</div><select id="checklistProcess"><option value="application_screening">Application Screening</option></select></div><div class="field"><div class="label">Applicant name</div><input id="checklistApplicant"></div><div class="field"><div class="label">Property name &amp; address</div><input id="checklistProperty"></div><div class="field"><div class="label">Application received</div><input id="checklistReceived" type="date"></div></div><button class="btn primary" onclick="createChecklistRun()">Start task</button><div class="error" id="checklistError" style="display:none"></div></div>
+                    <div class="card" style="margin-top:16px"><h3>Tasks in progress</h3><div id="checklistActiveList" class="small muted">Loading…</div></div>
+                  </div>
+                  <div id="checklistReportsView" class="hidden"><div class="card"><h3>Completed reports</h3><div id="checklistReportList" class="small muted">Loading…</div></div></div>
+                  <div id="checklistEditorView" class="hidden"></div>
                 </section>
               </div>
 

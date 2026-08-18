@@ -891,3 +891,26 @@ class ComplianceProperty(Base):
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class ChecklistRun(Base):
+    """A versioned checklist execution; payload_json is the immutable report source."""
+    __tablename__ = "checklist_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    mailbox: Mapped[str] = mapped_column(String, index=True)
+    process_key: Mapped[str] = mapped_column(String, index=True)
+    template_version: Mapped[int] = mapped_column(Integer, default=1)
+    status: Mapped[str] = mapped_column(String, default="IN_PROGRESS", index=True)
+    title: Mapped[str] = mapped_column(String)
+    applicant_name: Mapped[str] = mapped_column(String, index=True)
+    property_address: Mapped[str] = mapped_column(String, index=True)
+    application_received: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    payload_json: Mapped[str] = mapped_column(Text)
+    progress_percent: Mapped[int] = mapped_column(Integer, default=0)
+    created_by_user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+    created_by = relationship("User")

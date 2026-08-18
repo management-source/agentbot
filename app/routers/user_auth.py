@@ -70,6 +70,12 @@ PAGE_REGISTRY = [
         "section": "Operations",
     },
     {
+        "id": "checklist",
+        "label": "Checklist",
+        "description": "Start operational checklists, track work in progress, and review completed reports.",
+        "section": "Operations",
+    },
+    {
         "id": "myspace",
         "label": "My Space",
         "description": "Private planner, follow-ups, quick links, snippets, notes, and staff guides.",
@@ -140,10 +146,10 @@ PAGE_REGISTRY = [
 
 
 DEFAULT_ROLE_PAGE_ACCESS = {
-    UserRole.ADMIN.value: ["portal", "notifications", "myspace", "inbox", "maintenance", "inspections", "rent", "lease_renewals", "landlord_reports", "compliance", "coverage", "compliance_providers", "properties", "team", "activity", "system"],
-    UserRole.PM.value: ["portal", "notifications", "myspace", "inbox", "maintenance", "inspections", "rent", "lease_renewals", "landlord_reports", "compliance", "coverage", "compliance_providers", "properties", "team", "activity", "system"],
-    UserRole.LEASING.value: ["portal", "notifications", "myspace", "inbox", "lease_renewals", "inspections", "properties", "team"],
-    UserRole.SALES.value: ["portal", "notifications", "myspace", "inbox", "maintenance", "inspections", "rent", "lease_renewals", "landlord_reports", "compliance", "coverage", "compliance_providers", "properties", "team", "activity", "system"],
+    UserRole.ADMIN.value: ["portal", "notifications", "myspace", "inbox", "maintenance", "inspections", "checklist", "rent", "lease_renewals", "landlord_reports", "compliance", "coverage", "compliance_providers", "properties", "team", "activity", "system"],
+    UserRole.PM.value: ["portal", "notifications", "myspace", "inbox", "maintenance", "inspections", "checklist", "rent", "lease_renewals", "landlord_reports", "compliance", "coverage", "compliance_providers", "properties", "team", "activity", "system"],
+    UserRole.LEASING.value: ["portal", "notifications", "myspace", "inbox", "lease_renewals", "inspections", "checklist", "properties", "team"],
+    UserRole.SALES.value: ["portal", "notifications", "myspace", "inbox", "maintenance", "inspections", "checklist", "rent", "lease_renewals", "landlord_reports", "compliance", "coverage", "compliance_providers", "properties", "team", "activity", "system"],
     UserRole.ACCOUNTS.value: ["portal", "notifications", "myspace", "inbox", "rent", "team"],
     UserRole.READONLY.value: ["portal", "notifications", "myspace", "team"],
 }

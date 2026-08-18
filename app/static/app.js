@@ -9,6 +9,42 @@ let aiVoiceChunks = [];
 let aiSpeechRecognition = null;
 let aiSpeechTranscript = "";
 let currentDashboardTab = "portal";
+let currentChecklistRun = null;
+let checklistView = "start";
+
+function checklistEscape(value) { return String(value ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function openChecklistView(view) {
+    checklistView = view === "reports" ? "reports" : "start"; switchDashboardTab("checklist");
+    document.getElementById("checklistStartView")?.classList.toggle("hidden", checklistView !== "start");
+    document.getElementById("checklistReportsView")?.classList.toggle("hidden", checklistView !== "reports");
+    document.getElementById("checklistEditorView")?.classList.add("hidden");
+    document.querySelectorAll("[data-checklist-view]").forEach(x => x.classList.toggle("active", x.dataset.checklistView === checklistView)); loadChecklistRuns();
+}
+async function checklistJson(url, options = {}) {
+    const response = await apiFetch(url, {...options, headers: {"Content-Type":"application/json", ...(options.headers || {})}}), data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.detail || "Checklist request failed."); return data;
+}
+async function createChecklistRun() {
+    const error=document.getElementById("checklistError");
+    try { const applicant_name=document.getElementById("checklistApplicant").value.trim(), property_address=document.getElementById("checklistProperty").value.trim(), received=document.getElementById("checklistReceived").value;
+        if(!applicant_name||!property_address) throw new Error("Applicant and property address are required.");
+        const run=await checklistJson("/checklists/runs",{method:"POST",body:JSON.stringify({process_key:"application_screening",applicant_name,property_address,application_received:received?`${received}T00:00:00`:null})}); if(error)error.style.display="none"; openChecklistRun(run.id);
+    } catch(e){if(error){error.textContent=e.message;error.style.display="block";}}
+}
+async function loadChecklistRuns() {
+    if(currentDashboardTab!=="checklist")return;
+    try { const [active,reports]=await Promise.all([checklistJson("/checklists/runs?status=IN_PROGRESS"),checklistJson("/checklists/runs?status=COMPLETED")]); const a=document.getElementById("checklistActiveList"),b=document.getElementById("checklistReportList");
+        if(a)a.innerHTML=active.length?active.map(r=>`<div class="card" style="margin-top:10px"><strong>${checklistEscape(r.applicant_name)}</strong><div class="small muted">${checklistEscape(r.property_address)} · ${r.progress_percent}% complete</div><progress value="${r.progress_percent}" max="100" style="width:100%"></progress><button class="btn" onclick="openChecklistRun(${r.id})">Continue</button></div>`).join(""):"No tasks in progress.";
+        if(b)b.innerHTML=reports.length?reports.map(r=>`<div class="card" style="margin-top:10px"><strong>${checklistEscape(r.applicant_name)}</strong><div class="small muted">${checklistEscape(r.property_address)} · Completed ${r.completed_at?new Date(r.completed_at).toLocaleString():""}</div><button class="btn" onclick="openChecklistRun(${r.id})">Display full report</button></div>`).join(""):"No completed reports yet.";
+    }catch(e){const el=document.getElementById(checklistView==="reports"?"checklistReportList":"checklistActiveList");if(el)el.textContent=e.message;}
+}
+async function openChecklistRun(id){try{currentChecklistRun=await checklistJson(`/checklists/runs/${id}`);renderChecklistEditor();}catch(e){alert(e.message);}}
+function renderChecklistEditor(){
+    const r=currentChecklistRun,p=r.payload,readonly=r.status==="COMPLETED",editor=document.getElementById("checklistEditorView"),opts=(v,s)=>v.map(x=>`<option ${x===s?"selected":""}>${x}</option>`).join("");
+    document.getElementById("checklistStartView")?.classList.add("hidden");document.getElementById("checklistReportsView")?.classList.add("hidden");editor.classList.remove("hidden");
+    editor.innerHTML=`<div class="card"><button class="btn" onclick="openChecklistView('${readonly?"reports":"start"}')">← Back</button><h2>Property Application Screening Checklist</h2><div class="grid2"><div><b>Applicant:</b> ${checklistEscape(r.applicant_name)}</div><div><b>Property:</b> ${checklistEscape(r.property_address)}</div></div><div style="margin:14px 0"><b>Progress: ${r.progress_percent}%</b><progress value="${r.progress_percent}" max="100" style="width:100%"></progress></div><div class="field"><div class="label">Screened by</div><input data-checklist-root="screened_by" value="${checklistEscape(p.screened_by)}" ${readonly?"disabled":""}></div><div style="overflow:auto"><table><thead><tr><th>Screening check</th><th>Status</th><th>Date</th><th>Checked by</th><th>Result / finding</th><th>Evidence / reference</th><th>Follow-up</th><th>Notes</th></tr></thead><tbody>${p.checks.map((c,i)=>`<tr><td><b>${i+1}. ${checklistEscape(c.name)}</b></td><td><select data-ci="${i}" data-cf="status" ${readonly?"disabled":""}>${opts(["Verified / Positive","Pending","Concern","Not Applicable"],c.status)}</select></td><td><input type="date" data-ci="${i}" data-cf="date_checked" value="${checklistEscape(c.date_checked)}" ${readonly?"disabled":""}></td><td><input data-ci="${i}" data-cf="checked_by" value="${checklistEscape(c.checked_by)}" ${readonly?"disabled":""}></td><td><textarea data-ci="${i}" data-cf="result" ${readonly?"disabled":""}>${checklistEscape(c.result)}</textarea></td><td><textarea data-ci="${i}" data-cf="evidence" ${readonly?"disabled":""}>${checklistEscape(c.evidence)}</textarea></td><td><select data-ci="${i}" data-cf="follow_up" ${readonly?"disabled":""}>${opts(["No","Yes","Urgent"],c.follow_up)}</select></td><td><textarea data-ci="${i}" data-cf="notes" ${readonly?"disabled":""}>${checklistEscape(c.notes)}</textarea></td></tr>`).join("")}</tbody></table></div><div class="grid2"><div class="field"><div class="label">Overall status</div><select data-checklist-root="overall_status" ${readonly?"disabled":""}>${opts(["Recommended","Pending","Not Recommended"],p.overall_status)}</select></div><div class="field"><div class="label">Key positive points</div><textarea data-checklist-root="key_positive_points" ${readonly?"disabled":""}>${checklistEscape(p.key_positive_points)}</textarea></div><div class="field"><div class="label">Outstanding / follow-up items</div><textarea data-checklist-root="outstanding_items" ${readonly?"disabled":""}>${checklistEscape(p.outstanding_items)}</textarea></div><div class="field"><div class="label">Property owner update / comment</div><textarea data-checklist-root="owner_comment" ${readonly?"disabled":""}>${checklistEscape(p.owner_comment)}</textarea></div></div>${readonly?"":`<button class="btn" onclick="saveChecklist(false)">Save progress</button> <button class="btn primary" onclick="saveChecklist(true)">Complete &amp; file report</button>`}<div class="error" id="checklistEditorError" style="display:none"></div></div>`;
+}
+async function saveChecklist(complete){const editor=document.getElementById("checklistEditorView"),payload=JSON.parse(JSON.stringify(currentChecklistRun.payload));editor.querySelectorAll("[data-checklist-root]").forEach(x=>payload[x.dataset.checklistRoot]=x.value);editor.querySelectorAll("[data-ci]").forEach(x=>payload.checks[Number(x.dataset.ci)][x.dataset.cf]=x.value);try{currentChecklistRun=await checklistJson(`/checklists/runs/${currentChecklistRun.id}`,{method:"PUT",body:JSON.stringify({payload,complete})});renderChecklistEditor();if(complete)openChecklistView("reports");}catch(e){const el=document.getElementById("checklistEditorError");el.textContent=e.message;el.style.display="block";}}
 
 // Mailbox context (multi-inbox)
 const DEFAULT_MAILBOX = "admin@donspremier.com.au";
@@ -1908,6 +1944,7 @@ const FALLBACK_PAGE_REGISTRY = [
     { id: "inbox", label: "Email Manager", description: "Email tickets and inbox operations.", section: "Operations" },
     { id: "maintenance", label: "Maintenance", description: "Maintenance orders, owner approvals, quotes, tradie arrangements, and completion tracking.", section: "Operations" },
     { id: "inspections", label: "Inspections", description: "Multi-agent inspection planning, route optimisation, timings, buffers, and conflict checks.", section: "Operations" },
+    { id: "checklist", label: "Checklist", description: "Start operational checklists, track work in progress, and review completed reports.", section: "Operations" },
     { id: "rent", label: "Rent Tracker", description: "Rent tracking and reports.", section: "Operations" },
     { id: "lease_renewals", label: "Lease Renewals", description: "Lease renewal dates, signatures, rent review tracking, follow-ups, and reporting.", section: "Operations" },
     { id: "landlord_reports", label: "Monthly Landlord Report", description: "Owner-facing monthly property reports and branded PDF generation.", section: "Operations" },
@@ -1990,7 +2027,7 @@ function isSideSubnavCollapsed(group) {
 }
 
 function applySideSubnavState() {
-    ["maintenance", "lease", "compliance"].forEach((group) => {
+    ["maintenance", "lease", "compliance", "checklist"].forEach((group) => {
         const navGroup = document.querySelector(`[data-side-subnav-group="${group}"]`);
         const toggle = document.getElementById(`${group}SubnavToggle`);
         if (!navGroup) return;
@@ -2034,6 +2071,7 @@ function applyPageVisibility() {
         inbox: "navInbox",
         maintenance: "navMaintenance",
         inspections: "navInspections",
+        checklist: "navChecklist",
         rent: "navRentTracker",
         lease_renewals: "navLeaseRenewals",
         landlord_reports: "navLandlordReports",
@@ -3039,7 +3077,7 @@ function formatDateShort(dt) {
 }
 
 function switchDashboardTab(tab) {
-    const requestedTab = ["portal", "notifications", "myspace", "maintenance", "inspections", "rent", "lease_renewals", "landlord_reports", "compliance", "coverage", "compliance_providers", "properties", "team", "activity", "system", "inbox"].includes(tab) ? tab : "portal";
+    const requestedTab = ["portal", "notifications", "myspace", "maintenance", "inspections", "checklist", "rent", "lease_renewals", "landlord_reports", "compliance", "coverage", "compliance_providers", "properties", "team", "activity", "system", "inbox"].includes(tab) ? tab : "portal";
     if (requestedTab !== "maintenance" && maintenanceOrderModalIsOpen()) {
         closeMaintenanceOrderModal();
     }
@@ -3056,6 +3094,7 @@ function switchDashboardTab(tab) {
         inbox: ["Email Manager", "Unified inbox operations with clear action queues and fast follow-up tools."],
         maintenance: ["Maintenance", "Create, approve, quote, schedule, and complete property maintenance orders."],
         inspections: ["Inspections", "Build conflict-aware multi-agent inspection schedules with optimised travel routes and timings."],
+        checklist: ["Checklist", "Start operational processes, track progress, and review completed reports."],
         rent: ["Rent Tracker", "Track rental due dates, payments, arrears, and yearly rent reporting."],
         lease_renewals: ["Lease Renewals", "Track renewal due dates, signatures, rent review details, follow-ups, and portfolio reporting."],
         landlord_reports: ["Monthly Landlord Report", "Prepare a branded owner report from live property records and verified report-only notes."],
@@ -3078,6 +3117,7 @@ function switchDashboardTab(tab) {
     const inboxPanel = document.getElementById("inboxPanel");
     const maintenancePanel = document.getElementById("maintenancePanel");
     const inspectionsPanel = document.getElementById("inspectionsPanel");
+    const checklistPanel = document.getElementById("checklistPanel");
     const rentPanel = document.getElementById("rentPanel");
     const leaseRenewalsPanel = document.getElementById("leaseRenewalsPanel");
     const landlordReportsPanel = document.getElementById("landlordReportsPanel");
@@ -3091,6 +3131,7 @@ function switchDashboardTab(tab) {
     const navInbox = document.getElementById("navInbox");
     const navMaintenance = document.getElementById("navMaintenance");
     const navInspections = document.getElementById("navInspections");
+    const navChecklist = document.getElementById("navChecklist");
     const navMySpace = document.getElementById("navMySpace");
     const navPortal = document.getElementById("navPortal");
     const navRent = document.getElementById("navRentTracker");
@@ -3111,6 +3152,7 @@ function switchDashboardTab(tab) {
     if (inboxPanel) inboxPanel.classList.toggle("hidden", currentDashboardTab !== "inbox");
     if (maintenancePanel) maintenancePanel.classList.toggle("hidden", currentDashboardTab !== "maintenance");
     if (inspectionsPanel) inspectionsPanel.classList.toggle("hidden", currentDashboardTab !== "inspections");
+    if (checklistPanel) checklistPanel.classList.toggle("hidden", currentDashboardTab !== "checklist");
     if (rentPanel) rentPanel.classList.toggle("hidden", currentDashboardTab !== "rent");
     if (leaseRenewalsPanel) leaseRenewalsPanel.classList.toggle("hidden", currentDashboardTab !== "lease_renewals");
     if (landlordReportsPanel) landlordReportsPanel.classList.toggle("hidden", currentDashboardTab !== "landlord_reports");
@@ -3126,6 +3168,7 @@ function switchDashboardTab(tab) {
     if (navInbox) navInbox.classList.toggle("active", currentDashboardTab === "inbox");
     if (navMaintenance) navMaintenance.classList.toggle("active", currentDashboardTab === "maintenance");
     if (navInspections) navInspections.classList.toggle("active", currentDashboardTab === "inspections");
+    if (navChecklist) navChecklist.classList.toggle("active", currentDashboardTab === "checklist");
     if (navRent) navRent.classList.toggle("active", currentDashboardTab === "rent");
     if (navLeaseRenewals) navLeaseRenewals.classList.toggle("active", currentDashboardTab === "lease_renewals");
     if (navLandlordReports) navLandlordReports.classList.toggle("active", currentDashboardTab === "landlord_reports");
@@ -3187,6 +3230,7 @@ function switchDashboardTab(tab) {
         if (!inspectionsLoadedOnce) initInspectionsWorkspace();
         setTimeout(invalidateInspectionMap, 80);
     }
+    if (currentDashboardTab === "checklist") loadChecklistRuns();
     if (currentDashboardTab === "myspace" && !mySpaceLoadedOnce) {
         loadMySpace();
     }

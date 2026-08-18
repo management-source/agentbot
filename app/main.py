@@ -41,6 +41,7 @@ from app.routers import maintenance
 from app.routers import tenant
 from app.routers import bindu
 from app.routers import inspections
+from app.routers import checklists
 from app.models import User, UserRole
 from app.security import decode_access_token, hash_password
 from app.services.activity_log import infer_activity, record_activity, should_record_request
@@ -298,6 +299,7 @@ app.include_router(maintenance.router, prefix="/maintenance", tags=["maintenance
 app.include_router(tenant.router)
 app.include_router(bindu.router)
 app.include_router(inspections.router)
+app.include_router(checklists.router)
 
 @app.on_event("startup")
 def on_startup():
