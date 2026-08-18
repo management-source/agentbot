@@ -6,6 +6,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from app.authz import get_current_user
 from app.db import get_db
@@ -48,15 +49,17 @@ class UpdateIn(BaseModel):
     complete: bool = False
 
 class ApprovalIn(BaseModel):
-    signature_data: str
+    signature_data: str | None = None
 
 def serialize(row: ChecklistRun, full: bool = True) -> dict:
+    payload = json.loads(row.payload_json)
     data = {"id": row.id, "process_key": row.process_key, "template_version": row.template_version,
             "status": row.status, "title": row.title, "applicant_name": row.applicant_name,
             "property_address": row.property_address, "application_received": row.application_received,
             "progress_percent": row.progress_percent, "completed_at": row.completed_at,
-            "created_at": row.created_at, "updated_at": row.updated_at}
-    if full: data["payload"] = json.loads(row.payload_json)
+            "created_at": row.created_at, "updated_at": row.updated_at,
+            "approval_status": payload.get("approval_status") or "NOT_REQUESTED"}
+    if full: data["payload"] = payload
     return data
 
 def validate_payload(payload: dict) -> tuple[dict, int]:
@@ -156,8 +159,25 @@ def approve(run_id: int, approval: ApprovalIn, db: Session = Depends(get_db), ma
     row = db.query(ChecklistRun).filter_by(id=run_id, mailbox=mailbox).first()
     if not row: raise HTTPException(404, "Checklist not found.")
     if row.status != "COMPLETED": raise HTTPException(400, "Complete the checklist before approving it.")
-    signature = approval.signature_data.strip()
-    if not re.match(r"^data:image/(png|jpeg|webp);base64,", signature, re.I) or len(signature) > 1_500_000: raise HTTPException(400, "Upload a valid PNG, JPEG, or WebP signature image under 1 MB.")
-    payload = json.loads(row.payload_json); payload.update({"approval_status":"APPROVED", "approved_at":datetime.utcnow().isoformat(), "signature_data":signature})
+    signature = (approval.signature_data or "").strip()
+    if signature and (not re.match(r"^data:image/(png|jpeg|webp);base64,", signature, re.I) or len(signature) > 1_500_000): raise HTTPException(400, "Upload a valid PNG, JPEG, or WebP signature image under 1 MB.")
+    payload = json.loads(row.payload_json); payload.update({"approval_status":"APPROVED", "approved_at":datetime.utcnow().isoformat(), "signature_data":signature, "signature_default":not bool(signature)})
     row.payload_json, row.updated_at = json.dumps(payload), datetime.utcnow(); db.commit(); db.refresh(row)
-    return serialize(row)
+    jessica = db.query(User).filter(func.lower(User.name) == "jessica gale").filter(User.is_active == True).first()
+    recipient = jessica.email if jessica else "admin@donspremier.com.au"
+    notification_sent = True
+    try:
+        send_new_email(db=db, mailbox=mailbox, to_email=recipient,
+            subject=f"Application Screening approved — {row.applicant_name}",
+            body_text=f"The Application Screening report for {row.applicant_name} at {row.property_address} has been signed and approved using Jessica Gale's authorised signature.")
+    except Exception:
+        notification_sent = False
+    result = serialize(row); result["confirmation_email_sent"] = notification_sent
+    return result
+
+@router.delete("/runs/{run_id}")
+def delete_run(run_id: int, db: Session = Depends(get_db), mailbox: str = Depends(get_current_mailbox), _: User = Depends(get_current_user)):
+    row = db.query(ChecklistRun).filter_by(id=run_id, mailbox=mailbox).first()
+    if not row: raise HTTPException(404, "Checklist not found.")
+    db.delete(row); db.commit()
+    return {"ok": True}

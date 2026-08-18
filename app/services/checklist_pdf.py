@@ -1,5 +1,6 @@
 from io import BytesIO
 import base64
+from pathlib import Path
 from xml.sax.saxutils import escape
 
 from reportlab.lib import colors
@@ -11,7 +12,18 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 
 def generate_checklist_pdf(report: dict) -> bytes:
     stream = BytesIO()
-    doc = SimpleDocTemplate(stream, pagesize=A4, rightMargin=16*mm, leftMargin=16*mm, topMargin=16*mm, bottomMargin=16*mm)
+    static_dir = Path(__file__).resolve().parents[1] / "static"
+    logo_path = static_dir / "dons_premier_transparent_v2.png"
+    default_signature_path = static_dir / "jessica-gale-signature.jpeg"
+    doc = SimpleDocTemplate(stream, pagesize=A4, rightMargin=16*mm, leftMargin=16*mm, topMargin=30*mm, bottomMargin=25*mm)
+    def branded_page(canvas, _doc):
+        width, _height = A4
+        if logo_path.exists():
+            canvas.drawImage(str(logo_path), 16*mm, A4[1]-27*mm, width=18*mm, height=18*mm, preserveAspectRatio=True, mask="auto")
+        canvas.setFillColor(colors.HexColor("#111827")); canvas.rect(0, 0, width, 17*mm, fill=1, stroke=0)
+        canvas.setFillColor(colors.HexColor("#D8B85C")); canvas.rect(0, 17*mm, width, 1.5*mm, fill=1, stroke=0)
+        canvas.setFillColor(colors.white); canvas.setFont("Helvetica-Bold", 9); canvas.drawString(16*mm, 9.5*mm, "DONS PREMIER ESTATE AGENTS")
+        canvas.setFont("Helvetica", 7); canvas.drawRightString(width-16*mm, 9.5*mm, "admin@donspremier.com.au")
     styles = getSampleStyleSheet()
     title = ParagraphStyle("ChecklistTitle", parent=styles["Title"], textColor=colors.HexColor("#111827"), fontSize=19, leading=23, spaceAfter=12)
     heading = ParagraphStyle("ChecklistHeading", parent=styles["Heading2"], textColor=colors.HexColor("#9A7820"), fontSize=12, spaceBefore=12, spaceAfter=7)
@@ -39,5 +51,7 @@ def generate_checklist_pdf(report: dict) -> bytes:
             story += [Spacer(1, 4), image, Paragraph("Jessica Gale — Property Manager", body)]
         except Exception:
             pass
-    doc.build(story)
+    elif str(p.get("approval_status") or "") == "APPROVED" and default_signature_path.exists():
+        story += [Spacer(1, 4), Image(str(default_signature_path), width=50*mm, height=20*mm, kind="proportional"), Paragraph("Jessica Gale — Property Manager", body)]
+    doc.build(story, onFirstPage=branded_page, onLaterPages=branded_page)
     return stream.getvalue()
