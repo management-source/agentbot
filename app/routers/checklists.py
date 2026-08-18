@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -10,6 +11,7 @@ from app.authz import get_current_user
 from app.db import get_db
 from app.deps import get_current_mailbox
 from app.models import ChecklistRun, User
+from app.services.checklist_pdf import generate_checklist_pdf
 
 router = APIRouter(prefix="/checklists", tags=["checklists"])
 
@@ -19,15 +21,16 @@ CHECKS = [
     "Rental Ledger Review", "Supporting Documents Review",
 ]
 CHECK_STATUSES = {"Verified / Positive", "Pending", "Concern", "Not Applicable"}
-FOLLOW_UPS = {"No", "Yes", "Urgent"}
 OVERALL = {"Recommended", "Pending", "Not Recommended"}
+DEFAULT_CHECKER = "Jessica Gale — Property Manager"
 
 def blank_payload() -> dict:
     return {
-        "screened_by": "", "key_positive_points": "", "outstanding_items": "",
+        "screened_by": DEFAULT_CHECKER, "default_result": "", "default_evidence": "",
+        "key_positive_points": "", "outstanding_items": "",
         "overall_status": "Pending", "owner_comment": "",
-        "checks": [{"name": name, "status": "Pending", "date_checked": "", "checked_by": "",
-                    "result": "", "evidence": "", "follow_up": "No", "notes": ""} for name in CHECKS],
+        "checks": [{"name": name, "status": "Pending", "checked_by": DEFAULT_CHECKER,
+                    "result": "", "notes": ""} for name in CHECKS],
     }
 
 class CreateIn(BaseModel):
@@ -57,19 +60,19 @@ def validate_payload(payload: dict) -> tuple[dict, int]:
     if not isinstance(checks, list) or len(checks) != len(CHECKS):
         raise HTTPException(400, "The Application Screening checklist must contain all seven checks.")
     clean = blank_payload()
-    for key in ("screened_by", "key_positive_points", "outstanding_items", "owner_comment"):
+    for key in ("default_result", "default_evidence", "key_positive_points", "outstanding_items", "owner_comment"):
         clean[key] = str(payload.get(key) or "").strip()
+    clean["screened_by"] = DEFAULT_CHECKER
     clean["overall_status"] = str(payload.get("overall_status") or "Pending")
     if clean["overall_status"] not in OVERALL: raise HTTPException(400, "Invalid overall status.")
     completed = 0
     for i, expected in enumerate(CHECKS):
         item = checks[i] if isinstance(checks[i], dict) else {}
         status = str(item.get("status") or "Pending")
-        follow = str(item.get("follow_up") or "No")
-        if status not in CHECK_STATUSES or follow not in FOLLOW_UPS: raise HTTPException(400, "Invalid check status or follow-up.")
-        clean["checks"][i] = {"name": expected, "status": status, "date_checked": str(item.get("date_checked") or ""),
-            "checked_by": str(item.get("checked_by") or ""), "result": str(item.get("result") or ""),
-            "evidence": str(item.get("evidence") or ""), "follow_up": follow, "notes": str(item.get("notes") or "")}
+        if status not in CHECK_STATUSES: raise HTTPException(400, "Invalid check status.")
+        clean["checks"][i] = {"name": expected, "status": status,
+            "checked_by": DEFAULT_CHECKER, "result": str(item.get("result") or ""),
+            "notes": str(item.get("notes") or "")}
         if status != "Pending": completed += 1
     return clean, round(completed * 100 / len(CHECKS))
 
@@ -115,3 +118,12 @@ def update(run_id: int, payload: UpdateIn, db: Session = Depends(get_db), mailbo
     row.payload_json, row.progress_percent, row.updated_at = json.dumps(clean), progress, datetime.utcnow()
     db.commit(); db.refresh(row)
     return serialize(row)
+
+@router.get("/runs/{run_id}/pdf")
+def download_pdf(run_id: int, db: Session = Depends(get_db), mailbox: str = Depends(get_current_mailbox), _: User = Depends(get_current_user)):
+    row = db.query(ChecklistRun).filter_by(id=run_id, mailbox=mailbox).first()
+    if not row: raise HTTPException(404, "Checklist not found.")
+    if row.status != "COMPLETED": raise HTTPException(400, "Complete the checklist before exporting its report.")
+    filename = re.sub(r"[^A-Za-z0-9._-]+", "-", f"application-screening-{row.applicant_name}").strip("-") + ".pdf"
+    return Response(generate_checklist_pdf(serialize(row)), media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'})
