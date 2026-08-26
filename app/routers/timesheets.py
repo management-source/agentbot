@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import csv
+import io
 from datetime import date, datetime, time
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session, selectinload
 
@@ -74,6 +76,18 @@ def _require_reviewer(user: User) -> None:
         raise HTTPException(
             status_code=403,
             detail="Only a Director or Administrator can review timesheets.",
+        )
+
+
+def _is_report_admin(user: User) -> bool:
+    return user.role == UserRole.ADMIN
+
+
+def _require_report_admin(user: User) -> None:
+    if not _is_report_admin(user):
+        raise HTTPException(
+            status_code=403,
+            detail="Only an Administrator can delete timesheet reports.",
         )
 
 
@@ -267,6 +281,7 @@ def get_timesheet_day(
     return {
         "report": _report_out(report) if report else None,
         "can_review": _is_reviewer(user),
+        "can_delete_reports": _is_report_admin(user),
     }
 
 
@@ -439,6 +454,112 @@ def list_timesheet_reports(
         TimesheetReport.staff_user_id.asc(),
     ).all()
     return {"reports": [_report_out(report) for report in reports]}
+
+
+def _safe_csv_cell(value: object | None) -> str:
+    text = "" if value is None else str(value)
+    if text.lstrip().startswith(("=", "+", "-", "@")):
+        return f"'{text}"
+    return text
+
+
+@router.get("/reports/export")
+def export_daily_timesheet_reports(
+    work_date: date = Query(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    _require_reviewer(user)
+    reports = (
+        _report_query(db)
+        .filter(
+            TimesheetReport.work_date == work_date,
+            TimesheetReport.status != "DRAFT",
+        )
+        .all()
+    )
+    reports.sort(
+        key=lambda report: (
+            (report.staff.name if report.staff else "").casefold(),
+            report.staff_user_id,
+        )
+    )
+
+    output = io.StringIO(newline="")
+    writer = csv.writer(output)
+    writer.writerow(
+        [
+            "Date",
+            "Staff Member",
+            "Email",
+            "Start Time",
+            "End Time",
+            "Duration (Minutes)",
+            "Task",
+            "Task Status",
+            "Approval Status",
+            "Director Comment",
+            "Submitted At",
+            "Reviewed At",
+            "Reviewed By",
+        ]
+    )
+    for report in reports:
+        staff = report.staff
+        reviewer = report.reviewed_by
+        for entry in sorted(report.entries, key=lambda row: (row.start_time, row.id)):
+            writer.writerow(
+                [
+                    report.work_date.isoformat(),
+                    _safe_csv_cell(staff.name if staff else ""),
+                    _safe_csv_cell(staff.email if staff else ""),
+                    entry.start_time.strftime("%H:%M"),
+                    entry.end_time.strftime("%H:%M"),
+                    entry.duration_minutes,
+                    _safe_csv_cell(entry.task),
+                    entry.status,
+                    report.status,
+                    _safe_csv_cell(report.director_comment),
+                    report.submitted_at.isoformat() if report.submitted_at else "",
+                    report.reviewed_at.isoformat() if report.reviewed_at else "",
+                    _safe_csv_cell(reviewer.name if reviewer else ""),
+                ]
+            )
+
+    filename = f"timesheet-report-{work_date.isoformat()}.csv"
+    content = ("\ufeff" + output.getvalue()).encode("utf-8")
+    return Response(
+        content=content,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.delete("/reports/{report_id}")
+def delete_timesheet_report(
+    report_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    _require_report_admin(user)
+    report = (
+        _report_query(db)
+        .filter(TimesheetReport.id == report_id)
+        .with_for_update()
+        .first()
+    )
+    if not report:
+        raise HTTPException(status_code=404, detail="Timesheet report not found.")
+
+    deleted = {
+        "ok": True,
+        "report_id": report.id,
+        "work_date": report.work_date.isoformat(),
+        "staff_user_id": report.staff_user_id,
+    }
+    db.delete(report)
+    db.commit()
+    return deleted
 
 
 @router.post("/reports/{report_id}/review")

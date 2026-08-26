@@ -3740,6 +3740,8 @@
       border-radius:16px;
       background:#f8fafc;
     }
+    .timesheet-report-filter-actions{display:flex;gap:8px;align-items:center}
+    .timesheet-report-filter-actions .btn{white-space:nowrap}
     .timesheet-report-list{display:grid;gap:14px;margin-top:16px}
     .timesheet-report-card{
       overflow:hidden;
@@ -3808,7 +3810,7 @@
     }
     @media (max-width: 980px){
       .timesheet-report-filters{grid-template-columns:repeat(2,minmax(0,1fr))}
-      .timesheet-report-filters .btn{grid-column:1/-1}
+      .timesheet-report-filter-actions{grid-column:1/-1}
       .timesheet-report-entry{grid-template-columns:repeat(3,minmax(0,1fr))}
       .timesheet-report-entry .task{grid-column:span 2}
       .timesheet-report-entry .timesheet-mobile-label{display:block;margin-bottom:5px}
@@ -3819,6 +3821,7 @@
       .timesheet-card-head,.timesheet-report-head,.timesheet-submit-row{align-items:stretch;flex-direction:column}
       .timesheet-day-controls,.timesheet-report-meta{justify-content:flex-start}
       .timesheet-entry-form,.timesheet-entry-row,.timesheet-summary,.timesheet-report-filters{grid-template-columns:1fr}
+      .timesheet-report-filter-actions{grid-column:auto;flex-direction:column;align-items:stretch}
       .timesheet-task-field,.timesheet-add-button,.timesheet-entry-cell.task,.timesheet-entry-actions{grid-column:auto}
       .timesheet-entry-actions{justify-content:flex-start}
       .timesheet-report-entry{grid-template-columns:1fr 1fr}
@@ -5472,13 +5475,17 @@
                       </div>
                       <div class="field">
                         <div class="label">Start Time</div>
-                        <input type="time" id="timesheetStartTime"
-                          oninput="updateTimesheetDurationPreview()" />
+                        <select id="timesheetStartTime"
+                          onchange="updateTimesheetDurationPreview()">
+                          <option value="">Select start</option>
+                        </select>
                       </div>
                       <div class="field">
                         <div class="label">End Time</div>
-                        <input type="time" id="timesheetEndTime"
-                          oninput="updateTimesheetDurationPreview()" />
+                        <select id="timesheetEndTime"
+                          onchange="updateTimesheetDurationPreview()">
+                          <option value="">Select end</option>
+                        </select>
                       </div>
                       <div class="field">
                         <div class="label">Duration</div>
@@ -5560,8 +5567,13 @@
                           <option value="APPROVED">Approved</option>
                         </select>
                       </div>
-                      <button class="btn" type="button"
-                        onclick="loadTimesheetReports()">Refresh Reports</button>
+                      <div class="timesheet-report-filter-actions">
+                        <button class="btn" type="button"
+                          onclick="loadTimesheetReports()">Refresh Reports</button>
+                        <button class="btn primary" type="button"
+                          title="Exports all submitted staff reports for the To date"
+                          onclick="exportTimesheetDailyReport()">Export Daily CSV</button>
+                      </div>
                     </div>
                     <div class="timesheet-report-list" id="timesheetReportList">
                       <div class="myspace-empty">Submitted staff reports will appear here.</div>

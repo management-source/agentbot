@@ -601,6 +601,7 @@ let mySpaceViewMode = "workspace";
 let timesheetDayCache = null;
 let timesheetLoadedDate = "";
 let timesheetCanReview = false;
+let timesheetCanDeleteReports = false;
 let timesheetReportsLoadedOnce = false;
 let timesheetStaffCache = [];
 let timesheetStaffLoadedOnce = false;
@@ -1441,6 +1442,33 @@ function timesheetTimeValue(value) {
     return String(value || "").slice(0, 5);
 }
 
+function timesheetTimeOptions(selected = "", placeholder = "Select time") {
+    const selectedTime = timesheetTimeValue(selected);
+    const values = [];
+    for (let minutes = 0; minutes < 24 * 60; minutes += 10) {
+        const hours = String(Math.floor(minutes / 60)).padStart(2, "0");
+        const remainder = String(minutes % 60).padStart(2, "0");
+        values.push(`${hours}:${remainder}`);
+    }
+    if (selectedTime && !values.includes(selectedTime)) {
+        values.push(selectedTime);
+        values.sort();
+    }
+    return `<option value="">${escapeHtml(placeholder)}</option>` + values.map((value) => {
+        const legacyLabel = value === selectedTime && Number(value.slice(3, 5)) % 10 !== 0
+            ? `${value} (existing)`
+            : value;
+        return `<option value="${escapeHtml(value)}" ${value === selectedTime ? "selected" : ""}>${escapeHtml(legacyLabel)}</option>`;
+    }).join("");
+}
+
+function populateTimesheetTimeSelector(id, placeholder) {
+    const select = document.getElementById(id);
+    if (!select) return;
+    const selected = select.value;
+    select.innerHTML = timesheetTimeOptions(selected, placeholder);
+}
+
 function timesheetMinutesBetween(start, end) {
     const parse = (value) => {
         const match = /^(\d{2}):(\d{2})$/.exec(String(value || ""));
@@ -1519,6 +1547,8 @@ function initialiseTimesheetView() {
     const toInput = document.getElementById("timesheetReportTo");
     if (fromInput && !fromInput.value) fromInput.value = timesheetDateToInput(from);
     if (toInput && !toInput.value) toInput.value = timesheetDateToInput(today);
+    populateTimesheetTimeSelector("timesheetStartTime", "Select start");
+    populateTimesheetTimeSelector("timesheetEndTime", "Select end");
     populateTimesheetStaffFilter();
     updateTimesheetDurationPreview();
 }
@@ -1611,11 +1641,11 @@ function renderTimesheetEntries(report, workDate) {
                 <div class="timesheet-entry-cell"><span class="timesheet-mobile-label">Date</span>${escapeHtml(timesheetWorkDateLabel(workDate))}</div>
                 <div class="timesheet-entry-cell">
                     <span class="timesheet-mobile-label">Start</span>
-                    <input type="time" data-timesheet-start="${entry.id}" value="${escapeHtml(start)}" oninput="updateTimesheetRowDuration(${entry.id})" />
+                    <select data-timesheet-start="${entry.id}" onchange="updateTimesheetRowDuration(${entry.id})">${timesheetTimeOptions(start, "Select start")}</select>
                 </div>
                 <div class="timesheet-entry-cell">
                     <span class="timesheet-mobile-label">End</span>
-                    <input type="time" data-timesheet-end="${entry.id}" value="${escapeHtml(end)}" oninput="updateTimesheetRowDuration(${entry.id})" />
+                    <select data-timesheet-end="${entry.id}" onchange="updateTimesheetRowDuration(${entry.id})">${timesheetTimeOptions(end, "Select end")}</select>
                 </div>
                 <div class="timesheet-entry-cell">
                     <span class="timesheet-mobile-label">Duration</span>
@@ -1700,6 +1730,7 @@ async function loadTimesheetDay() {
         timesheetDayCache = data.report || null;
         timesheetLoadedDate = workDate;
         timesheetCanReview = data.can_review === true;
+        timesheetCanDeleteReports = data.can_delete_reports === true;
         renderTimesheetDay(timesheetDayCache, workDate);
         const reviewPanel = document.getElementById("timesheetReviewPanel");
         if (reviewPanel) reviewPanel.classList.toggle("hidden", !timesheetCanReview);
@@ -1888,6 +1919,7 @@ function renderTimesheetReports(reports) {
                         <span class="user-chip">${entries.length} task${entries.length === 1 ? "" : "s"}</span>
                         <span class="user-chip">${escapeHtml(formatTimesheetDuration(totalMinutes))}</span>
                         <span class="timesheet-approval-badge ${timesheetApprovalClass(status)}">${escapeHtml(timesheetApprovalLabel(status))}</span>
+                        ${timesheetCanDeleteReports ? `<button class="btn danger" type="button" onclick="deleteTimesheetReport(${report.id})">Delete Report</button>` : ""}
                     </div>
                 </div>
                 <div class="timesheet-report-entries">${entryRows}</div>
@@ -1930,6 +1962,53 @@ async function loadTimesheetReports() {
         renderTimesheetReports(reports);
     } catch (error) {
         if (list) list.innerHTML = `<div class="myspace-empty">${escapeHtml(String(error?.message || error || "Could not load staff reports."))}</div>`;
+    }
+}
+
+async function exportTimesheetDailyReport() {
+    const workDate = document.getElementById("timesheetReportTo")?.value || "";
+    if (!workDate) {
+        setTimesheetMessage("Choose the daily export date in the To field.", "error");
+        return;
+    }
+    try {
+        const response = await apiFetch(`/my-space/timesheets/reports/export?work_date=${encodeURIComponent(workDate)}`);
+        if (!response.ok) throw new Error(await extractErrorMessage(response));
+        const blob = await response.blob();
+        const disposition = response.headers.get("Content-Disposition") || "";
+        const filenameMatch = /filename="?([^";]+)"?/i.exec(disposition);
+        const filename = filenameMatch?.[1] || `timesheet-report-${workDate}.csv`;
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+        setTimesheetMessage(`Daily report for ${timesheetWorkDateLabel(workDate)} exported.`, "success");
+    } catch (error) {
+        setTimesheetMessage(String(error?.message || error || "Could not export the daily report."), "error");
+    }
+}
+
+async function deleteTimesheetReport(reportId) {
+    const confirmed = window.confirm("Delete this full timesheet report and all of its tasks? This cannot be undone.");
+    if (!confirmed) return;
+    try {
+        const response = await apiFetch(`/my-space/timesheets/reports/${reportId}`, { method: "DELETE" });
+        if (!response.ok) throw new Error(await extractErrorMessage(response));
+        const deleted = await response.json();
+        setTimesheetMessage("Timesheet report deleted.", "success");
+        await loadTimesheetReports();
+        if (
+            String(deleted.work_date || "") === timesheetLoadedDate
+            && Number(deleted.staff_user_id) === Number(currentUser?.id)
+        ) {
+            await loadTimesheetDay();
+        }
+    } catch (error) {
+        setTimesheetMessage(String(error?.message || error || "Could not delete the report."), "error");
     }
 }
 
@@ -11607,6 +11686,7 @@ function logout(message = "") {
     timesheetDayCache = null;
     timesheetLoadedDate = "";
     timesheetCanReview = false;
+    timesheetCanDeleteReports = false;
     timesheetReportsLoadedOnce = false;
     timesheetStaffCache = [];
     timesheetStaffLoadedOnce = false;

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import csv
+import io
 import os
 from datetime import date
 
@@ -552,3 +554,108 @@ def test_director_report_filters_exclude_drafts_and_return_staff_totals(
     )
     assert invalid_range.status_code == 400
     assert invalid_range.json()["detail"] == "date_to must be on or after date_from."
+
+
+def test_only_administrator_can_delete_a_full_report(db, users, api_client):
+    client, context = api_client
+    created = _create_entry(client)
+    report_id = created["report"]["id"]
+    entry_id = created["entry"]["id"]
+    _submit_day(client)
+
+    context["user"] = users["director"]
+    denied_director = client.delete(
+        f"/my-space/timesheets/reports/{report_id}"
+    )
+    context["user"] = users["manager"]
+    denied_manager = client.delete(
+        f"/my-space/timesheets/reports/{report_id}"
+    )
+
+    assert denied_director.status_code == 403
+    assert denied_manager.status_code == 403
+    assert db.get(TimesheetReport, report_id) is not None
+    assert db.get(TimesheetEntry, entry_id) is not None
+
+    context["user"] = users["admin"]
+    permissions = client.get(
+        "/my-space/timesheets/day",
+        params={"work_date": WORK_DATE.isoformat()},
+    )
+    deleted = client.delete(f"/my-space/timesheets/reports/{report_id}")
+
+    assert permissions.status_code == 200
+    assert permissions.json()["can_delete_reports"] is True
+    assert deleted.status_code == 200
+    assert deleted.json() == {
+        "ok": True,
+        "report_id": report_id,
+        "work_date": WORK_DATE.isoformat(),
+        "staff_user_id": users["staff"].id,
+    }
+    assert db.get(TimesheetReport, report_id) is None
+    assert db.get(TimesheetEntry, entry_id) is None
+
+
+def test_director_can_export_all_submitted_staff_for_one_day(
+    users,
+    api_client,
+):
+    client, context = api_client
+    _create_entry(
+        client,
+        start_time="09:00",
+        end_time="10:00",
+        task="=SUM(1,1)",
+    )
+    _submit_day(client)
+
+    context["user"] = users["other_staff"]
+    _create_entry(
+        client,
+        start_time="10:10",
+        end_time="11:20",
+        task="Prepare advertising copy",
+        status="IN_PROGRESS",
+    )
+    _submit_day(client)
+
+    context["user"] = users["accounts"]
+    draft = _create_entry(
+        client,
+        start_time="12:00",
+        end_time="12:30",
+        task="Unsubmitted draft must not be exported",
+    )
+
+    context["user"] = users["director"]
+    exported = client.get(
+        "/my-space/timesheets/reports/export",
+        params={"work_date": WORK_DATE.isoformat()},
+    )
+
+    assert exported.status_code == 200
+    assert exported.headers["content-disposition"] == (
+        f'attachment; filename="timesheet-report-{WORK_DATE.isoformat()}.csv"'
+    )
+    rows = list(
+        csv.DictReader(
+            io.StringIO(exported.content.decode("utf-8-sig"))
+        )
+    )
+    assert len(rows) == 2
+    assert {row["Staff Member"] for row in rows} == {
+        users["staff"].name,
+        users["other_staff"].name,
+    }
+    assert {row["Approval Status"] for row in rows} == {"SUBMITTED"}
+    assert {row["Duration (Minutes)"] for row in rows} == {"60", "70"}
+    assert "'=SUM(1,1)" in {row["Task"] for row in rows}
+    assert draft["entry"]["task"] not in {row["Task"] for row in rows}
+
+    context["user"] = users["manager"]
+    denied = client.get(
+        "/my-space/timesheets/reports/export",
+        params={"work_date": WORK_DATE.isoformat()},
+    )
+    assert denied.status_code == 403
