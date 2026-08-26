@@ -1442,31 +1442,9 @@ function timesheetTimeValue(value) {
     return String(value || "").slice(0, 5);
 }
 
-function timesheetTimeOptions(selected = "", placeholder = "Select time") {
-    const selectedTime = timesheetTimeValue(selected);
-    const values = [];
-    for (let minutes = 0; minutes < 24 * 60; minutes += 10) {
-        const hours = String(Math.floor(minutes / 60)).padStart(2, "0");
-        const remainder = String(minutes % 60).padStart(2, "0");
-        values.push(`${hours}:${remainder}`);
-    }
-    if (selectedTime && !values.includes(selectedTime)) {
-        values.push(selectedTime);
-        values.sort();
-    }
-    return `<option value="">${escapeHtml(placeholder)}</option>` + values.map((value) => {
-        const legacyLabel = value === selectedTime && Number(value.slice(3, 5)) % 10 !== 0
-            ? `${value} (existing)`
-            : value;
-        return `<option value="${escapeHtml(value)}" ${value === selectedTime ? "selected" : ""}>${escapeHtml(legacyLabel)}</option>`;
-    }).join("");
-}
-
-function populateTimesheetTimeSelector(id, placeholder) {
-    const select = document.getElementById(id);
-    if (!select) return;
-    const selected = select.value;
-    select.innerHTML = timesheetTimeOptions(selected, placeholder);
+function timesheetUsesTenMinuteStep(value) {
+    const match = /^(\d{2}):(\d{2})$/.exec(String(value || ""));
+    return Boolean(match && Number(match[2]) % 10 === 0);
 }
 
 function timesheetMinutesBetween(start, end) {
@@ -1547,8 +1525,6 @@ function initialiseTimesheetView() {
     const toInput = document.getElementById("timesheetReportTo");
     if (fromInput && !fromInput.value) fromInput.value = timesheetDateToInput(from);
     if (toInput && !toInput.value) toInput.value = timesheetDateToInput(today);
-    populateTimesheetTimeSelector("timesheetStartTime", "Select start");
-    populateTimesheetTimeSelector("timesheetEndTime", "Select end");
     populateTimesheetStaffFilter();
     updateTimesheetDurationPreview();
 }
@@ -1641,11 +1617,11 @@ function renderTimesheetEntries(report, workDate) {
                 <div class="timesheet-entry-cell"><span class="timesheet-mobile-label">Date</span>${escapeHtml(timesheetWorkDateLabel(workDate))}</div>
                 <div class="timesheet-entry-cell">
                     <span class="timesheet-mobile-label">Start</span>
-                    <select data-timesheet-start="${entry.id}" onchange="updateTimesheetRowDuration(${entry.id})">${timesheetTimeOptions(start, "Select start")}</select>
+                    <input type="time" step="600" data-timesheet-start="${entry.id}" value="${escapeHtml(start)}" oninput="updateTimesheetRowDuration(${entry.id})" />
                 </div>
                 <div class="timesheet-entry-cell">
                     <span class="timesheet-mobile-label">End</span>
-                    <select data-timesheet-end="${entry.id}" onchange="updateTimesheetRowDuration(${entry.id})">${timesheetTimeOptions(end, "Select end")}</select>
+                    <input type="time" step="600" data-timesheet-end="${entry.id}" value="${escapeHtml(end)}" oninput="updateTimesheetRowDuration(${entry.id})" />
                 </div>
                 <div class="timesheet-entry-cell">
                     <span class="timesheet-mobile-label">Duration</span>
@@ -1755,6 +1731,10 @@ async function addTimesheetEntry() {
         setTimesheetMessage("Date, start time, end time, and task are required.", "error");
         return;
     }
+    if (!timesheetUsesTenMinuteStep(startTime) || !timesheetUsesTenMinuteStep(endTime)) {
+        setTimesheetMessage("Start and end times must use 10-minute intervals.", "error");
+        return;
+    }
     if (timesheetMinutesBetween(startTime, endTime) === null) {
         setTimesheetMessage("End time must be later than start time.", "error");
         return;
@@ -1797,6 +1777,10 @@ async function saveTimesheetEntry(entryId) {
     const status = document.querySelector(`[data-timesheet-status="${entryId}"]`)?.value || "COMPLETED";
     if (!task || timesheetMinutesBetween(startTime, endTime) === null) {
         setTimesheetMessage("Enter a task and make sure the end time is later than the start time.", "error");
+        return;
+    }
+    if (!timesheetUsesTenMinuteStep(startTime) || !timesheetUsesTenMinuteStep(endTime)) {
+        setTimesheetMessage("Start and end times must use 10-minute intervals.", "error");
         return;
     }
     try {
@@ -1977,7 +1961,7 @@ async function exportTimesheetDailyReport() {
         const blob = await response.blob();
         const disposition = response.headers.get("Content-Disposition") || "";
         const filenameMatch = /filename="?([^";]+)"?/i.exec(disposition);
-        const filename = filenameMatch?.[1] || `timesheet-report-${workDate}.csv`;
+        const filename = filenameMatch?.[1] || `timesheet-report-${workDate}.pdf`;
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
         link.href = url;

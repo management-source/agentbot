@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import csv
-import io
 from datetime import date, datetime, time
 from typing import Literal
 
@@ -12,6 +10,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.authz import get_current_user
 from app.db import get_db
 from app.models import TimesheetEntry, TimesheetReport, User, UserRole
+from app.services.timesheet_pdf import generate_timesheet_daily_pdf
 
 
 router = APIRouter(prefix="/my-space/timesheets", tags=["timesheets"])
@@ -456,13 +455,6 @@ def list_timesheet_reports(
     return {"reports": [_report_out(report) for report in reports]}
 
 
-def _safe_csv_cell(value: object | None) -> str:
-    text = "" if value is None else str(value)
-    if text.lstrip().startswith(("=", "+", "-", "@")):
-        return f"'{text}"
-    return text
-
-
 @router.get("/reports/export")
 def export_daily_timesheet_reports(
     work_date: date = Query(...),
@@ -485,52 +477,14 @@ def export_daily_timesheet_reports(
         )
     )
 
-    output = io.StringIO(newline="")
-    writer = csv.writer(output)
-    writer.writerow(
-        [
-            "Date",
-            "Staff Member",
-            "Email",
-            "Start Time",
-            "End Time",
-            "Duration (Minutes)",
-            "Task",
-            "Task Status",
-            "Approval Status",
-            "Director Comment",
-            "Submitted At",
-            "Reviewed At",
-            "Reviewed By",
-        ]
+    content = generate_timesheet_daily_pdf(
+        [_report_out(report) for report in reports],
+        work_date,
     )
-    for report in reports:
-        staff = report.staff
-        reviewer = report.reviewed_by
-        for entry in sorted(report.entries, key=lambda row: (row.start_time, row.id)):
-            writer.writerow(
-                [
-                    report.work_date.isoformat(),
-                    _safe_csv_cell(staff.name if staff else ""),
-                    _safe_csv_cell(staff.email if staff else ""),
-                    entry.start_time.strftime("%H:%M"),
-                    entry.end_time.strftime("%H:%M"),
-                    entry.duration_minutes,
-                    _safe_csv_cell(entry.task),
-                    entry.status,
-                    report.status,
-                    _safe_csv_cell(report.director_comment),
-                    report.submitted_at.isoformat() if report.submitted_at else "",
-                    report.reviewed_at.isoformat() if report.reviewed_at else "",
-                    _safe_csv_cell(reviewer.name if reviewer else ""),
-                ]
-            )
-
-    filename = f"timesheet-report-{work_date.isoformat()}.csv"
-    content = ("\ufeff" + output.getvalue()).encode("utf-8")
+    filename = f"timesheet-report-{work_date.isoformat()}.pdf"
     return Response(
         content=content,
-        media_type="text/csv",
+        media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 

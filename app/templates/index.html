@@ -5475,17 +5475,13 @@
                       </div>
                       <div class="field">
                         <div class="label">Start Time</div>
-                        <select id="timesheetStartTime"
-                          onchange="updateTimesheetDurationPreview()">
-                          <option value="">Select start</option>
-                        </select>
+                        <input type="time" id="timesheetStartTime" step="600"
+                          oninput="updateTimesheetDurationPreview()" />
                       </div>
                       <div class="field">
                         <div class="label">End Time</div>
-                        <select id="timesheetEndTime"
-                          onchange="updateTimesheetDurationPreview()">
-                          <option value="">Select end</option>
-                        </select>
+                        <input type="time" id="timesheetEndTime" step="600"
+                          oninput="updateTimesheetDurationPreview()" />
                       </div>
                       <div class="field">
                         <div class="label">Duration</div>
@@ -5572,7 +5568,7 @@
                           onclick="loadTimesheetReports()">Refresh Reports</button>
                         <button class="btn primary" type="button"
                           title="Exports all submitted staff reports for the To date"
-                          onclick="exportTimesheetDailyReport()">Export Daily CSV</button>
+                          onclick="exportTimesheetDailyReport()">Export Daily PDF</button>
                       </div>
                     </div>
                     <div class="timesheet-report-list" id="timesheetReportList">

@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-import csv
-import io
 import os
 from datetime import date
+from io import BytesIO
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from pypdf import PdfReader
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -597,7 +597,7 @@ def test_only_administrator_can_delete_a_full_report(db, users, api_client):
     assert db.get(TimesheetEntry, entry_id) is None
 
 
-def test_director_can_export_all_submitted_staff_for_one_day(
+def test_director_can_export_all_submitted_staff_to_daily_pdf(
     users,
     api_client,
 ):
@@ -635,23 +635,20 @@ def test_director_can_export_all_submitted_staff_for_one_day(
     )
 
     assert exported.status_code == 200
+    assert exported.headers["content-type"] == "application/pdf"
     assert exported.headers["content-disposition"] == (
-        f'attachment; filename="timesheet-report-{WORK_DATE.isoformat()}.csv"'
+        f'attachment; filename="timesheet-report-{WORK_DATE.isoformat()}.pdf"'
     )
-    rows = list(
-        csv.DictReader(
-            io.StringIO(exported.content.decode("utf-8-sig"))
-        )
-    )
-    assert len(rows) == 2
-    assert {row["Staff Member"] for row in rows} == {
-        users["staff"].name,
-        users["other_staff"].name,
-    }
-    assert {row["Approval Status"] for row in rows} == {"SUBMITTED"}
-    assert {row["Duration (Minutes)"] for row in rows} == {"60", "70"}
-    assert "'=SUM(1,1)" in {row["Task"] for row in rows}
-    assert draft["entry"]["task"] not in {row["Task"] for row in rows}
+    assert exported.content.startswith(b"%PDF")
+    reader = PdfReader(BytesIO(exported.content))
+    pdf_text = "\n".join(page.extract_text() or "" for page in reader.pages)
+    assert "Daily Timesheet Report" in pdf_text
+    assert users["staff"].name in pdf_text
+    assert users["other_staff"].name in pdf_text
+    assert "=SUM(1,1)" in pdf_text
+    assert "Prepare advertising copy" in pdf_text
+    assert "1h 10m" in pdf_text
+    assert draft["entry"]["task"] not in pdf_text
 
     context["user"] = users["manager"]
     denied = client.get(
