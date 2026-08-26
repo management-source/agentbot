@@ -1442,10 +1442,138 @@ function timesheetTimeValue(value) {
     return String(value || "").slice(0, 5);
 }
 
-function timesheetUsesTenMinuteStep(value) {
-    const match = /^(\d{2}):(\d{2})$/.exec(String(value || ""));
-    return Boolean(match && Number(match[2]) % 10 === 0);
+function timesheetPickerParts(value) {
+    const match = /^(\d{2}):(\d{2})$/.exec(timesheetTimeValue(value));
+    let hours24;
+    let minutes;
+    if (match) {
+        hours24 = Math.min(23, Math.max(0, Number(match[1])));
+        minutes = Math.min(50, Math.floor(Math.max(0, Number(match[2])) / 10) * 10);
+    } else {
+        const now = new Date();
+        hours24 = now.getHours();
+        minutes = Math.floor(now.getMinutes() / 10) * 10;
+    }
+    return {
+        hour: String(hours24 % 12 || 12).padStart(2, "0"),
+        minute: String(minutes).padStart(2, "0"),
+        period: hours24 >= 12 ? "PM" : "AM",
+    };
 }
+
+function timesheetPickerValue(parts) {
+    let hours = Number(parts.hour) % 12;
+    if (parts.period === "PM") hours += 12;
+    return `${String(hours).padStart(2, "0")}:${parts.minute}`;
+}
+
+function formatTimesheetClock(value, placeholder = "Select time") {
+    const match = /^(\d{2}):(\d{2})$/.exec(timesheetTimeValue(value));
+    if (!match) return placeholder;
+    const hours24 = Number(match[1]);
+    const period = hours24 >= 12 ? "PM" : "AM";
+    return `${String(hours24 % 12 || 12).padStart(2, "0")}:${match[2]} ${period}`;
+}
+
+function syncTimesheetTimePicker(input) {
+    if (!input) return;
+    const picker = input.closest(".timesheet-time-picker");
+    if (!picker) return;
+    const label = picker.querySelector(".timesheet-time-trigger-value");
+    if (label) label.textContent = formatTimesheetClock(input.value, input.dataset.placeholder || "Select time");
+    const selected = timesheetPickerParts(input.value);
+    picker.querySelectorAll(".timesheet-time-option").forEach((option) => {
+        option.classList.toggle("active", option.dataset.value === selected[option.dataset.part]);
+    });
+}
+
+function closeTimesheetTimePickers(except = null) {
+    document.querySelectorAll(".timesheet-time-picker.open").forEach((picker) => {
+        if (picker === except) return;
+        picker.classList.remove("open");
+        picker.querySelector(".timesheet-time-popup")?.setAttribute("hidden", "");
+        picker.querySelector(".timesheet-time-trigger")?.setAttribute("aria-expanded", "false");
+    });
+}
+
+function initialiseTimesheetTimePickers(root = document) {
+    root.querySelectorAll("input[data-timesheet-ten-minute]").forEach((input) => {
+        if (input.dataset.timesheetPickerReady === "true") {
+            syncTimesheetTimePicker(input);
+            return;
+        }
+        input.dataset.timesheetPickerReady = "true";
+        const placeholder = input.dataset.placeholder || "Select time";
+        const picker = document.createElement("div");
+        picker.className = "timesheet-time-picker";
+        input.parentNode.insertBefore(picker, input);
+        picker.appendChild(input);
+        input.type = "hidden";
+
+        const trigger = document.createElement("button");
+        trigger.type = "button";
+        trigger.className = "timesheet-time-trigger";
+        trigger.setAttribute("aria-haspopup", "dialog");
+        trigger.setAttribute("aria-expanded", "false");
+        trigger.innerHTML = `<span class="timesheet-time-trigger-value"></span><span class="timesheet-time-chevron" aria-hidden="true">&#9662;</span>`;
+
+        const popup = document.createElement("div");
+        popup.className = "timesheet-time-popup";
+        popup.setAttribute("hidden", "");
+        popup.setAttribute("role", "dialog");
+        popup.setAttribute("aria-label", placeholder);
+        const groups = [
+            ["hour", ["12", "01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11"]],
+            ["minute", ["00", "10", "20", "30", "40", "50"]],
+            ["period", ["AM", "PM"]],
+        ];
+        popup.innerHTML = groups.map(([part, values]) => (
+            `<div class="timesheet-time-column" data-time-column="${part}">${values.map((value) => (
+                `<button class="timesheet-time-option" type="button" data-part="${part}" data-value="${value}">${value}</button>`
+            )).join("")}</div>`
+        )).join("");
+
+        trigger.addEventListener("click", () => {
+            if (trigger.disabled) return;
+            const opening = !picker.classList.contains("open");
+            closeTimesheetTimePickers(opening ? picker : null);
+            picker.classList.toggle("open", opening);
+            popup.toggleAttribute("hidden", !opening);
+            trigger.setAttribute("aria-expanded", opening ? "true" : "false");
+            if (opening) {
+                syncTimesheetTimePicker(input);
+                requestAnimationFrame(() => {
+                    popup.querySelectorAll(".timesheet-time-option.active").forEach((option) => (
+                        option.scrollIntoView({ block: "nearest" })
+                    ));
+                });
+            }
+        });
+        popup.addEventListener("click", (event) => {
+            const option = event.target.closest(".timesheet-time-option");
+            if (!option) return;
+            const parts = timesheetPickerParts(input.value);
+            parts[option.dataset.part] = option.dataset.value;
+            input.value = timesheetPickerValue(parts);
+            syncTimesheetTimePicker(input);
+            if (input.dataset.timesheetEntryId) {
+                updateTimesheetRowDuration(Number(input.dataset.timesheetEntryId));
+            } else {
+                updateTimesheetDurationPreview();
+            }
+        });
+        picker.appendChild(trigger);
+        picker.appendChild(popup);
+        syncTimesheetTimePicker(input);
+    });
+}
+
+document.addEventListener("click", (event) => {
+    if (!event.target.closest(".timesheet-time-picker")) closeTimesheetTimePickers();
+});
+document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeTimesheetTimePickers();
+});
 
 function timesheetMinutesBetween(start, end) {
     const parse = (value) => {
@@ -1525,6 +1653,7 @@ function initialiseTimesheetView() {
     const toInput = document.getElementById("timesheetReportTo");
     if (fromInput && !fromInput.value) fromInput.value = timesheetDateToInput(from);
     if (toInput && !toInput.value) toInput.value = timesheetDateToInput(today);
+    initialiseTimesheetTimePickers();
     populateTimesheetStaffFilter();
     updateTimesheetDurationPreview();
 }
@@ -1617,11 +1746,11 @@ function renderTimesheetEntries(report, workDate) {
                 <div class="timesheet-entry-cell"><span class="timesheet-mobile-label">Date</span>${escapeHtml(timesheetWorkDateLabel(workDate))}</div>
                 <div class="timesheet-entry-cell">
                     <span class="timesheet-mobile-label">Start</span>
-                    <input type="time" step="600" data-timesheet-start="${entry.id}" value="${escapeHtml(start)}" oninput="updateTimesheetRowDuration(${entry.id})" />
+                    <input type="time" step="600" data-timesheet-ten-minute data-timesheet-entry-id="${entry.id}" data-placeholder="Start time" data-timesheet-start="${entry.id}" value="${escapeHtml(start)}" />
                 </div>
                 <div class="timesheet-entry-cell">
                     <span class="timesheet-mobile-label">End</span>
-                    <input type="time" step="600" data-timesheet-end="${entry.id}" value="${escapeHtml(end)}" oninput="updateTimesheetRowDuration(${entry.id})" />
+                    <input type="time" step="600" data-timesheet-ten-minute data-timesheet-entry-id="${entry.id}" data-placeholder="End time" data-timesheet-end="${entry.id}" value="${escapeHtml(end)}" />
                 </div>
                 <div class="timesheet-entry-cell">
                     <span class="timesheet-mobile-label">Duration</span>
@@ -1642,6 +1771,7 @@ function renderTimesheetEntries(report, workDate) {
             </article>
         `;
     }).join("");
+    initialiseTimesheetTimePickers(list);
 }
 
 function renderTimesheetDay(report, workDate) {
@@ -1672,6 +1802,8 @@ function renderTimesheetDay(report, workDate) {
     ["timesheetStartTime", "timesheetEndTime", "timesheetTask", "timesheetTaskStatus"].forEach((id) => {
         const element = document.getElementById(id);
         if (element) element.disabled = !editable;
+        const pickerTrigger = element?.closest(".timesheet-time-picker")?.querySelector(".timesheet-time-trigger");
+        if (pickerTrigger) pickerTrigger.disabled = !editable;
     });
     const addButton = document.getElementById("timesheetAddButton");
     if (addButton) addButton.disabled = !editable;
@@ -1731,10 +1863,6 @@ async function addTimesheetEntry() {
         setTimesheetMessage("Date, start time, end time, and task are required.", "error");
         return;
     }
-    if (!timesheetUsesTenMinuteStep(startTime) || !timesheetUsesTenMinuteStep(endTime)) {
-        setTimesheetMessage("Start and end times must use 10-minute intervals.", "error");
-        return;
-    }
     if (timesheetMinutesBetween(startTime, endTime) === null) {
         setTimesheetMessage("End time must be later than start time.", "error");
         return;
@@ -1760,6 +1888,8 @@ async function addTimesheetEntry() {
         if (taskInput) taskInput.value = "";
         if (startInput) startInput.value = "";
         if (endInput) endInput.value = "";
+        syncTimesheetTimePicker(startInput);
+        syncTimesheetTimePicker(endInput);
         updateTimesheetDurationPreview();
         setTimesheetMessage("Task added to the daily report.", "success");
         await loadTimesheetDay();
@@ -1777,10 +1907,6 @@ async function saveTimesheetEntry(entryId) {
     const status = document.querySelector(`[data-timesheet-status="${entryId}"]`)?.value || "COMPLETED";
     if (!task || timesheetMinutesBetween(startTime, endTime) === null) {
         setTimesheetMessage("Enter a task and make sure the end time is later than the start time.", "error");
-        return;
-    }
-    if (!timesheetUsesTenMinuteStep(startTime) || !timesheetUsesTenMinuteStep(endTime)) {
-        setTimesheetMessage("Start and end times must use 10-minute intervals.", "error");
         return;
     }
     try {

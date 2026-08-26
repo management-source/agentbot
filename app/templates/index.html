@@ -3656,6 +3656,33 @@
       outline:none;
     }
     .timesheet-entry-form input[readonly]{background:#eef2f6;color:#475467;font-weight:900}
+    .timesheet-time-picker{position:relative;width:100%}
+    .timesheet-time-trigger{
+      width:100%;min-height:44px;display:flex;align-items:center;justify-content:space-between;gap:8px;
+      padding:10px 11px;border:1px solid #cfdbea;border-radius:12px;background:#fff;color:#101828;
+      font:inherit;text-align:left;cursor:pointer;
+    }
+    .timesheet-time-trigger:focus,.timesheet-time-picker.open .timesheet-time-trigger{
+      border-color:#c9a246;box-shadow:0 0 0 4px rgba(201,162,70,.12);outline:none;
+    }
+    .timesheet-time-trigger:disabled{background:#eef2f6;color:#98a2b3;cursor:not-allowed}
+    .timesheet-time-chevron{color:#667085;font-size:12px;transition:transform .16s ease}
+    .timesheet-time-picker.open .timesheet-time-chevron{transform:rotate(180deg)}
+    .timesheet-time-popup{
+      position:absolute;z-index:80;top:calc(100% + 5px);left:0;
+      width:min(196px,calc(100vw - 32px));display:grid;grid-template-columns:repeat(3,minmax(0,1fr));
+      border:1px solid #b9c4d2;border-radius:2px;background:#fff;
+      box-shadow:0 12px 28px rgba(15,23,42,.18);
+    }
+    .timesheet-time-popup[hidden]{display:none}
+    .timesheet-time-column{max-height:250px;overflow-y:auto;padding:4px}
+    .timesheet-time-column + .timesheet-time-column{border-left:1px solid #e4e7ec}
+    .timesheet-time-option{
+      width:100%;height:36px;border:0;border-radius:0;background:#fff;color:#101828;
+      font:700 13px/1 Arial,sans-serif;text-align:center;cursor:pointer;
+    }
+    .timesheet-time-option:hover{background:#e9f2ff}
+    .timesheet-time-option.active{background:#0878e8;color:#fff}
     .timesheet-add-button{min-height:44px;white-space:nowrap}
     .timesheet-summary{
       display:grid;
@@ -3712,6 +3739,9 @@
       color:#101828;
       font:inherit;
       font-size:12px;
+    }
+    .timesheet-entry-row .timesheet-time-trigger{
+      min-height:38px;padding:8px 9px;border-color:#dbe4ef;border-radius:10px;font-size:12px;
     }
     .timesheet-entry-cell{min-width:0;color:#344054;font-size:13px}
     .timesheet-entry-cell.task{font-weight:800;overflow-wrap:anywhere}
@@ -5476,11 +5506,13 @@
                       <div class="field">
                         <div class="label">Start Time</div>
                         <input type="time" id="timesheetStartTime" step="600"
+                          data-timesheet-ten-minute data-placeholder="Start time"
                           oninput="updateTimesheetDurationPreview()" />
                       </div>
                       <div class="field">
                         <div class="label">End Time</div>
                         <input type="time" id="timesheetEndTime" step="600"
+                          data-timesheet-ten-minute data-placeholder="End time"
                           oninput="updateTimesheetDurationPreview()" />
                       </div>
                       <div class="field">
