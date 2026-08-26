@@ -1,9 +1,10 @@
-from datetime import date, datetime
+from datetime import date, datetime, time
 from enum import Enum
 
 from sqlalchemy import (
     String,
     Date,
+    Time,
     DateTime,
     Boolean,
     Integer,
@@ -12,6 +13,8 @@ from sqlalchemy import (
     Enum as SAEnum,
     Text,
     ForeignKey,
+    CheckConstraint,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, declarative_base, relationship
 
@@ -366,6 +369,70 @@ class MySpaceSnippet(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
     user = relationship("User")
+
+
+class TimesheetReport(Base):
+    """One staff member's timesheet submission for one working date."""
+
+    __tablename__ = "timesheet_reports"
+    __table_args__ = (
+        UniqueConstraint(
+            "staff_user_id",
+            "work_date",
+            name="uq_timesheet_reports_staff_work_date",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    staff_user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), index=True)
+    work_date: Mapped[date] = mapped_column(Date, index=True)
+    status: Mapped[str] = mapped_column(String, default="DRAFT", index=True)
+
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    reviewed_by_user_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("users.id"),
+        nullable=True,
+        index=True,
+    )
+    director_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+    staff = relationship("User", foreign_keys=[staff_user_id])
+    reviewed_by = relationship("User", foreign_keys=[reviewed_by_user_id])
+    entries = relationship(
+        "TimesheetEntry",
+        back_populates="report",
+        cascade="all, delete-orphan",
+        order_by="TimesheetEntry.start_time, TimesheetEntry.id",
+    )
+
+
+class TimesheetEntry(Base):
+    __tablename__ = "timesheet_entries"
+    __table_args__ = (
+        CheckConstraint("duration_minutes > 0", name="ck_timesheet_entries_positive_duration"),
+        CheckConstraint("end_time > start_time", name="ck_timesheet_entries_time_order"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    report_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("timesheet_reports.id", ondelete="CASCADE"),
+        index=True,
+    )
+    start_time: Mapped[time] = mapped_column(Time)
+    end_time: Mapped[time] = mapped_column(Time)
+    duration_minutes: Mapped[int] = mapped_column(Integer)
+    task: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String, default="COMPLETED", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+    report = relationship("TimesheetReport", back_populates="entries")
 
 
 class StaffGuide(Base):

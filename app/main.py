@@ -33,6 +33,7 @@ from app.routers import landlord_reports
 from app.routers import compliance
 from app.routers import properties
 from app.routers import my_space
+from app.routers import timesheets
 from app.routers import settings as app_settings
 from app.routers import user_auth
 from app.routers import notifications
@@ -293,6 +294,7 @@ app.include_router(landlord_reports.router)
 app.include_router(properties.router, prefix="/properties", tags=["properties"])
 app.include_router(compliance.router, prefix="/compliance", tags=["compliance"])
 app.include_router(my_space.router)
+app.include_router(timesheets.router)
 app.include_router(notifications.router)
 app.include_router(activity_log.router)
 app.include_router(maintenance.router, prefix="/maintenance", tags=["maintenance"])

@@ -3557,6 +3557,277 @@
       .myspace-guide-actions{flex-direction:row;flex-wrap:wrap}
     }
 
+    /* My Space / Timesheet */
+    .timesheet-hero{
+      background:
+        radial-gradient(circle at 84% 12%, rgba(249,231,167,.24), transparent 32%),
+        radial-gradient(circle at 8% 110%, rgba(40,111,157,.34), transparent 34%),
+        linear-gradient(135deg, #071624 0%, #17314a 56%, #8f6f1d 100%);
+    }
+    .timesheet-card-head{
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:18px;
+    }
+    .timesheet-day-controls{
+      display:flex;
+      align-items:center;
+      justify-content:flex-end;
+      gap:8px;
+      flex-wrap:wrap;
+    }
+    .timesheet-approval-badge{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      min-height:36px;
+      padding:8px 12px;
+      border-radius:999px;
+      border:1px solid #d0d5dd;
+      background:#f8fafc;
+      color:#475467;
+      font-size:12px;
+      font-weight:900;
+      letter-spacing:.02em;
+      white-space:nowrap;
+    }
+    .timesheet-approval-badge.submitted{background:#fff7e6;border-color:#f2cb7e;color:#8a5700}
+    .timesheet-approval-badge.changes-requested{background:#fff1f2;border-color:#fecdd3;color:#9f1239}
+    .timesheet-approval-badge.approved{background:#ecfdf3;border-color:#abefc6;color:#067647}
+    .timesheet-message{
+      padding:12px 14px;
+      border:1px solid #b2ddff;
+      border-radius:14px;
+      background:#eff8ff;
+      color:#175cd3;
+      font-size:13px;
+      font-weight:750;
+    }
+    .timesheet-message.error{border-color:#fecdca;background:#fef3f2;color:#b42318}
+    .timesheet-message.success{border-color:#abefc6;background:#ecfdf3;color:#067647}
+    .timesheet-entry-card,
+    .timesheet-review-panel{padding:20px}
+    .timesheet-return-note{
+      margin-top:16px;
+      padding:14px 16px;
+      border:1px solid #fecdd3;
+      border-radius:16px;
+      background:linear-gradient(135deg,#fff7f7,#fff1f2);
+      color:#881337;
+    }
+    .timesheet-return-note strong{display:block;font-size:13px}
+    .timesheet-return-note p{margin:5px 0 0;color:#9f1239;white-space:pre-wrap}
+    .timesheet-entry-form{
+      display:grid;
+      grid-template-columns:145px 125px 125px 125px minmax(240px,1fr) 170px auto;
+      align-items:end;
+      gap:10px;
+      margin-top:18px;
+      padding:14px;
+      border:1px solid #dbe4ef;
+      border-radius:18px;
+      background:
+        radial-gradient(circle at 100% 0%,rgba(201,162,70,.12),transparent 28%),
+        #f8fafc;
+    }
+    .timesheet-entry-form .field{min-width:0}
+    .timesheet-entry-form input,
+    .timesheet-entry-form select,
+    .timesheet-report-filters input,
+    .timesheet-report-filters select{
+      width:100%;
+      min-height:44px;
+      border:1px solid #cfdbea;
+      border-radius:12px;
+      background:#fff;
+      color:#101828;
+      padding:10px 11px;
+      font:inherit;
+    }
+    .timesheet-entry-form input:focus,
+    .timesheet-entry-form select:focus,
+    .timesheet-report-filters input:focus,
+    .timesheet-report-filters select:focus,
+    .timesheet-entry-row input:focus,
+    .timesheet-entry-row select:focus{
+      border-color:#c9a246;
+      box-shadow:0 0 0 4px rgba(201,162,70,.12);
+      outline:none;
+    }
+    .timesheet-entry-form input[readonly]{background:#eef2f6;color:#475467;font-weight:900}
+    .timesheet-add-button{min-height:44px;white-space:nowrap}
+    .timesheet-summary{
+      display:grid;
+      grid-template-columns:repeat(3,minmax(0,1fr));
+      gap:10px;
+      margin-top:16px;
+    }
+    .timesheet-summary > div{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      padding:12px 14px;
+      border:1px solid #dbe4ef;
+      border-radius:14px;
+      background:#fff;
+    }
+    .timesheet-summary span{color:#667085;font-size:12px;font-weight:800}
+    .timesheet-summary strong{color:#101828;font-size:15px}
+    .timesheet-list-head,
+    .timesheet-entry-row{
+      display:grid;
+      grid-template-columns:112px 92px 92px 100px minmax(210px,1fr) 160px 150px;
+      gap:9px;
+      align-items:center;
+    }
+    .timesheet-list-head{
+      margin-top:18px;
+      padding:0 12px 8px;
+      color:#667085;
+      font-size:10px;
+      font-weight:900;
+      letter-spacing:.07em;
+      text-transform:uppercase;
+    }
+    .timesheet-entry-list{display:grid;gap:9px}
+    .timesheet-entry-row{
+      padding:11px 12px;
+      border:1px solid #dbe4ef;
+      border-radius:15px;
+      background:#fff;
+      box-shadow:0 5px 14px rgba(15,23,42,.035);
+    }
+    .timesheet-entry-row.locked{background:#fbfcfe}
+    .timesheet-entry-row input,
+    .timesheet-entry-row select{
+      width:100%;
+      min-width:0;
+      min-height:38px;
+      padding:8px 9px;
+      border:1px solid #dbe4ef;
+      border-radius:10px;
+      background:#fff;
+      color:#101828;
+      font:inherit;
+      font-size:12px;
+    }
+    .timesheet-entry-cell{min-width:0;color:#344054;font-size:13px}
+    .timesheet-entry-cell.task{font-weight:800;overflow-wrap:anywhere}
+    .timesheet-entry-actions{display:flex;gap:6px;justify-content:flex-end}
+    .timesheet-entry-actions .btn{padding:7px 9px;font-size:11px}
+    .timesheet-mobile-label{display:none;color:#667085;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.06em}
+    .timesheet-submit-row{
+      display:flex;
+      align-items:center;
+      justify-content:flex-end;
+      gap:14px;
+      margin-top:18px;
+      padding-top:16px;
+      border-top:1px solid #e4e7ec;
+    }
+    .timesheet-submit-row p{margin:0 auto 0 0}
+    .timesheet-submit-row .btn{min-width:190px}
+    .timesheet-report-filters{
+      display:grid;
+      grid-template-columns:repeat(4,minmax(150px,1fr)) auto;
+      align-items:end;
+      gap:10px;
+      margin-top:18px;
+      padding:14px;
+      border:1px solid #dbe4ef;
+      border-radius:16px;
+      background:#f8fafc;
+    }
+    .timesheet-report-list{display:grid;gap:14px;margin-top:16px}
+    .timesheet-report-card{
+      overflow:hidden;
+      border:1px solid #dbe4ef;
+      border-radius:18px;
+      background:#fff;
+      box-shadow:0 8px 20px rgba(15,23,42,.05);
+    }
+    .timesheet-report-head{
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:14px;
+      padding:16px;
+      border-bottom:1px solid #e4e7ec;
+      background:linear-gradient(135deg,#fbfcfe,#f8fafc);
+    }
+    .timesheet-report-person{display:flex;align-items:center;gap:11px;min-width:0}
+    .timesheet-report-avatar{
+      width:42px;height:42px;border-radius:13px;object-fit:cover;
+      border:1px solid #dbe4ef;background:#fff;
+    }
+    .timesheet-report-person strong{display:block;color:#101828}
+    .timesheet-report-person span{display:block;margin-top:3px;color:#667085;font-size:12px}
+    .timesheet-report-meta{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+    .timesheet-report-entries{padding:8px 16px}
+    .timesheet-report-entry{
+      display:grid;
+      grid-template-columns:90px 90px 105px minmax(220px,1fr) 170px;
+      gap:10px;
+      align-items:center;
+      padding:10px 0;
+      border-bottom:1px solid #eef2f6;
+      color:#344054;
+      font-size:13px;
+    }
+    .timesheet-report-entry:last-child{border-bottom:none}
+    .timesheet-report-entry .task{font-weight:800;color:#101828;overflow-wrap:anywhere}
+    .timesheet-review-actions{
+      display:grid;
+      grid-template-columns:minmax(240px,1fr) auto auto;
+      gap:10px;
+      align-items:end;
+      padding:14px 16px;
+      border-top:1px solid #e4e7ec;
+      background:#fbfcfe;
+    }
+    .timesheet-review-actions textarea{
+      width:100%;min-height:70px;resize:vertical;padding:10px 12px;
+      border:1px solid #cfdbea;border-radius:12px;background:#fff;font:inherit;
+    }
+    .timesheet-review-actions textarea:focus{border-color:#c9a246;box-shadow:0 0 0 4px rgba(201,162,70,.12);outline:none}
+    .timesheet-review-comment{
+      margin:0 16px 14px;padding:12px 14px;border-radius:13px;
+      border:1px solid #dbe4ef;background:#f8fafc;color:#475467;font-size:13px;white-space:pre-wrap;
+    }
+    @media (max-width: 1320px){
+      .timesheet-entry-form{grid-template-columns:repeat(4,minmax(0,1fr))}
+      .timesheet-task-field{grid-column:span 2}
+      .timesheet-add-button{grid-column:span 2}
+      .timesheet-list-head{display:none}
+      .timesheet-entry-row{grid-template-columns:repeat(4,minmax(0,1fr))}
+      .timesheet-entry-cell.task{grid-column:span 2}
+      .timesheet-entry-actions{grid-column:span 2}
+      .timesheet-entry-row .timesheet-mobile-label{display:block;margin-bottom:5px}
+    }
+    @media (max-width: 980px){
+      .timesheet-report-filters{grid-template-columns:repeat(2,minmax(0,1fr))}
+      .timesheet-report-filters .btn{grid-column:1/-1}
+      .timesheet-report-entry{grid-template-columns:repeat(3,minmax(0,1fr))}
+      .timesheet-report-entry .task{grid-column:span 2}
+      .timesheet-report-entry .timesheet-mobile-label{display:block;margin-bottom:5px}
+      .timesheet-review-actions{grid-template-columns:1fr 1fr}
+      .timesheet-review-actions .field{grid-column:1/-1}
+    }
+    @media (max-width: 680px){
+      .timesheet-card-head,.timesheet-report-head,.timesheet-submit-row{align-items:stretch;flex-direction:column}
+      .timesheet-day-controls,.timesheet-report-meta{justify-content:flex-start}
+      .timesheet-entry-form,.timesheet-entry-row,.timesheet-summary,.timesheet-report-filters{grid-template-columns:1fr}
+      .timesheet-task-field,.timesheet-add-button,.timesheet-entry-cell.task,.timesheet-entry-actions{grid-column:auto}
+      .timesheet-entry-actions{justify-content:flex-start}
+      .timesheet-report-entry{grid-template-columns:1fr 1fr}
+      .timesheet-report-entry .task{grid-column:1/-1}
+      .timesheet-review-actions{grid-template-columns:1fr}
+      .timesheet-review-actions .field{grid-column:auto}
+      .timesheet-submit-row .btn{width:100%;min-width:0}
+    }
+
     /* Modal */
     .modal-backdrop{
       position:fixed; inset:0;
@@ -4452,13 +4723,28 @@
                   width="7" height="9" rx="1"></rect><rect x="4" y="13"
                   width="7" height="7" rx="1"></rect></svg></span><span
               class="nav-label">Portal Hub</span></a>
-          <a id="navMySpace" href="javascript:void(0)"
-            onclick="switchDashboardTab('myspace')" title="My Space"><span
-              class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path
-                  d="M12 3 4 8v11h16V8z"></path><path
-                  d="M9 21v-7h6v7"></path><path
-                  d="M9 9h6"></path></svg></span><span class="nav-label">My
-              Space</span></a>
+          <div class="side-nav-group subnav-collapsed" id="mySpaceNavGroup"
+            data-side-subnav-group="myspace">
+            <div class="side-nav-row">
+              <a id="navMySpace" href="javascript:void(0)"
+                onclick="switchMySpaceView('workspace')" title="My Space"><span
+                  class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path
+                      d="M12 3 4 8v11h16V8z"></path><path
+                      d="M9 21v-7h6v7"></path><path
+                      d="M9 9h6"></path></svg></span><span class="nav-label">My
+                  Space</span></a>
+              <button class="side-subnav-toggle" id="myspaceSubnavToggle"
+                type="button" onclick="toggleSideSubnav('myspace')"
+                aria-label="Toggle My Space menu" aria-expanded="false">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path
+                    d="m6 9 6 6 6-6"></path></svg>
+              </button>
+            </div>
+            <div class="side-subnav" id="mySpaceSideSubnav">
+              <button type="button" data-myspace-view="timesheet"
+                onclick="switchMySpaceView('timesheet')">Timesheet</button>
+            </div>
+          </div>
           <a id="navInbox" href="javascript:void(0)"
             onclick="switchDashboardTab('inbox')" title="Email Manager"><span
               class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect
@@ -4782,7 +5068,7 @@
                 </div>
                 <div class="hub-grid">
                   <div class="hub-tile" data-page-tile="myspace"
-                    onclick="switchDashboardTab('myspace')">
+                    onclick="switchMySpaceView('workspace')">
                     <div class="tile-mark"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4 8v12h16V8z"></path><path d="M9 21v-7h6v7"></path><path d="M9 9h6"></path></svg></div>
                     <h3>My Space</h3>
                     <p>Your private planner for follow-ups, links, snippets,
@@ -4931,7 +5217,7 @@
               </div>
 
               <div id="mySpacePanel" class="hidden">
-                <section class="myspace-workspace">
+                <section class="myspace-workspace" id="mySpaceWorkspaceView">
                   <div class="myspace-hero page-banner">
                     <div class="page-banner-kicker">Private Workspace</div>
                     <h2>My Space</h2>
@@ -5135,6 +5421,151 @@
                     </div>
                     <div id="mySpaceStaffGuides"
                       class="myspace-guide-list"></div>
+                  </div>
+                </section>
+
+                <section class="myspace-workspace hidden" id="mySpaceTimesheetView">
+                  <div class="myspace-hero page-banner timesheet-hero">
+                    <div class="page-banner-kicker">My Space / Timesheet</div>
+                    <h2>Timesheet</h2>
+                    <p>Record the work completed each day, submit the daily report
+                      for approval, and keep director feedback in one place.</p>
+                    <div class="page-banner-actions">
+                      <span class="chip">Daily task log</span>
+                      <span class="chip">Automatic duration</span>
+                      <span class="chip">Director approval</span>
+                    </div>
+                  </div>
+
+                  <div class="timesheet-message hidden" id="timesheetMessage"
+                    role="status" aria-live="polite"></div>
+
+                  <div class="myspace-card wide timesheet-entry-card">
+                    <div class="timesheet-card-head">
+                      <div>
+                        <h3>My Daily Report</h3>
+                        <p>Add each task against the day it was completed. You can
+                          edit the report until it is sent for approval.</p>
+                      </div>
+                      <div class="timesheet-day-controls">
+                        <button class="btn ghost" type="button"
+                          onclick="shiftTimesheetDay(-1)" aria-label="Previous day">&#8592;</button>
+                        <button class="btn" type="button"
+                          onclick="selectTodayTimesheet()">Today</button>
+                        <button class="btn ghost" type="button"
+                          onclick="shiftTimesheetDay(1)" aria-label="Next day">&#8594;</button>
+                        <span class="timesheet-approval-badge draft"
+                          id="timesheetApprovalBadge">Draft</span>
+                      </div>
+                    </div>
+
+                    <div class="timesheet-return-note hidden" id="timesheetReturnNote">
+                      <strong>Director comment</strong>
+                      <p id="timesheetReturnComment"></p>
+                    </div>
+
+                    <div class="timesheet-entry-form" id="timesheetEntryForm">
+                      <div class="field">
+                        <div class="label">Date</div>
+                        <input type="date" id="timesheetWorkDate"
+                          onchange="loadTimesheetDay()" />
+                      </div>
+                      <div class="field">
+                        <div class="label">Start Time</div>
+                        <input type="time" id="timesheetStartTime"
+                          oninput="updateTimesheetDurationPreview()" />
+                      </div>
+                      <div class="field">
+                        <div class="label">End Time</div>
+                        <input type="time" id="timesheetEndTime"
+                          oninput="updateTimesheetDurationPreview()" />
+                      </div>
+                      <div class="field">
+                        <div class="label">Duration</div>
+                        <input type="text" id="timesheetDuration" value="—"
+                          readonly aria-label="Automatically calculated duration" />
+                      </div>
+                      <div class="field timesheet-task-field">
+                        <div class="label">Task</div>
+                        <input type="text" id="timesheetTask"
+                          placeholder="Describe the work completed" />
+                      </div>
+                      <div class="field">
+                        <div class="label">Status</div>
+                        <select id="timesheetTaskStatus">
+                          <option value="COMPLETED">Completed</option>
+                          <option value="IN_PROGRESS">In Progress</option>
+                          <option value="FOLLOW_UP_REQUIRED">Follow-up Required</option>
+                        </select>
+                      </div>
+                      <button class="btn primary timesheet-add-button" type="button"
+                        id="timesheetAddButton" onclick="addTimesheetEntry()">Add Task</button>
+                    </div>
+
+                    <div class="timesheet-summary" id="timesheetSummary">
+                      <div><span>Tasks</span><strong id="timesheetTaskCount">0</strong></div>
+                      <div><span>Total Time</span><strong id="timesheetTotalDuration">0m</strong></div>
+                      <div><span>Report Date</span><strong id="timesheetReportDate">—</strong></div>
+                    </div>
+
+                    <div class="timesheet-list-head" aria-hidden="true">
+                      <span>Date</span><span>Start</span><span>End</span><span>Duration</span>
+                      <span>Task</span><span>Status</span><span>Actions</span>
+                    </div>
+                    <div class="timesheet-entry-list" id="timesheetEntryList">
+                      <div class="myspace-empty">Choose a date to load your timesheet.</div>
+                    </div>
+
+                    <div class="timesheet-submit-row">
+                      <p class="small muted" id="timesheetSubmitHint">Add at least one task before sending the report.</p>
+                      <button class="btn primary" type="button"
+                        id="timesheetSubmitButton" onclick="submitTimesheetForApproval()"
+                        disabled>Send for Approval</button>
+                    </div>
+                  </div>
+
+                  <div class="myspace-card wide timesheet-review-panel hidden"
+                    id="timesheetReviewPanel">
+                    <div class="timesheet-card-head">
+                      <div>
+                        <div class="page-banner-kicker">Director View</div>
+                        <h3>Timesheet Reports</h3>
+                        <p>Review submitted daily reports for each staff member,
+                          approve them, or return them with a comment.</p>
+                      </div>
+                      <span class="user-chip warn" id="timesheetPendingCount">0 awaiting approval</span>
+                    </div>
+
+                    <div class="timesheet-report-filters">
+                      <div class="field">
+                        <div class="label">From</div>
+                        <input type="date" id="timesheetReportFrom" />
+                      </div>
+                      <div class="field">
+                        <div class="label">To</div>
+                        <input type="date" id="timesheetReportTo" />
+                      </div>
+                      <div class="field">
+                        <div class="label">Staff Member</div>
+                        <select id="timesheetReportStaff">
+                          <option value="">All Staff</option>
+                        </select>
+                      </div>
+                      <div class="field">
+                        <div class="label">Approval Status</div>
+                        <select id="timesheetReportStatus">
+                          <option value="">All Submitted Reports</option>
+                          <option value="SUBMITTED">Awaiting Approval</option>
+                          <option value="CHANGES_REQUESTED">Sent Back</option>
+                          <option value="APPROVED">Approved</option>
+                        </select>
+                      </div>
+                      <button class="btn" type="button"
+                        onclick="loadTimesheetReports()">Refresh Reports</button>
+                    </div>
+                    <div class="timesheet-report-list" id="timesheetReportList">
+                      <div class="myspace-empty">Submitted staff reports will appear here.</div>
+                    </div>
                   </div>
                 </section>
               </div>
@@ -5816,6 +6247,7 @@
                     </aside>
                   </div>
                 </section>
+
               </div>
 
               <div id="rentPanel" class="hidden">
@@ -7576,7 +8008,7 @@
       <div class="bindu-disclaimer">BINDU can only read accessible portal records. Verify important details at the source.</div>
     </aside>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="anonymous"></script>
-    <script src="/static/app.js?v=31"></script>
+    <script src="/static/app.js?v=32"></script>
 
     <script>
   // Wire segmented status buttons to existing tab logic

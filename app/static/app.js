@@ -597,6 +597,13 @@ let mySpaceSaveTimer = null;
 let mySpaceQuickLinksCache = [];
 let mySpaceSnippetsCache = [];
 let mySpaceGuidesCache = [];
+let mySpaceViewMode = "workspace";
+let timesheetDayCache = null;
+let timesheetLoadedDate = "";
+let timesheetCanReview = false;
+let timesheetReportsLoadedOnce = false;
+let timesheetStaffCache = [];
+let timesheetStaffLoadedOnce = false;
 let pageRegistry = [];
 let rolePagePermissions = {};
 let allowedPages = new Set(["portal"]);
@@ -1375,6 +1382,579 @@ async function deleteUser(userId) {
     await renderUsersList();
 }
 
+const TIMESHEET_TASK_STATUSES = [
+    { value: "COMPLETED", label: "Completed" },
+    { value: "IN_PROGRESS", label: "In Progress" },
+    { value: "FOLLOW_UP_REQUIRED", label: "Follow-up Required" },
+];
+
+function switchMySpaceView(view) {
+    mySpaceViewMode = view === "timesheet" ? "timesheet" : "workspace";
+    if (mySpaceViewMode === "timesheet") {
+        localStorage.setItem(sideSubnavStorageKey("myspace"), "0");
+    }
+    switchDashboardTab("myspace");
+    applySideSubnavState();
+}
+
+function applyMySpaceView() {
+    const isTimesheet = mySpaceViewMode === "timesheet";
+    document.getElementById("mySpaceWorkspaceView")?.classList.toggle("hidden", isTimesheet);
+    document.getElementById("mySpaceTimesheetView")?.classList.toggle("hidden", !isTimesheet);
+    document.querySelectorAll("[data-myspace-view]").forEach((button) => {
+        button.classList.toggle("active", currentDashboardTab === "myspace" && button.dataset.myspaceView === mySpaceViewMode);
+    });
+    if (currentDashboardTab !== "myspace") return;
+    const title = document.getElementById("topbarTitle");
+    const subtitle = document.getElementById("topbarSubtitle");
+    if (isTimesheet) {
+        if (title) title.textContent = "Timesheet";
+        if (subtitle) subtitle.textContent = "Log daily work and manage staff timesheet approvals.";
+    } else {
+        if (title) title.textContent = "My Space";
+        if (subtitle) subtitle.textContent = "Your private workspace for planning, follow-ups, snippets, notes, and staff guides.";
+    }
+}
+
+function timesheetDateToInput(value) {
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function timesheetWorkDateLabel(value) {
+    const parts = String(value || "").split("-").map(Number);
+    if (parts.length !== 3 || parts.some((part) => !Number.isFinite(part))) return String(value || "—");
+    try {
+        return new Date(parts[0], parts[1] - 1, parts[2]).toLocaleDateString(undefined, {
+            weekday: "short",
+            day: "numeric",
+            month: "short",
+            year: "numeric",
+        });
+    } catch {
+        return String(value || "—");
+    }
+}
+
+function timesheetTimeValue(value) {
+    return String(value || "").slice(0, 5);
+}
+
+function timesheetMinutesBetween(start, end) {
+    const parse = (value) => {
+        const match = /^(\d{2}):(\d{2})$/.exec(String(value || ""));
+        if (!match) return null;
+        const hours = Number(match[1]);
+        const minutes = Number(match[2]);
+        if (hours > 23 || minutes > 59) return null;
+        return hours * 60 + minutes;
+    };
+    const from = parse(start);
+    const to = parse(end);
+    if (from === null || to === null || to <= from) return null;
+    return to - from;
+}
+
+function formatTimesheetDuration(minutes) {
+    const total = Math.max(0, Number(minutes) || 0);
+    const hours = Math.floor(total / 60);
+    const remainder = total % 60;
+    if (hours && remainder) return `${hours}h ${remainder}m`;
+    if (hours) return `${hours}h`;
+    return `${remainder}m`;
+}
+
+function timesheetTaskStatusLabel(status) {
+    return TIMESHEET_TASK_STATUSES.find((item) => item.value === status)?.label || String(status || "Completed");
+}
+
+function timesheetTaskStatusOptions(selected) {
+    return TIMESHEET_TASK_STATUSES.map((item) => (
+        `<option value="${item.value}" ${item.value === selected ? "selected" : ""}>${escapeHtml(item.label)}</option>`
+    )).join("");
+}
+
+function timesheetApprovalLabel(status) {
+    return {
+        DRAFT: "Draft",
+        SUBMITTED: "Awaiting Approval",
+        CHANGES_REQUESTED: "Changes Requested",
+        APPROVED: "Approved",
+    }[String(status || "DRAFT").toUpperCase()] || String(status || "Draft");
+}
+
+function timesheetApprovalClass(status) {
+    return {
+        DRAFT: "draft",
+        SUBMITTED: "submitted",
+        CHANGES_REQUESTED: "changes-requested",
+        APPROVED: "approved",
+    }[String(status || "DRAFT").toUpperCase()] || "draft";
+}
+
+function timesheetCanEdit(report) {
+    if (!report) return true;
+    if (typeof report.can_edit === "boolean") return report.can_edit;
+    return ["DRAFT", "CHANGES_REQUESTED"].includes(String(report.status || "DRAFT").toUpperCase());
+}
+
+function setTimesheetMessage(message = "", type = "") {
+    const element = document.getElementById("timesheetMessage");
+    if (!element) return;
+    element.textContent = message;
+    element.classList.toggle("hidden", !message);
+    element.classList.toggle("error", type === "error");
+    element.classList.toggle("success", type === "success");
+}
+
+function initialiseTimesheetView() {
+    const dateInput = document.getElementById("timesheetWorkDate");
+    if (dateInput && !dateInput.value) dateInput.value = timesheetDateToInput(new Date());
+
+    const today = new Date();
+    const from = new Date(today);
+    from.setDate(from.getDate() - 13);
+    const fromInput = document.getElementById("timesheetReportFrom");
+    const toInput = document.getElementById("timesheetReportTo");
+    if (fromInput && !fromInput.value) fromInput.value = timesheetDateToInput(from);
+    if (toInput && !toInput.value) toInput.value = timesheetDateToInput(today);
+    populateTimesheetStaffFilter();
+    updateTimesheetDurationPreview();
+}
+
+function populateTimesheetStaffFilter() {
+    const select = document.getElementById("timesheetReportStaff");
+    if (!select) return;
+    const selected = select.value;
+    const source = timesheetStaffCache.length ? timesheetStaffCache : (Array.isArray(usersCache) ? usersCache : []);
+    const staff = source
+        .filter((user) => user && user.is_active !== false)
+        .sort((a, b) => String(a.name || a.email || "").localeCompare(String(b.name || b.email || "")));
+    select.innerHTML = `<option value="">All Staff</option>` + staff.map((user) => (
+        `<option value="${Number(user.id)}">${escapeHtml(user.name || user.email || (`Staff ${user.id}`))}</option>`
+    )).join("");
+    if (staff.some((user) => String(user.id) === selected)) select.value = selected;
+}
+
+async function loadTimesheetStaffDirectory() {
+    if (timesheetStaffLoadedOnce) return;
+    if (Array.isArray(usersCache) && usersCache.length) {
+        timesheetStaffCache = usersCache.filter((user) => user && user.is_active !== false);
+        timesheetStaffLoadedOnce = true;
+        populateTimesheetStaffFilter();
+        return;
+    }
+    try {
+        const response = await apiFetch("/user-auth/team");
+        if (!response.ok) return;
+        const data = await response.json();
+        timesheetStaffCache = Array.isArray(data) ? data : [];
+        timesheetStaffLoadedOnce = true;
+        populateTimesheetStaffFilter();
+    } catch {
+        // The report remains usable with the All Staff filter.
+    }
+}
+
+function updateTimesheetDurationPreview() {
+    const start = document.getElementById("timesheetStartTime")?.value || "";
+    const end = document.getElementById("timesheetEndTime")?.value || "";
+    const output = document.getElementById("timesheetDuration");
+    if (!output) return;
+    if (!start || !end) {
+        output.value = "—";
+        return;
+    }
+    const minutes = timesheetMinutesBetween(start, end);
+    output.value = minutes === null ? "End must be later" : formatTimesheetDuration(minutes);
+}
+
+function updateTimesheetRowDuration(entryId) {
+    const start = document.querySelector(`[data-timesheet-start="${entryId}"]`)?.value || "";
+    const end = document.querySelector(`[data-timesheet-end="${entryId}"]`)?.value || "";
+    const output = document.querySelector(`[data-timesheet-duration="${entryId}"]`);
+    if (!output) return;
+    const minutes = timesheetMinutesBetween(start, end);
+    output.textContent = minutes === null ? "Check times" : formatTimesheetDuration(minutes);
+}
+
+function renderTimesheetEntries(report, workDate) {
+    const list = document.getElementById("timesheetEntryList");
+    if (!list) return;
+    const entries = Array.isArray(report?.entries) ? report.entries : [];
+    const editable = timesheetCanEdit(report);
+    if (!entries.length) {
+        list.innerHTML = `<div class="myspace-empty">No tasks recorded for ${escapeHtml(timesheetWorkDateLabel(workDate))}.</div>`;
+        return;
+    }
+
+    list.innerHTML = entries.map((entry) => {
+        const status = String(entry.status || entry.task_status || "COMPLETED").toUpperCase();
+        const start = timesheetTimeValue(entry.start_time);
+        const end = timesheetTimeValue(entry.end_time);
+        if (!editable) {
+            return `
+                <article class="timesheet-entry-row locked">
+                    <div class="timesheet-entry-cell"><span class="timesheet-mobile-label">Date</span>${escapeHtml(timesheetWorkDateLabel(workDate))}</div>
+                    <div class="timesheet-entry-cell"><span class="timesheet-mobile-label">Start</span>${escapeHtml(start)}</div>
+                    <div class="timesheet-entry-cell"><span class="timesheet-mobile-label">End</span>${escapeHtml(end)}</div>
+                    <div class="timesheet-entry-cell"><span class="timesheet-mobile-label">Duration</span><strong>${escapeHtml(formatTimesheetDuration(entry.duration_minutes))}</strong></div>
+                    <div class="timesheet-entry-cell task"><span class="timesheet-mobile-label">Task</span>${escapeHtml(entry.task || "")}</div>
+                    <div class="timesheet-entry-cell"><span class="timesheet-mobile-label">Status</span><span class="user-chip">${escapeHtml(timesheetTaskStatusLabel(status))}</span></div>
+                    <div class="timesheet-entry-cell"><span class="timesheet-mobile-label">Actions</span><span class="small muted">Locked</span></div>
+                </article>
+            `;
+        }
+        return `
+            <article class="timesheet-entry-row">
+                <div class="timesheet-entry-cell"><span class="timesheet-mobile-label">Date</span>${escapeHtml(timesheetWorkDateLabel(workDate))}</div>
+                <div class="timesheet-entry-cell">
+                    <span class="timesheet-mobile-label">Start</span>
+                    <input type="time" data-timesheet-start="${entry.id}" value="${escapeHtml(start)}" oninput="updateTimesheetRowDuration(${entry.id})" />
+                </div>
+                <div class="timesheet-entry-cell">
+                    <span class="timesheet-mobile-label">End</span>
+                    <input type="time" data-timesheet-end="${entry.id}" value="${escapeHtml(end)}" oninput="updateTimesheetRowDuration(${entry.id})" />
+                </div>
+                <div class="timesheet-entry-cell">
+                    <span class="timesheet-mobile-label">Duration</span>
+                    <strong data-timesheet-duration="${entry.id}">${escapeHtml(formatTimesheetDuration(entry.duration_minutes))}</strong>
+                </div>
+                <div class="timesheet-entry-cell task">
+                    <span class="timesheet-mobile-label">Task</span>
+                    <input type="text" data-timesheet-task="${entry.id}" value="${escapeHtml(entry.task || "")}" />
+                </div>
+                <div class="timesheet-entry-cell">
+                    <span class="timesheet-mobile-label">Status</span>
+                    <select data-timesheet-status="${entry.id}">${timesheetTaskStatusOptions(status)}</select>
+                </div>
+                <div class="timesheet-entry-actions">
+                    <button class="btn" type="button" onclick="saveTimesheetEntry(${entry.id})">Save</button>
+                    <button class="btn danger" type="button" onclick="deleteTimesheetEntry(${entry.id})">Delete</button>
+                </div>
+            </article>
+        `;
+    }).join("");
+}
+
+function renderTimesheetDay(report, workDate) {
+    const status = String(report?.status || "DRAFT").toUpperCase();
+    const entries = Array.isArray(report?.entries) ? report.entries : [];
+    const editable = timesheetCanEdit(report);
+    const totalMinutes = Number(report?.total_duration_minutes ?? report?.total_minutes ?? entries.reduce((sum, entry) => sum + (Number(entry.duration_minutes) || 0), 0));
+    const badge = document.getElementById("timesheetApprovalBadge");
+    if (badge) {
+        badge.textContent = timesheetApprovalLabel(status);
+        badge.className = `timesheet-approval-badge ${timesheetApprovalClass(status)}`;
+    }
+    const count = document.getElementById("timesheetTaskCount");
+    const total = document.getElementById("timesheetTotalDuration");
+    const reportDate = document.getElementById("timesheetReportDate");
+    if (count) count.textContent = String(entries.length);
+    if (total) total.textContent = formatTimesheetDuration(totalMinutes);
+    if (reportDate) reportDate.textContent = timesheetWorkDateLabel(workDate);
+
+    const comment = String(report?.director_comment || "").trim();
+    const note = document.getElementById("timesheetReturnNote");
+    const noteTitle = note?.querySelector("strong");
+    const noteBody = document.getElementById("timesheetReturnComment");
+    if (note) note.classList.toggle("hidden", !comment);
+    if (noteTitle) noteTitle.textContent = status === "APPROVED" ? "Director note" : (status === "CHANGES_REQUESTED" ? "Changes requested by the Director" : "Previous director comment");
+    if (noteBody) noteBody.textContent = comment;
+
+    ["timesheetStartTime", "timesheetEndTime", "timesheetTask", "timesheetTaskStatus"].forEach((id) => {
+        const element = document.getElementById(id);
+        if (element) element.disabled = !editable;
+    });
+    const addButton = document.getElementById("timesheetAddButton");
+    if (addButton) addButton.disabled = !editable;
+    const submitButton = document.getElementById("timesheetSubmitButton");
+    const submitHint = document.getElementById("timesheetSubmitHint");
+    if (submitButton) {
+        submitButton.textContent = status === "CHANGES_REQUESTED" ? "Resend for Approval" : "Send for Approval";
+        submitButton.disabled = !editable || entries.length === 0;
+    }
+    if (submitHint) {
+        if (status === "SUBMITTED") submitHint.textContent = "This report is with the Director and is locked while awaiting review.";
+        else if (status === "APPROVED") submitHint.textContent = "This daily report has been approved and is now read-only.";
+        else if (status === "CHANGES_REQUESTED") submitHint.textContent = "Update the requested items, then resend the report for approval.";
+        else submitHint.textContent = entries.length ? "Check the entries, then send the complete day for approval." : "Add at least one task before sending the report.";
+    }
+    renderTimesheetEntries(report, workDate);
+}
+
+async function loadTimesheetDay() {
+    initialiseTimesheetView();
+    const dateInput = document.getElementById("timesheetWorkDate");
+    const workDate = String(dateInput?.value || "");
+    if (!workDate) return;
+    const requestedDate = workDate;
+    const list = document.getElementById("timesheetEntryList");
+    if (list) list.innerHTML = `<div class="myspace-empty">Loading daily report...</div>`;
+    try {
+        const response = await apiFetch(`/my-space/timesheets/day?work_date=${encodeURIComponent(workDate)}`);
+        if (!response.ok) throw new Error(await extractErrorMessage(response));
+        const data = await response.json();
+        if (document.getElementById("timesheetWorkDate")?.value !== requestedDate) return;
+        timesheetDayCache = data.report || null;
+        timesheetLoadedDate = workDate;
+        timesheetCanReview = data.can_review === true;
+        renderTimesheetDay(timesheetDayCache, workDate);
+        const reviewPanel = document.getElementById("timesheetReviewPanel");
+        if (reviewPanel) reviewPanel.classList.toggle("hidden", !timesheetCanReview);
+        if (timesheetCanReview) {
+            await loadTimesheetStaffDirectory();
+            if (!timesheetReportsLoadedOnce) await loadTimesheetReports();
+        }
+    } catch (error) {
+        timesheetDayCache = null;
+        if (list) list.innerHTML = `<div class="myspace-empty">Could not load this daily report.</div>`;
+        setTimesheetMessage(String(error?.message || error || "Could not load the timesheet."), "error");
+    }
+}
+
+async function addTimesheetEntry() {
+    const workDate = document.getElementById("timesheetWorkDate")?.value || "";
+    const startTime = document.getElementById("timesheetStartTime")?.value || "";
+    const endTime = document.getElementById("timesheetEndTime")?.value || "";
+    const task = String(document.getElementById("timesheetTask")?.value || "").trim();
+    const status = document.getElementById("timesheetTaskStatus")?.value || "COMPLETED";
+    if (!workDate || !startTime || !endTime || !task) {
+        setTimesheetMessage("Date, start time, end time, and task are required.", "error");
+        return;
+    }
+    if (timesheetMinutesBetween(startTime, endTime) === null) {
+        setTimesheetMessage("End time must be later than start time.", "error");
+        return;
+    }
+    const button = document.getElementById("timesheetAddButton");
+    if (button) button.disabled = true;
+    try {
+        const response = await apiFetch("/my-space/timesheets/entries", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                work_date: workDate,
+                start_time: startTime,
+                end_time: endTime,
+                task,
+                status,
+            }),
+        });
+        if (!response.ok) throw new Error(await extractErrorMessage(response));
+        const taskInput = document.getElementById("timesheetTask");
+        const startInput = document.getElementById("timesheetStartTime");
+        const endInput = document.getElementById("timesheetEndTime");
+        if (taskInput) taskInput.value = "";
+        if (startInput) startInput.value = "";
+        if (endInput) endInput.value = "";
+        updateTimesheetDurationPreview();
+        setTimesheetMessage("Task added to the daily report.", "success");
+        await loadTimesheetDay();
+    } catch (error) {
+        setTimesheetMessage(String(error?.message || error || "Could not add the task."), "error");
+    } finally {
+        if (button && timesheetCanEdit(timesheetDayCache)) button.disabled = false;
+    }
+}
+
+async function saveTimesheetEntry(entryId) {
+    const startTime = document.querySelector(`[data-timesheet-start="${entryId}"]`)?.value || "";
+    const endTime = document.querySelector(`[data-timesheet-end="${entryId}"]`)?.value || "";
+    const task = String(document.querySelector(`[data-timesheet-task="${entryId}"]`)?.value || "").trim();
+    const status = document.querySelector(`[data-timesheet-status="${entryId}"]`)?.value || "COMPLETED";
+    if (!task || timesheetMinutesBetween(startTime, endTime) === null) {
+        setTimesheetMessage("Enter a task and make sure the end time is later than the start time.", "error");
+        return;
+    }
+    try {
+        const response = await apiFetch(`/my-space/timesheets/entries/${entryId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ start_time: startTime, end_time: endTime, task, status }),
+        });
+        if (!response.ok) throw new Error(await extractErrorMessage(response));
+        setTimesheetMessage("Timesheet task saved.", "success");
+        await loadTimesheetDay();
+    } catch (error) {
+        setTimesheetMessage(String(error?.message || error || "Could not save the task."), "error");
+    }
+}
+
+async function deleteTimesheetEntry(entryId) {
+    if (!confirm("Delete this timesheet task?")) return;
+    try {
+        const response = await apiFetch(`/my-space/timesheets/entries/${entryId}`, { method: "DELETE" });
+        if (!response.ok) throw new Error(await extractErrorMessage(response));
+        setTimesheetMessage("Timesheet task deleted.", "success");
+        await loadTimesheetDay();
+    } catch (error) {
+        setTimesheetMessage(String(error?.message || error || "Could not delete the task."), "error");
+    }
+}
+
+async function submitTimesheetForApproval() {
+    const workDate = document.getElementById("timesheetWorkDate")?.value || "";
+    if (!workDate || !confirm(`Send the complete report for ${timesheetWorkDateLabel(workDate)} to the Director?`)) return;
+    const button = document.getElementById("timesheetSubmitButton");
+    if (button) button.disabled = true;
+    try {
+        const response = await apiFetch(`/my-space/timesheets/day/${encodeURIComponent(workDate)}/submit`, { method: "POST" });
+        if (!response.ok) throw new Error(await extractErrorMessage(response));
+        setTimesheetMessage("Daily report sent for approval.", "success");
+        await loadTimesheetDay();
+        if (timesheetCanReview) await loadTimesheetReports();
+    } catch (error) {
+        setTimesheetMessage(String(error?.message || error || "Could not submit the report."), "error");
+        if (button) button.disabled = false;
+    }
+}
+
+function selectTodayTimesheet() {
+    const input = document.getElementById("timesheetWorkDate");
+    if (!input) return;
+    input.value = timesheetDateToInput(new Date());
+    loadTimesheetDay();
+}
+
+function shiftTimesheetDay(offset) {
+    const input = document.getElementById("timesheetWorkDate");
+    if (!input) return;
+    const current = input.value ? new Date(`${input.value}T12:00:00`) : new Date();
+    current.setDate(current.getDate() + Number(offset || 0));
+    input.value = timesheetDateToInput(current);
+    loadTimesheetDay();
+}
+
+function timesheetDateTimeLabel(value) {
+    if (!value) return "";
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? String(value) : parsed.toLocaleString();
+}
+
+function renderTimesheetReports(reports) {
+    const list = document.getElementById("timesheetReportList");
+    const pending = document.getElementById("timesheetPendingCount");
+    const rows = Array.isArray(reports) ? reports : [];
+    if (pending) {
+        const count = rows.filter((report) => report.status === "SUBMITTED").length;
+        pending.textContent = `${count} awaiting approval`;
+    }
+    if (!list) return;
+    if (!rows.length) {
+        list.innerHTML = `<div class="myspace-empty">No submitted timesheet reports match these filters.</div>`;
+        return;
+    }
+    list.innerHTML = rows.map((report) => {
+        const staff = report.staff || {
+            id: report.staff_user_id,
+            name: report.staff_name,
+            email: report.staff_email,
+            avatar_url: report.staff_avatar_url,
+        };
+        const entries = Array.isArray(report.entries) ? report.entries : [];
+        const status = String(report.status || "SUBMITTED").toUpperCase();
+        const totalMinutes = Number(report.total_duration_minutes ?? report.total_minutes ?? entries.reduce((sum, entry) => sum + (Number(entry.duration_minutes) || 0), 0));
+        const reviewer = report.reviewer?.name || report.reviewer?.email || report.reviewed_by_name || "";
+        const comment = String(report.director_comment || "").trim();
+        const submitted = report.submitted_at ? `Submitted ${timesheetDateTimeLabel(report.submitted_at)}` : "Submitted";
+        const entryRows = entries.map((entry) => {
+            const taskStatus = String(entry.status || entry.task_status || "COMPLETED").toUpperCase();
+            return `
+                <div class="timesheet-report-entry">
+                    <span><span class="timesheet-mobile-label">Start</span>${escapeHtml(timesheetTimeValue(entry.start_time))}</span>
+                    <span><span class="timesheet-mobile-label">End</span>${escapeHtml(timesheetTimeValue(entry.end_time))}</span>
+                    <strong><span class="timesheet-mobile-label">Duration</span>${escapeHtml(formatTimesheetDuration(entry.duration_minutes))}</strong>
+                    <span class="task"><span class="timesheet-mobile-label">Task</span>${escapeHtml(entry.task || "")}</span>
+                    <span><span class="timesheet-mobile-label">Status</span><span class="user-chip">${escapeHtml(timesheetTaskStatusLabel(taskStatus))}</span></span>
+                </div>
+            `;
+        }).join("");
+        const completedMeta = reviewer && report.reviewed_at
+            ? `Reviewed by ${escapeHtml(reviewer)} · ${escapeHtml(timesheetDateTimeLabel(report.reviewed_at))}`
+            : escapeHtml(submitted);
+        return `
+            <article class="timesheet-report-card">
+                <div class="timesheet-report-head">
+                    <div class="timesheet-report-person">
+                        <img class="timesheet-report-avatar" src="${escapeHtml(staff.avatar_url || "/static/logo.png")}" alt="" />
+                        <div>
+                            <strong>${escapeHtml(staff.name || staff.email || "Staff member")}</strong>
+                            <span>${escapeHtml(staff.email || "")}${staff.email ? " · " : ""}${escapeHtml(timesheetWorkDateLabel(report.work_date))}</span>
+                        </div>
+                    </div>
+                    <div class="timesheet-report-meta">
+                        <span class="user-chip">${entries.length} task${entries.length === 1 ? "" : "s"}</span>
+                        <span class="user-chip">${escapeHtml(formatTimesheetDuration(totalMinutes))}</span>
+                        <span class="timesheet-approval-badge ${timesheetApprovalClass(status)}">${escapeHtml(timesheetApprovalLabel(status))}</span>
+                    </div>
+                </div>
+                <div class="timesheet-report-entries">${entryRows}</div>
+                ${comment ? `<div class="timesheet-review-comment"><strong>Director comment</strong><br>${escapeHtml(comment)}</div>` : ""}
+                ${status === "SUBMITTED" ? `
+                    <div class="timesheet-review-actions">
+                        <div class="field">
+                            <div class="label">Director Comment</div>
+                            <textarea id="timesheetReviewComment${report.id}" placeholder="Add an optional approval note, or explain what needs to change..."></textarea>
+                        </div>
+                        <button class="btn danger" type="button" onclick="reviewTimesheetReport(${report.id}, 'send_back')">Send Back to Staff</button>
+                        <button class="btn primary" type="button" onclick="reviewTimesheetReport(${report.id}, 'approve')">Approve</button>
+                    </div>
+                ` : `<div class="timesheet-review-comment">${completedMeta}</div>`}
+            </article>
+        `;
+    }).join("");
+}
+
+async function loadTimesheetReports() {
+    if (!timesheetCanReview) return;
+    initialiseTimesheetView();
+    const list = document.getElementById("timesheetReportList");
+    if (list) list.innerHTML = `<div class="myspace-empty">Loading submitted staff reports...</div>`;
+    const params = new URLSearchParams();
+    const from = document.getElementById("timesheetReportFrom")?.value || "";
+    const to = document.getElementById("timesheetReportTo")?.value || "";
+    const staffId = document.getElementById("timesheetReportStaff")?.value || "";
+    const status = document.getElementById("timesheetReportStatus")?.value || "";
+    if (from) params.set("date_from", from);
+    if (to) params.set("date_to", to);
+    if (staffId) params.set("staff_id", staffId);
+    if (status) params.set("status", status);
+    try {
+        const response = await apiFetch(`/my-space/timesheets/reports?${params.toString()}`);
+        if (!response.ok) throw new Error(await extractErrorMessage(response));
+        const data = await response.json();
+        const reports = Array.isArray(data) ? data : (Array.isArray(data.reports) ? data.reports : []);
+        timesheetReportsLoadedOnce = true;
+        renderTimesheetReports(reports);
+    } catch (error) {
+        if (list) list.innerHTML = `<div class="myspace-empty">${escapeHtml(String(error?.message || error || "Could not load staff reports."))}</div>`;
+    }
+}
+
+async function reviewTimesheetReport(reportId, action) {
+    const comment = String(document.getElementById(`timesheetReviewComment${reportId}`)?.value || "").trim();
+    if (action === "send_back" && !comment) {
+        setTimesheetMessage("Add a comment explaining what the staff member needs to change.", "error");
+        document.getElementById(`timesheetReviewComment${reportId}`)?.focus();
+        return;
+    }
+    try {
+        const response = await apiFetch(`/my-space/timesheets/reports/${reportId}/review`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action, comment }),
+        });
+        if (!response.ok) throw new Error(await extractErrorMessage(response));
+        setTimesheetMessage(action === "approve" ? "Timesheet report approved." : "Report sent back to the staff member.", "success");
+        await loadTimesheetReports();
+        if (timesheetLoadedDate) await loadTimesheetDay();
+    } catch (error) {
+        setTimesheetMessage(String(error?.message || error || "Could not review the report."), "error");
+    }
+}
+
 function mySpaceDuePayload(value) {
     const raw = String(value || "").trim();
     return raw ? `${raw}T00:00:00` : null;
@@ -2061,7 +2641,7 @@ function isSideSubnavCollapsed(group) {
 }
 
 function applySideSubnavState() {
-    ["maintenance", "lease", "compliance", "checklist"].forEach((group) => {
+    ["myspace", "maintenance", "lease", "compliance", "checklist"].forEach((group) => {
         const navGroup = document.querySelector(`[data-side-subnav-group="${group}"]`);
         const toggle = document.getElementById(`${group}SubnavToggle`);
         if (!navGroup) return;
@@ -2130,6 +2710,10 @@ function applyPageVisibility() {
     if (maintenanceSideSubnav) maintenanceSideSubnav.classList.toggle("hidden", !canAccessPage("maintenance"));
     const maintenanceNavGroup = document.getElementById("maintenanceNavGroup");
     if (maintenanceNavGroup) maintenanceNavGroup.classList.toggle("hidden", !canAccessPage("maintenance"));
+    const mySpaceSideSubnav = document.getElementById("mySpaceSideSubnav");
+    if (mySpaceSideSubnav) mySpaceSideSubnav.classList.toggle("hidden", !canAccessPage("myspace"));
+    const mySpaceNavGroup = document.getElementById("mySpaceNavGroup");
+    if (mySpaceNavGroup) mySpaceNavGroup.classList.toggle("hidden", !canAccessPage("myspace"));
     const leaseSideSubnav = document.getElementById("leaseSideSubnav");
     if (leaseSideSubnav) leaseSideSubnav.classList.toggle("hidden", !canAccessPage("lease_renewals"));
     const leaseNavGroup = document.getElementById("leaseNavGroup");
@@ -3144,6 +3728,7 @@ function switchDashboardTab(tab) {
     const subtitle = document.getElementById("topbarSubtitle");
     if (title) title.textContent = titles[currentDashboardTab]?.[0] || "Portal Hub";
     if (subtitle) subtitle.textContent = titles[currentDashboardTab]?.[1] || "";
+    if (currentDashboardTab === "myspace") applyMySpaceView();
     
     const portalPanel = document.getElementById("portalPanel");
     const notificationsPanel = document.getElementById("notificationsPanel");
@@ -3265,8 +3850,13 @@ function switchDashboardTab(tab) {
         setTimeout(invalidateInspectionMap, 80);
     }
     if (currentDashboardTab === "checklist") loadChecklistRuns();
-    if (currentDashboardTab === "myspace" && !mySpaceLoadedOnce) {
-        loadMySpace();
+    if (currentDashboardTab === "myspace") {
+        if (mySpaceViewMode === "timesheet") {
+            initialiseTimesheetView();
+            loadTimesheetDay();
+        } else if (!mySpaceLoadedOnce) {
+            loadMySpace();
+        }
     }
     if (currentDashboardTab === "notifications") {
         loadNotifications();
@@ -11012,6 +11602,14 @@ function logout(message = "") {
     rolePagePermissions = {};
     teamLoadedOnce = false;
     activityLoadedOnce = false;
+    mySpaceLoadedOnce = false;
+    mySpaceViewMode = "workspace";
+    timesheetDayCache = null;
+    timesheetLoadedDate = "";
+    timesheetCanReview = false;
+    timesheetReportsLoadedOnce = false;
+    timesheetStaffCache = [];
+    timesheetStaffLoadedOnce = false;
     leaseRenewalsLoadedOnce = false;
     currentLeaseRenewalPage = 1;
     leaseRenewalTotalPages = 1;
