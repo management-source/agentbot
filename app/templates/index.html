@@ -1577,15 +1577,83 @@
       min-width:140px;
     }
     .label{font-size:12px; color:var(--muted)}
-    input[type="text"], input[type="password"], input[type="email"], input[type="date"], input[type="number"], select{
+    input:not([type]),
+    input[type="text"],
+    input[type="password"],
+    input[type="email"],
+    input[type="search"],
+    input[type="url"],
+    input[type="tel"],
+    input[type="date"],
+    input[type="month"],
+    input[type="week"],
+    input[type="time"],
+    input[type="datetime-local"],
+    input[type="number"],
+    select,
+    textarea{
       width:100%;
       padding:10px 12px;
       border:1px solid var(--border);
       border-radius:12px;
       outline:none;
       background:#fff;
+      color:var(--text);
+      font-family:inherit;
       font-size:13px;
+      line-height:1.35;
+      box-sizing:border-box;
     }
+    .field > input:not([type]),
+    .field > input[type="text"],
+    .field > input[type="password"],
+    .field > input[type="email"],
+    .field > input[type="search"],
+    .field > input[type="url"],
+    .field > input[type="tel"],
+    .field > input[type="date"],
+    .field > input[type="month"],
+    .field > input[type="week"],
+    .field > input[type="time"],
+    .field > input[type="datetime-local"],
+    .field > input[type="number"],
+    .field > select{min-height:42px}
+    input[type="search"]{-webkit-appearance:none;appearance:none}
+    input[type="file"]{
+      width:100%;
+      min-height:42px;
+      padding:5px;
+      border:1px solid var(--border);
+      border-radius:14px;
+      outline:none;
+      background:#fff;
+      color:var(--muted);
+      font-family:inherit;
+      font-size:12px;
+      box-sizing:border-box;
+    }
+    input[type="file"]::file-selector-button{
+      min-height:30px;
+      margin-right:9px;
+      padding:6px 11px;
+      border:1px solid #dbe4ef;
+      border-radius:10px;
+      background:#f8fafc;
+      color:#344054;
+      font:inherit;
+      font-weight:800;
+      cursor:pointer;
+    }
+    input[type="file"]:hover::file-selector-button{border-color:#c9a246;background:#fffaf0}
+    input:not([type])::placeholder,
+    input[type="text"]::placeholder,
+    input[type="password"]::placeholder,
+    input[type="email"]::placeholder,
+    input[type="search"]::placeholder,
+    input[type="url"]::placeholder,
+    input[type="tel"]::placeholder,
+    input[type="number"]::placeholder,
+    textarea::placeholder{color:#98a2b3;opacity:1}
     input:focus, select:focus{border-color:#c7c9ff; box-shadow:0 0 0 3px rgba(79,70,229,.12)}
     .checkbox{
       display:flex; gap:8px; align-items:center; font-size:13px; color:var(--muted);
@@ -4516,7 +4584,7 @@
       color:#fff;
       box-shadow:0 10px 18px rgba(15,23,42,.08), inset 0 0 0 999px rgba(5,5,5,.98);
     }
-    input[type="text"], input[type="email"], input[type="password"], input[type="date"], input[type="number"], input[type="url"], input[type="tel"], select, textarea{
+    input:not([type]), input[type="text"], input[type="email"], input[type="password"], input[type="search"], input[type="date"], input[type="month"], input[type="week"], input[type="time"], input[type="datetime-local"], input[type="number"], input[type="url"], input[type="tel"], select, textarea{
       border-color:#dbe4ef;
       border-radius:14px;
     }
