@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException
@@ -16,6 +17,7 @@ from app.models import GoogleCalendarConnection
 
 CALENDAR_SCOPES = ["https://www.googleapis.com/auth/calendar.readonly"]
 STATE_PURPOSE = "my_space_google_calendar"
+logger = logging.getLogger(__name__)
 
 
 def calendar_flow() -> Flow:
@@ -33,7 +35,15 @@ def calendar_flow() -> Flow:
             "redirect_uris": [settings.GOOGLE_REDIRECT_URI],
         }
     }
-    flow = Flow.from_client_config(client_config, scopes=CALENDAR_SCOPES)
+    # This app completes OAuth in a separate request/process on Render and does
+    # not keep a server-side session containing a PKCE code_verifier. The web
+    # client is confidential (client secret is used during token exchange), so
+    # disable the library's in-memory PKCE autogeneration for this stateless flow.
+    flow = Flow.from_client_config(
+        client_config,
+        scopes=CALENDAR_SCOPES,
+        autogenerate_code_verifier=False,
+    )
     flow.redirect_uri = settings.GOOGLE_REDIRECT_URI
     return flow
 
@@ -101,9 +111,6 @@ def calendar_service(db: Session, connection: GoogleCalendarConnection):
 
 
 def save_calendar_connection(db: Session, user_id: int, creds: Credentials) -> GoogleCalendarConnection:
-    service = build("calendar", "v3", credentials=creds, cache_discovery=False)
-    primary = service.calendarList().get(calendarId="primary").execute()
-    email = str(primary.get("id") or primary.get("summary") or "").strip() or None
     connection = db.get(GoogleCalendarConnection, user_id)
     if connection is None:
         connection = GoogleCalendarConnection(
@@ -113,11 +120,10 @@ def save_calendar_connection(db: Session, user_id: int, creds: Credentials) -> G
             token_uri=creds.token_uri,
             scopes=",".join(creds.scopes or CALENDAR_SCOPES),
             expiry=creds.expiry,
-            google_email=email,
+            google_email=None,
         )
         db.add(connection)
     else:
-        connection.google_email = email
         connection.access_token = creds.token
         if creds.refresh_token:
             connection.refresh_token = creds.refresh_token
@@ -127,6 +133,25 @@ def save_calendar_connection(db: Session, user_id: int, creds: Credentials) -> G
         connection.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(connection)
+
+    # The OAuth connection is valid once the token is stored. Calendar metadata
+    # is useful for showing the account address, but a disabled API or temporary
+    # Google error must not discard an otherwise valid refresh token.
+    try:
+        service = build("calendar", "v3", credentials=creds, cache_discovery=False)
+        primary = service.calendarList().get(calendarId="primary").execute()
+        email = str(primary.get("id") or primary.get("summary") or "").strip() or None
+        if email:
+            connection.google_email = email
+            connection.updated_at = datetime.utcnow()
+            db.commit()
+            db.refresh(connection)
+    except Exception:
+        logger.warning(
+            "Google Calendar connected, but primary calendar metadata could not be loaded for app user %s",
+            user_id,
+            exc_info=True,
+        )
     return connection
 
 

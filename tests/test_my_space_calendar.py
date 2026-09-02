@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 from fastapi import FastAPI
@@ -16,6 +17,7 @@ from app.authz import get_current_user
 from app.db import get_db
 from app.models import Base, GoogleCalendarConnection, User, UserRole
 from app.routers import my_space
+from app.services import google_calendar
 from app.services.google_calendar import calendar_state_user_id, make_calendar_state, normalize_event
 
 
@@ -106,3 +108,41 @@ def test_all_day_event_normalization():
     event = normalize_event({"id": "holiday", "summary": "Office closed", "start": {"date": "2026-12-25"}, "end": {"date": "2026-12-26"}})
     assert event["all_day"] is True
     assert event["start"] == "2026-12-25"
+
+
+def test_connection_is_saved_when_calendar_metadata_lookup_fails(calendar_client, monkeypatch):
+    _client, db, users, _context = calendar_client
+
+    class Credentials:
+        token = "access-token"
+        refresh_token = "refresh-token"
+        token_uri = "https://oauth2.googleapis.com/token"
+        scopes = ["https://www.googleapis.com/auth/calendar.readonly"]
+        expiry = None
+
+    def unavailable(*_args, **_kwargs):
+        raise RuntimeError("Calendar API is not enabled")
+
+    monkeypatch.setattr(google_calendar, "build", unavailable)
+    connection = google_calendar.save_calendar_connection(db, users[0].id, Credentials())
+
+    assert connection.access_token == "access-token"
+    assert connection.refresh_token == "refresh-token"
+    assert db.get(GoogleCalendarConnection, users[0].id) is not None
+
+
+def test_calendar_oauth_url_does_not_require_an_in_memory_pkce_verifier(monkeypatch):
+    monkeypatch.setattr(google_calendar.settings, "GOOGLE_CLIENT_ID", "client-id")
+    monkeypatch.setattr(google_calendar.settings, "GOOGLE_CLIENT_SECRET", "client-secret")
+    monkeypatch.setattr(
+        google_calendar.settings,
+        "GOOGLE_REDIRECT_URI",
+        "https://agentbot-aw74.onrender.com/auth/google/callback",
+    )
+
+    flow = google_calendar.calendar_flow()
+    authorization_url, _state = flow.authorization_url(state="signed-state")
+    query = parse_qs(urlparse(authorization_url).query)
+
+    assert "code_challenge" not in query
+    assert flow.code_verifier is None

@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse, JSONResponse
@@ -12,6 +13,7 @@ from app.models import OAuthToken, User
 from app.services.google_calendar import calendar_flow, calendar_state_user_id, save_calendar_connection
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
@@ -81,7 +83,15 @@ def _flow() -> Flow:
         }
     }
 
-    flow = Flow.from_client_config(client_config, scopes=SCOPES)
+    # Authorization and callback are separate stateless requests (and can land
+    # on different Render workers), so an in-memory PKCE verifier cannot be
+    # recovered during token exchange. This is a confidential web client and
+    # authenticates with its client secret instead.
+    flow = Flow.from_client_config(
+        client_config,
+        scopes=SCOPES,
+        autogenerate_code_verifier=False,
+    )
     flow.redirect_uri = settings.GOOGLE_REDIRECT_URI
     return flow
 
@@ -115,7 +125,17 @@ def google_callback(request: Request, db: Session = Depends(get_db)):
             save_calendar_connection(db, calendar_user_id, flow.credentials)
         except Exception as exc:
             db.rollback()
-            raise HTTPException(status_code=400, detail="Google Calendar connection failed.") from exc
+            logger.exception("Google Calendar OAuth callback failed for app user %s", calendar_user_id)
+            message = str(exc).lower()
+            if "invalid_grant" in message:
+                detail = "Google authorization expired or was already used. Return to My Space and connect again."
+            elif "redirect_uri" in message:
+                detail = "Google redirect URI does not exactly match GOOGLE_REDIRECT_URI."
+            elif "scope" in message:
+                detail = "Google returned different permissions than the Calendar connection requested. Connect again."
+            else:
+                detail = "Google token exchange failed. Check the Render log entry for Google Calendar OAuth callback."
+            raise HTTPException(status_code=400, detail=detail) from exc
         return RedirectResponse(url="/?calendar_connected=1")
 
     flow = _flow()
