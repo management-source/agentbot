@@ -199,13 +199,44 @@ def test_assigned_to_me_tab_is_isolated_to_logged_in_user_and_mailbox(ticket_api
 
     assert response.status_code == 200
     data = response.json()
-    assert data["total"] == 2
-    assert data["counts"]["assigned_to_me"] == 2
-    assert {item["thread_id"] for item in data["items"]} == {
-        staff_pending.thread_id,
-        staff_responded.thread_id,
-    }
+    assert data["total"] == 1
+    assert data["counts"]["assigned_to_me"] == 1
+    assert {item["thread_id"] for item in data["items"]} == {staff_pending.thread_id}
     assert all(item["assignee_user_id"] == users["staff"].id for item in data["items"])
+
+
+def test_assigned_to_me_clears_after_completion_or_reassignment(ticket_api):
+    client, db, context, users = ticket_api
+    completed = _ticket("complete-my-ticket", status=TicketStatus.IN_PROGRESS)
+    reassigned = _ticket("reassign-my-ticket", status=TicketStatus.IN_PROGRESS)
+    completed.assignee_user_id = users["staff"].id
+    reassigned.assignee_user_id = users["staff"].id
+    db.add_all([completed, reassigned])
+    db.commit()
+    context["user"] = users["staff"]
+
+    status_response = client.patch(
+        f"/tickets/{completed.thread_id}/status",
+        json={"status": TicketStatus.RESPONDED.value},
+    )
+    assignment_response = client.patch(
+        f"/tickets/{reassigned.thread_id}/assignee",
+        json={"assignee_user_id": users["admin"].id},
+    )
+
+    assert status_response.status_code == 200
+    assert assignment_response.status_code == 200
+
+    staff_queue = client.get("/tickets", params={"tab": "assigned_to_me"}).json()
+    assert staff_queue["total"] == 0
+    assert staff_queue["counts"]["assigned_to_me"] == 0
+
+    responded_queue = client.get("/tickets", params={"tab": "responded"}).json()
+    assert {item["thread_id"] for item in responded_queue["items"]} == {completed.thread_id}
+
+    context["user"] = users["admin"]
+    admin_queue = client.get("/tickets", params={"tab": "assigned_to_me"}).json()
+    assert {item["thread_id"] for item in admin_queue["items"]} == {reassigned.thread_id}
 
 
 def test_purge_only_removes_no_reply_needed_from_selected_mailbox(ticket_api):

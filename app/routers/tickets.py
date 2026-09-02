@@ -114,7 +114,9 @@ def _tab_filter(q, tab: str, user_id: int | None = None):
         return q.filter(ThreadTicket.status == TicketStatus.NO_REPLY_NEEDED)
 
     if tab == "assigned_to_me":
-        return q.filter(ThreadTicket.assignee_user_id == user_id)
+        return q.filter(ThreadTicket.assignee_user_id == user_id).filter(
+            ThreadTicket.status.in_([TicketStatus.PENDING, TicketStatus.IN_PROGRESS])
+        )
 
     if tab == "all":
         return q
@@ -244,7 +246,18 @@ def list_tickets(
         func.sum(case((ThreadTicket.status == TicketStatus.IN_PROGRESS, 1), else_=0)),
         func.sum(case((ThreadTicket.status == TicketStatus.RESPONDED, 1), else_=0)),
         func.sum(case((ThreadTicket.status == TicketStatus.NO_REPLY_NEEDED, 1), else_=0)),
-        func.sum(case((ThreadTicket.assignee_user_id == user.id, 1), else_=0)),
+        func.sum(
+            case(
+                (
+                    and_(
+                        ThreadTicket.assignee_user_id == user.id,
+                        ThreadTicket.status.in_([TicketStatus.PENDING, TicketStatus.IN_PROGRESS]),
+                    ),
+                    1,
+                ),
+                else_=0,
+            )
+        ),
     ).one()
     counts = {
         "all": int(count_row[0] or 0),

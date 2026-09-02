@@ -722,7 +722,7 @@ function updateSyncContextUI() {
         info.textContent = "All Emails mode: Fetch uses the date range; Check Updates only checks forward from the last Check Updates checkpoint.";
     } else if (String(currentTab || "").toLowerCase() === "assigned_to_me") {
         if (viewBadge) viewBadge.textContent = "Assigned to Me";
-        info.textContent = "Assigned to Me shows tickets currently assigned to your staff account.";
+        info.textContent = "Assigned to Me shows your active Pending and In Progress tickets. Completing or reassigning one clears it from this queue.";
     } else {
         if (viewBadge) viewBadge.textContent = "Awaiting Reply";
         info.textContent = "Awaiting Reply mode: Check Updates only checks forward from the last Check Updates checkpoint.";
@@ -11319,6 +11319,7 @@ function ticketBelongsToCurrentTab(status, isNotReplied) {
     if (currentTab === "in_progress") return key === "IN_PROGRESS";
     if (currentTab === "responded") return key === "RESPONDED";
     if (currentTab === "no_reply_needed") return key === "NO_REPLY_NEEDED";
+    if (currentTab === "assigned_to_me") return key === "PENDING" || key === "IN_PROGRESS";
     return true;
 }
 
