@@ -4544,6 +4544,7 @@
     .landlord-report-activity-form textarea{min-height:76px}
     .landlord-report-activity-list{display:grid;gap:8px;margin-top:12px}
     .landlord-report-data-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+    .landlord-report-saved-table{width:100%;border-collapse:collapse}.landlord-report-saved-table th,.landlord-report-saved-table td{padding:12px 10px;border-bottom:1px solid #e5e9ef;text-align:left;vertical-align:middle;font-size:12px}.landlord-report-saved-table th{color:#667085;font-size:10px;text-transform:uppercase;letter-spacing:.05em}.landlord-report-saved-table td:first-child{font-weight:800;color:#101828}.landlord-report-saved-actions{display:flex;gap:6px;justify-content:flex-end}
     @media(max-width:720px){.landlord-report-data-grid{grid-template-columns:1fr}}
     .landlord-report-activity{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;padding:12px;border:1px solid #dbe4ef;border-radius:14px;background:#fff}
     .landlord-report-activity strong{display:block;color:#101828;font-size:12px}
@@ -4950,6 +4951,8 @@
                 onclick="switchDashboardTab('landlord_reports'); switchLandlordReportView('builder')">Monthly Report</button>
               <button type="button" data-landlord-report-view="data"
                 onclick="switchDashboardTab('landlord_reports'); switchLandlordReportView('data')">Report Data</button>
+              <button type="button" data-landlord-report-view="saved"
+                onclick="switchDashboardTab('landlord_reports'); switchLandlordReportView('saved')">Saved Reports</button>
             </div>
           </div>
           <div class="side-nav-group subnav-collapsed" id="complianceNavGroup"
@@ -6725,6 +6728,34 @@
                           <button class="btn primary" id="landlordReportDataUpload-mortgage" type="button" onclick="uploadLandlordReportData('mortgage')">Upload / Replace</button>
                           <div class="small muted" id="landlordReportDataStatus-mortgage" style="margin-top:10px">Not uploaded</div>
                         </article>
+                      </div>
+                    </section>
+                  </div>
+                </div>
+
+                <div id="landlordReportSavedView" class="hidden">
+                  <div class="page-banner">
+                    <div class="page-banner-kicker">Report Archive</div>
+                    <h2>Saved Landlord Reports</h2>
+                    <p>Every generated landlord PDF is saved here automatically. Search by property address, download previous reports, or permanently delete reports that are no longer required.</p>
+                    <div class="page-banner-actions"><span class="chip">Searchable</span><span class="chip">Mailbox isolated</span><span class="chip">PDF archive</span></div>
+                  </div>
+                  <div class="landlord-report-shell">
+                    <div class="landlord-report-message" id="landlordReportSavedMessage" role="status" aria-live="polite"></div>
+                    <section class="landlord-report-card">
+                      <div class="landlord-report-card-head">
+                        <div><h3>Generated reports</h3><p id="landlordReportSavedCount">Loading saved reports…</p></div>
+                        <button class="btn" type="button" onclick="loadSavedLandlordReports(true)">Refresh</button>
+                      </div>
+                      <div class="row" style="margin-bottom:14px;align-items:flex-end">
+                        <div class="field" style="flex:1"><label class="label" for="landlordReportSavedSearch">Search by property address</label><input id="landlordReportSavedSearch" type="search" placeholder="Enter street, suburb, or postcode…" oninput="scheduleSavedLandlordReportSearch()" /></div>
+                        <button class="btn primary" type="button" onclick="loadSavedLandlordReports(true)">Search</button>
+                      </div>
+                      <div style="overflow-x:auto">
+                        <table class="landlord-report-saved-table">
+                          <thead><tr><th>Property address</th><th>Duration</th><th>Reporting period</th><th>Generated</th><th>File size</th><th style="text-align:right">Actions</th></tr></thead>
+                          <tbody id="landlordReportSavedRows"><tr><td colspan="6" class="muted">Loading saved reports…</td></tr></tbody>
+                        </table>
                       </div>
                     </section>
                   </div>

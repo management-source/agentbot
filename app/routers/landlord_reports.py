@@ -2,19 +2,24 @@ from __future__ import annotations
 
 import json
 import logging
+import hashlib
+import uuid
 import zipfile
+from calendar import monthrange
 from datetime import date as Date, datetime
+from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from fastapi.responses import Response
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session
 
 from app.authz import has_page_access, require_page_access
+from app.config import settings
 from app.db import get_db
 from app.deps import get_current_mailbox
-from app.models import AppState, LandlordReportInvoice, ManagedProperty, User
+from app.models import AppState, LandlordReportInvoice, ManagedProperty, SavedLandlordReport, User
 from app.services.landlord_invoice_import import (
     INVOICE_REPORT_TYPES,
     address_match_score,
@@ -45,6 +50,152 @@ INVOICE_REPORT_LABELS = {
     "bond": "Bond invoices",
     "mortgage": "Mortgage invoices",
 }
+
+
+def _saved_report_root() -> Path:
+    return Path(settings.TENANT_UPLOAD_DIR).resolve()
+
+
+def _saved_report_path(storage_path: str) -> Path:
+    root = _saved_report_root()
+    candidate = Path(storage_path)
+    if not candidate.is_absolute():
+        candidate = root / candidate
+    resolved = candidate.resolve()
+    if root != resolved and root not in resolved.parents:
+        raise LandlordReportError("A saved report has an invalid storage path.")
+    return resolved
+
+
+def _duration_label(start_date: Date, end_date: Date) -> str:
+    full_months = (end_date.year - start_date.year) * 12 + end_date.month - start_date.month + 1
+    is_full_month_range = start_date.day == 1 and end_date.day == monthrange(end_date.year, end_date.month)[1]
+    if is_full_month_range and full_months in {1, 6}:
+        return f"{full_months} month{'s' if full_months != 1 else ''}"
+    days = (end_date - start_date).days + 1
+    return f"{days} day{'s' if days != 1 else ''}"
+
+
+def _saved_report_json(row: SavedLandlordReport) -> dict:
+    return {
+        "id": row.id,
+        "property_id": row.property_id,
+        "property_address": row.property_address,
+        "filename": row.filename,
+        "file_size": row.file_size,
+        "period_start": row.period_start.isoformat(),
+        "period_end": row.period_end.isoformat(),
+        "period_label": row.period_label,
+        "duration": row.duration_label,
+        "generated_at": row.generated_at.isoformat() + "Z",
+    }
+
+
+def _save_generated_report(
+    db: Session,
+    *,
+    mailbox: str,
+    user: User,
+    report: dict,
+    pdf_bytes: bytes,
+) -> SavedLandlordReport:
+    mailbox_key = hashlib.sha256(mailbox.encode("utf-8")).hexdigest()[:20]
+    relative_path = Path("saved_landlord_reports") / mailbox_key / f"{uuid.uuid4().hex}.pdf"
+    target = _saved_report_path(relative_path.as_posix())
+    target.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        target.write_bytes(pdf_bytes)
+        meta = report["meta"]
+        row = SavedLandlordReport(
+            mailbox=mailbox,
+            property_id=meta.get("property_id"),
+            property_address=str(meta.get("property_address") or "Property"),
+            filename=str(meta.get("filename") or "Landlord-Report.pdf"),
+            storage_path=relative_path.as_posix(),
+            file_size=len(pdf_bytes),
+            period_start=meta["period_start"],
+            period_end=meta["period_end"],
+            period_label=str(meta.get("period_label") or ""),
+            duration_label=_duration_label(meta["period_start"], meta["period_end"]),
+            generated_by_user_id=user.id,
+            generated_at=datetime.utcnow(),
+        )
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+        return row
+    except Exception:
+        db.rollback()
+        try:
+            if target.is_file():
+                target.unlink()
+        except OSError:
+            pass
+        raise
+
+
+@router.get("/saved")
+def list_saved_reports(
+    search: str = "",
+    mailbox: str = Depends(get_current_mailbox),
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_page_access("landlord_reports")),
+):
+    query = db.query(SavedLandlordReport).filter(SavedLandlordReport.mailbox == mailbox)
+    search = search.strip()[:300]
+    if search:
+        query = query.filter(SavedLandlordReport.property_address.ilike(f"%{search}%"))
+    rows = query.order_by(SavedLandlordReport.generated_at.desc(), SavedLandlordReport.id.desc()).limit(500).all()
+    return {"reports": [_saved_report_json(row) for row in rows], "count": len(rows)}
+
+
+@router.get("/saved/{report_id}/download")
+def download_saved_report(
+    report_id: int,
+    mailbox: str = Depends(get_current_mailbox),
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_page_access("landlord_reports")),
+):
+    row = db.query(SavedLandlordReport).filter(
+        SavedLandlordReport.id == report_id,
+        SavedLandlordReport.mailbox == mailbox,
+    ).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Saved report not found.")
+    try:
+        path = _saved_report_path(row.storage_path)
+    except LandlordReportError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="The saved PDF file is no longer available.")
+    return FileResponse(path, media_type="application/pdf", filename=row.filename)
+
+
+@router.delete("/saved/{report_id}")
+def delete_saved_report(
+    report_id: int,
+    mailbox: str = Depends(get_current_mailbox),
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_page_access("landlord_reports")),
+):
+    row = db.query(SavedLandlordReport).filter(
+        SavedLandlordReport.id == report_id,
+        SavedLandlordReport.mailbox == mailbox,
+    ).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Saved report not found.")
+    try:
+        path = _saved_report_path(row.storage_path)
+    except LandlordReportError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    db.delete(row)
+    db.commit()
+    try:
+        if path.is_file():
+            path.unlink()
+    except OSError:
+        logger.warning("Saved landlord report metadata deleted but file cleanup failed", extra={"path": str(path)})
+    return {"ok": True, "deleted_id": report_id}
 
 
 def _invoice_data_summary(db: Session, mailbox: str) -> dict:
@@ -493,6 +644,13 @@ def download_report_pdf(
         appended_pdfs = _report_only_pdf_bytes(payload, report.get("appendix_pdf_ids", []))
         if appended_pdfs:
             pdf_bytes = merge_landlord_report_pdfs(pdf_bytes, appended_pdfs)
+        saved_report = _save_generated_report(
+            db,
+            mailbox=mailbox,
+            user=user,
+            report=report,
+            pdf_bytes=pdf_bytes,
+        )
     except LandlordReportError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
@@ -506,6 +664,7 @@ def download_report_pdf(
             "Content-Disposition": f'attachment; filename="{filename}"',
             "Cache-Control": "no-store",
             "X-Content-Type-Options": "nosniff",
+            "X-Saved-Report-Id": str(saved_report.id),
         },
     )
 

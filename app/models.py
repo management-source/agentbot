@@ -657,6 +657,34 @@ class LandlordReportInvoice(Base):
     imported_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
 
+class SavedLandlordReport(Base):
+    __tablename__ = "saved_landlord_reports"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    mailbox: Mapped[str] = mapped_column(String, index=True)
+    property_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("managed_properties.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    property_address: Mapped[str] = mapped_column(String, index=True)
+    filename: Mapped[str] = mapped_column(String)
+    storage_path: Mapped[str] = mapped_column(Text)
+    file_size: Mapped[int] = mapped_column(Integer)
+    period_start: Mapped[date] = mapped_column(Date, index=True)
+    period_end: Mapped[date] = mapped_column(Date, index=True)
+    period_label: Mapped[str] = mapped_column(String)
+    duration_label: Mapped[str] = mapped_column(String, index=True)
+    generated_by_user_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    generated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
 class InspectionGeocodeCache(Base):
     __tablename__ = "inspection_geocode_cache"
 

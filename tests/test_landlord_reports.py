@@ -19,6 +19,7 @@ from sqlalchemy.pool import StaticPool
 os.environ["DEBUG"] = "false"
 
 from app.authz import get_current_user, has_page_access
+from app.config import settings
 from app.db import get_db
 from app.deps import get_current_mailbox
 from app.models import (
@@ -36,6 +37,7 @@ from app.models import (
     ManagedProperty,
     RentDueTracker,
     RentTrackStatus,
+    SavedLandlordReport,
     User,
     UserRole,
 )
@@ -656,7 +658,8 @@ def test_permissions_mailbox_isolation_and_formatting(db, seeded):
     assert format_currency_aud(1250) == "$1,250.00"
 
 
-def test_report_api_preview_pdf_and_permission_dependency(db, seeded):
+def test_report_api_preview_pdf_and_permission_dependency(db, seeded, tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "TENANT_UPLOAD_DIR", str(tmp_path / "report-files"))
     api = FastAPI()
     api.include_router(landlord_reports_router)
 
@@ -702,6 +705,28 @@ def test_report_api_preview_pdf_and_permission_dependency(db, seeded):
     assert pdf_response.status_code == 200
     assert pdf_response.headers["content-type"] == "application/pdf"
     assert pdf_response.content.startswith(b"%PDF")
+    saved_id = int(pdf_response.headers["x-saved-report-id"])
+    saved_row = db.get(SavedLandlordReport, saved_id)
+    assert saved_row is not None
+    assert saved_row.file_size == len(pdf_response.content)
+    assert saved_row.duration_label == "1 month"
+    saved_path = Path(settings.TENANT_UPLOAD_DIR) / saved_row.storage_path
+    assert saved_path.read_bytes() == pdf_response.content
+
+    saved_search = client.get("/landlord-reports/saved", params={"search": "Very Long Property"})
+    assert saved_search.status_code == 200
+    assert saved_search.json()["count"] == 1
+    assert saved_search.json()["reports"][0]["duration"] == "1 month"
+    assert saved_search.json()["reports"][0]["file_size"] == len(pdf_response.content)
+
+    saved_download = client.get(f"/landlord-reports/saved/{saved_id}/download")
+    assert saved_download.status_code == 200
+    assert saved_download.content == pdf_response.content
+
+    saved_delete = client.delete(f"/landlord-reports/saved/{saved_id}")
+    assert saved_delete.status_code == 200
+    assert db.get(SavedLandlordReport, saved_id) is None
+    assert not saved_path.exists()
 
     supporting_buffer = BytesIO()
     supporting_writer = PdfWriter()

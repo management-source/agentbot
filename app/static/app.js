@@ -544,6 +544,9 @@ let landlordReportPendingFilesChanged = false;
 let landlordReportDetailValues = {};
 let landlordReportViewMode = "builder";
 let landlordReportDataLoaded = false;
+let savedLandlordReportsLoaded = false;
+let savedLandlordReportSearchTimer = null;
+let savedLandlordReportsCache = {};
 const LANDLORD_REPORT_DETAIL_FIELDS = [
     "Property address", "Tenancy", "Rent", "Maintenance", "Compliance", "Lease",
     "Tenant names", "Lease type", "Lease commencement", "Lease expiry", "Current weekly rent",
@@ -8312,20 +8315,24 @@ function landlordReportMonthRange(monthValue) {
 }
 
 function switchLandlordReportView(view = "builder") {
-    landlordReportViewMode = view === "data" ? "data" : "builder";
+    landlordReportViewMode = ["data", "saved"].includes(view) ? view : "builder";
     document.getElementById("landlordReportBuilderView")?.classList.toggle("hidden", landlordReportViewMode !== "builder");
     document.getElementById("landlordReportDataView")?.classList.toggle("hidden", landlordReportViewMode !== "data");
+    document.getElementById("landlordReportSavedView")?.classList.toggle("hidden", landlordReportViewMode !== "saved");
     document.querySelectorAll("[data-landlord-report-view]").forEach((button) => {
         button.classList.toggle("active", button.dataset.landlordReportView === landlordReportViewMode);
     });
     if (currentDashboardTab !== "landlord_reports") return;
     const title = document.getElementById("topbarTitle");
     const subtitle = document.getElementById("topbarSubtitle");
-    if (title) title.textContent = landlordReportViewMode === "data" ? "Landlord Report Data" : "Monthly Landlord Report";
+    if (title) title.textContent = landlordReportViewMode === "data" ? "Landlord Report Data" : landlordReportViewMode === "saved" ? "Saved Landlord Reports" : "Monthly Landlord Report";
     if (subtitle) subtitle.textContent = landlordReportViewMode === "data"
         ? "Manage persistent invoice exports used automatically across landlord reports."
-        : "Prepare a branded owner report from live property records and verified report-only notes.";
+        : landlordReportViewMode === "saved"
+            ? "Search, download, and manage previously generated landlord PDFs."
+            : "Prepare a branded owner report from live property records and verified report-only notes.";
     if (landlordReportViewMode === "data") loadLandlordReportData();
+    else if (landlordReportViewMode === "saved") loadSavedLandlordReports();
     else if (!landlordReportLoadedOnce) initLandlordReportBuilder();
 }
 
@@ -8432,6 +8439,8 @@ async function initLandlordReportBuilder() {
 function resetLandlordReportBuilder() {
     landlordReportLoadedOnce = false;
     landlordReportDataLoaded = false;
+    savedLandlordReportsLoaded = false;
+    savedLandlordReportsCache = {};
     landlordReportContext = null;
     landlordReportPropertyKey = "";
     landlordReportSectionOrder = [];
@@ -8622,6 +8631,97 @@ async function uploadLandlordReportData(reportType) {
         setLandlordReportDataMessage(error.message || "Invoice data could not be imported.", "error");
     } finally {
         if (button) button.disabled = false;
+    }
+}
+
+function setSavedLandlordReportMessage(message = "", type = "") {
+    const element = document.getElementById("landlordReportSavedMessage");
+    if (!element) return;
+    element.textContent = message;
+    element.className = `landlord-report-message${message ? " show" : ""}${type ? ` ${type}` : ""}`;
+}
+
+function savedLandlordReportFileSize(bytes) {
+    const value = Number(bytes || 0);
+    if (value < 1024) return `${value} B`;
+    if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+    return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function renderSavedLandlordReports(reports = []) {
+    const body = document.getElementById("landlordReportSavedRows");
+    const count = document.getElementById("landlordReportSavedCount");
+    if (count) count.textContent = `${reports.length} saved report${reports.length === 1 ? "" : "s"} found.`;
+    if (!body) return;
+    savedLandlordReportsCache = Object.fromEntries(reports.map((report) => [Number(report.id), report]));
+    if (!reports.length) {
+        body.innerHTML = '<tr><td colspan="6" class="muted">No saved reports match this address search.</td></tr>';
+        return;
+    }
+    body.innerHTML = reports.map((report) => {
+        const generated = report.generated_at ? new Date(report.generated_at).toLocaleString("en-AU") : "—";
+        return `<tr>
+          <td>${escapeHtml(report.property_address || "Property")}</td>
+          <td>${escapeHtml(report.duration || "—")}</td>
+          <td>${escapeHtml(report.period_label || `${report.period_start || ""} to ${report.period_end || ""}`)}</td>
+          <td>${escapeHtml(generated)}</td>
+          <td>${escapeHtml(savedLandlordReportFileSize(report.file_size))}</td>
+          <td><div class="landlord-report-saved-actions"><button class="btn" type="button" onclick="downloadSavedLandlordReport(${Number(report.id)})">Download</button><button class="btn danger" type="button" onclick="deleteSavedLandlordReport(${Number(report.id)})">Delete</button></div></td>
+        </tr>`;
+    }).join("");
+}
+
+async function loadSavedLandlordReports(force = false) {
+    if (savedLandlordReportsLoaded && !force) return;
+    const search = String(document.getElementById("landlordReportSavedSearch")?.value || "").trim();
+    try {
+        const response = await apiFetch(`/landlord-reports/saved?search=${encodeURIComponent(search)}`);
+        if (!response.ok) throw new Error(await extractErrorMessage(response));
+        const result = await response.json();
+        renderSavedLandlordReports(result.reports || []);
+        savedLandlordReportsLoaded = true;
+        setSavedLandlordReportMessage("", "");
+    } catch (error) {
+        setSavedLandlordReportMessage(error.message || "Saved reports could not be loaded.", "error");
+    }
+}
+
+function scheduleSavedLandlordReportSearch() {
+    savedLandlordReportsLoaded = false;
+    if (savedLandlordReportSearchTimer) clearTimeout(savedLandlordReportSearchTimer);
+    savedLandlordReportSearchTimer = setTimeout(() => loadSavedLandlordReports(true), 300);
+}
+
+async function downloadSavedLandlordReport(reportId) {
+    const filename = savedLandlordReportsCache[reportId]?.filename || "Landlord-Report.pdf";
+    try {
+        const response = await apiFetch(`/landlord-reports/saved/${reportId}/download`);
+        if (!response.ok) throw new Error(await extractErrorMessage(response));
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = filename || "Landlord-Report.pdf";
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 30000);
+    } catch (error) {
+        setSavedLandlordReportMessage(error.message || "The saved report could not be downloaded.", "error");
+    }
+}
+
+async function deleteSavedLandlordReport(reportId) {
+    const address = savedLandlordReportsCache[reportId]?.property_address || "this property";
+    if (!confirm(`Permanently delete the saved report for ${address}? This cannot be undone.`)) return;
+    try {
+        const response = await apiFetch(`/landlord-reports/saved/${reportId}`, { method: "DELETE" });
+        if (!response.ok) throw new Error(await extractErrorMessage(response));
+        savedLandlordReportsLoaded = false;
+        await loadSavedLandlordReports(true);
+        setSavedLandlordReportMessage("Saved report permanently deleted.", "success");
+    } catch (error) {
+        setSavedLandlordReportMessage(error.message || "The saved report could not be deleted.", "error");
     }
 }
 
@@ -9175,7 +9275,8 @@ async function downloadLandlordReport() {
         link.click();
         link.remove();
         setTimeout(() => URL.revokeObjectURL(url), 30000);
-        setLandlordReportMessage("PDF generated successfully. You can regenerate it after making further changes.", "success");
+        savedLandlordReportsLoaded = false;
+        setLandlordReportMessage("PDF generated, downloaded, and saved in Saved Reports.", "success");
         if (button) button.textContent = "Regenerate PDF";
     } catch (error) {
         setLandlordReportMessage(error.message || "The PDF could not be generated. Please review the report and try again.", "error");
