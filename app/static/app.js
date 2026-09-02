@@ -606,6 +606,11 @@ let mySpaceQuickLinksCache = [];
 let mySpaceSnippetsCache = [];
 let mySpaceGuidesCache = [];
 let mySpaceViewMode = "workspace";
+let mySpaceTodosCache = [];
+let mySpaceGoogleEvents = [];
+let mySpaceCalendarMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+let mySpaceSelectedDate = null;
+let mySpaceEditingTodoId = null;
 let timesheetDayCache = null;
 let timesheetLoadedDate = "";
 let timesheetCanReview = false;
@@ -2154,7 +2159,8 @@ async function reviewTimesheetReport(reportId, action) {
 
 function mySpaceDuePayload(value) {
     const raw = String(value || "").trim();
-    return raw ? `${raw}T00:00:00` : null;
+    if (!raw) return null;
+    return raw.length === 10 ? `${raw}T00:00:00` : raw.length === 16 ? `${raw}:00` : raw;
 }
 
 const MY_SPACE_BUCKETS = [
@@ -2269,18 +2275,114 @@ function renderMySpaceTodoItem(item) {
 }
 
 function renderMySpaceTodos(items) {
-    MY_SPACE_BUCKETS.forEach((bucket) => {
-        const list = document.getElementById(`mySpaceTodo${bucket.id}`);
-        const count = document.getElementById(`mySpaceTodo${bucket.id}Count`);
-        if (!list) return;
-        const bucketItems = items.filter((item) => mySpaceCleanBucket(item.bucket) === bucket.id);
-        if (count) count.textContent = String(bucketItems.filter((item) => !item.is_done).length);
-        if (!bucketItems.length) {
-            list.innerHTML = `<div class="myspace-empty">${escapeHtml(bucket.empty)}</div>`;
-            return;
-        }
-        list.innerHTML = bucketItems.map(renderMySpaceTodoItem).join("");
+    mySpaceTodosCache = Array.isArray(items) ? items : [];
+    renderMySpaceCalendar();
+}
+
+function mySpaceDateKey(value, googleAllDay = false) {
+    if (!value) return "";
+    const raw = String(value);
+    if (googleAllDay || /^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw.slice(0, 10);
+    const parsed = new Date(raw);
+    if (Number.isNaN(parsed.getTime())) return raw.slice(0, 10);
+    return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}-${String(parsed.getDate()).padStart(2, "0")}`;
+}
+
+function mySpaceDateFromKey(key) {
+    const [year, month, day] = String(key).split("-").map(Number);
+    return new Date(year, month - 1, day);
+}
+
+function mySpaceDisplayTime(value, allDay = false) {
+    if (!value || allDay) return allDay ? "All day" : "No time set";
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? "" : parsed.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
+function mySpaceCalendarEntries() {
+    const local = mySpaceTodosCache.map((item) => ({
+        source: "local", id: item.id, title: item.title, start: item.due_at,
+        dateKey: item.due_at ? mySpaceDateKey(item.due_at) : "9999-12-31", all_day: false, item,
+    }));
+    const google = mySpaceGoogleEvents.filter((item) => item.start).map((item) => ({
+        ...item, dateKey: mySpaceDateKey(item.start, item.all_day), source: "google",
+    }));
+    return [...local, ...google];
+}
+
+function renderMySpaceCalendar() {
+    const grid = document.getElementById("mySpaceCalendarGrid");
+    const title = document.getElementById("mySpaceCalendarTitle");
+    if (!grid || !title) return;
+    title.textContent = mySpaceCalendarMonth.toLocaleDateString([], { month: "long", year: "numeric" });
+    const first = new Date(mySpaceCalendarMonth.getFullYear(), mySpaceCalendarMonth.getMonth(), 1);
+    const offset = (first.getDay() + 6) % 7;
+    const gridStart = new Date(first);
+    gridStart.setDate(first.getDate() - offset);
+    const entries = mySpaceCalendarEntries();
+    const todayKey = mySpaceTodayInput();
+    const cells = [];
+    for (let index = 0; index < 42; index += 1) {
+        const day = new Date(gridStart);
+        day.setDate(gridStart.getDate() + index);
+        const key = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`;
+        const dayEntries = entries.filter((entry) => entry.dateKey === key).slice(0, 3);
+        const total = entries.filter((entry) => entry.dateKey === key).length;
+        cells.push(`<button type="button" class="myspace-calendar-day ${day.getMonth() !== first.getMonth() ? "outside" : ""} ${key === todayKey ? "today" : ""} ${key === mySpaceSelectedDate ? "selected" : ""}" onclick="selectMySpaceCalendarDate('${key}')">
+            <span class="day-number">${day.getDate()}</span>
+            <span class="myspace-calendar-events">${dayEntries.map((entry) => `<span class="myspace-calendar-chip ${entry.source === "google" ? "google" : ""}">${escapeHtml(entry.title || "Untitled")}</span>`).join("")}${total > 3 ? `<span class="myspace-calendar-more">+${total - 3} more</span>` : ""}</span>
+        </button>`);
+    }
+    grid.innerHTML = cells.join("");
+    renderMySpaceUpcoming();
+}
+
+function renderMySpaceUpcoming() {
+    const list = document.getElementById("mySpaceUpcomingList");
+    const heading = document.getElementById("mySpaceAgendaTitle");
+    if (!list || !heading) return;
+    const today = mySpaceTodayInput();
+    let entries = mySpaceCalendarEntries().filter((entry) => {
+        if (mySpaceSelectedDate) return entry.dateKey === mySpaceSelectedDate;
+        if (entry.source === "local" && !entry.item?.is_done) return true;
+        return entry.dateKey >= today;
     });
+    entries.sort((a, b) => String(a.start || "9999-12-31").localeCompare(String(b.start || "9999-12-31")));
+    entries = entries.slice(0, 60);
+    heading.textContent = mySpaceSelectedDate
+        ? mySpaceDateFromKey(mySpaceSelectedDate).toLocaleDateString([], { weekday: "long", day: "numeric", month: "long" })
+        : "Upcoming";
+    if (!entries.length) {
+        list.innerHTML = `<div class="myspace-empty">${mySpaceSelectedDate ? "Nothing scheduled for this day." : "No upcoming tasks or events."}</div>`;
+        return;
+    }
+    list.innerHTML = entries.map((entry) => {
+        if (entry.source === "google") {
+            return `<article class="myspace-agenda-item google"><span class="user-chip">G</span><div class="myspace-agenda-item-main"><strong>${escapeHtml(entry.title || "Busy")}</strong><p>${escapeHtml(entry.all_day ? `${entry.dateKey} · All day` : `${entry.dateKey} · ${mySpaceDisplayTime(entry.start)}`)}${entry.location ? ` · ${escapeHtml(entry.location)}` : ""}</p>${entry.html_link ? `<div class="myspace-agenda-actions"><a class="btn" href="${escapeHtml(entry.html_link)}" target="_blank" rel="noopener">Open in Google</a></div>` : ""}</div></article>`;
+        }
+        const item = entry.item;
+        return `<article class="myspace-agenda-item ${item.is_done ? "done" : ""}"><label class="myspace-check" title="Mark complete"><input type="checkbox" ${item.is_done ? "checked" : ""} onchange="toggleMySpaceTodo(${item.id}, this.checked)"/><span></span></label><div class="myspace-agenda-item-main"><strong>${escapeHtml(item.title || "Task")}</strong><p>${escapeHtml(item.due_at ? `${entry.dateKey} · ${mySpaceDisplayTime(item.due_at)}` : "No due date")} · ${escapeHtml(mySpaceTypeLabel(item.item_type))} · ${escapeHtml(item.priority || "normal")}</p>${item.follow_up_with ? `<p>Follow up with ${escapeHtml(item.follow_up_with)}</p>` : ""}<div class="myspace-agenda-actions"><button class="btn" onclick="editMySpaceTodo(${item.id})">Edit</button><button class="btn danger" onclick="deleteMySpaceTodo(${item.id})">Delete</button></div></div></article>`;
+    }).join("");
+}
+
+function selectMySpaceCalendarDate(key) {
+    mySpaceSelectedDate = key;
+    const due = document.getElementById("mySpaceNewDue");
+    if (due && !due.value && !mySpaceEditingTodoId) due.value = `${key}T09:00`;
+    renderMySpaceCalendar();
+}
+
+function clearMySpaceSelectedDate() { mySpaceSelectedDate = null; renderMySpaceCalendar(); }
+function moveMySpaceCalendar(offset) {
+    mySpaceCalendarMonth = new Date(mySpaceCalendarMonth.getFullYear(), mySpaceCalendarMonth.getMonth() + Number(offset || 0), 1);
+    mySpaceSelectedDate = null;
+    loadMySpaceGoogleEvents();
+}
+function goToMySpaceCalendarToday() {
+    const now = new Date();
+    mySpaceCalendarMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    mySpaceSelectedDate = mySpaceTodayInput();
+    loadMySpaceGoogleEvents();
 }
 
 function renderMySpaceQuickLinks(items) {
@@ -2376,6 +2478,64 @@ function toggleMySpaceNewFollowField(value) {
     if (!show) followEl.value = "";
 }
 
+function renderMySpaceGoogleStatus(status) {
+    const el = document.getElementById("mySpaceGoogleConnect");
+    if (!el) return;
+    if (status?.connected) {
+        el.classList.add("connected");
+        el.innerHTML = `<span class="small"><strong>Google Calendar</strong><br>${escapeHtml(status.email || "Connected")}</span><button class="btn" onclick="loadMySpaceGoogleEvents()">Refresh</button><button class="btn danger" onclick="disconnectMySpaceGoogleCalendar()">Disconnect</button>`;
+    } else {
+        el.classList.remove("connected");
+        el.innerHTML = `<span class="small muted">Google Calendar not connected</span><button class="btn" onclick="connectMySpaceGoogleCalendar()">Connect Google Calendar</button>`;
+    }
+}
+
+async function loadMySpaceGoogleEvents() {
+    const statusResponse = await apiFetch("/my-space/calendar/status");
+    if (!statusResponse.ok) return;
+    const status = await statusResponse.json();
+    renderMySpaceGoogleStatus(status);
+    if (!status.connected) {
+        mySpaceGoogleEvents = [];
+        renderMySpaceCalendar();
+        return;
+    }
+    const start = new Date(mySpaceCalendarMonth.getFullYear(), mySpaceCalendarMonth.getMonth() - 1, 1);
+    const end = new Date(mySpaceCalendarMonth.getFullYear(), mySpaceCalendarMonth.getMonth() + 4, 1);
+    const params = new URLSearchParams({ time_min: start.toISOString(), time_max: end.toISOString() });
+    const response = await apiFetch(`/my-space/calendar/events?${params.toString()}`);
+    if (!response.ok) {
+        const message = await extractErrorMessage(response);
+        document.getElementById("mySpaceUpcomingList")?.insertAdjacentHTML("afterbegin", `<div class="myspace-empty">${escapeHtml(message)}</div>`);
+        return;
+    }
+    const data = await response.json();
+    mySpaceGoogleEvents = Array.isArray(data.events) ? data.events : [];
+    renderMySpaceCalendar();
+}
+
+async function connectMySpaceGoogleCalendar() {
+    const response = await apiFetch("/my-space/calendar/google/connect", { method: "POST" });
+    if (!response.ok) {
+        alert(`Could not start Google Calendar connection: ${await extractErrorMessage(response)}`);
+        return;
+    }
+    const data = await response.json();
+    window.location.assign(data.authorization_url);
+}
+
+async function disconnectMySpaceGoogleCalendar() {
+    if (!confirm("Disconnect your Google Calendar from My Space?")) return;
+    const response = await apiFetch("/my-space/calendar/google/disconnect", { method: "POST" });
+    if (!response.ok) {
+        alert(`Could not disconnect Google Calendar: ${await extractErrorMessage(response)}`);
+        return;
+    }
+    mySpaceGoogleEvents = [];
+    renderMySpaceGoogleStatus({ connected: false });
+    renderMySpaceCalendar();
+}
+
 async function loadMySpace() {
     const r = await apiFetch("/my-space");
     if (!r.ok) {
@@ -2392,6 +2552,11 @@ async function loadMySpace() {
     renderMySpaceSnippets(Array.isArray(data.snippets) ? data.snippets : []);
     renderMySpaceGuides(Array.isArray(data.staff_guides) ? data.staff_guides : []);
     mySpaceLoadedOnce = true;
+    await loadMySpaceGoogleEvents();
+    if (new URLSearchParams(window.location.search).has("calendar_connected")) {
+        const cleanUrl = `${window.location.pathname}${window.location.hash || ""}`;
+        window.history.replaceState({}, "", cleanUrl);
+    }
     loadNotifications();
 }
 
@@ -2399,7 +2564,6 @@ async function addMySpaceTodo() {
     const titleEl = document.getElementById("mySpaceNewTitle");
     const dueEl = document.getElementById("mySpaceNewDue");
     const priorityEl = document.getElementById("mySpaceNewPriority");
-    const bucketEl = document.getElementById("mySpaceNewBucket");
     const typeEl = document.getElementById("mySpaceNewType");
     const followEl = document.getElementById("mySpaceNewFollowUpWith");
     const title = String(titleEl?.value || "").trim();
@@ -2408,32 +2572,60 @@ async function addMySpaceTodo() {
         alert("Add a task title first.");
         return;
     }
-    const r = await apiFetch("/my-space/todos", {
-        method: "POST",
+    const editingId = mySpaceEditingTodoId;
+    const r = await apiFetch(editingId ? `/my-space/todos/${editingId}` : "/my-space/todos", {
+        method: editingId ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
             title,
             priority: priorityEl?.value || "normal",
-            bucket: mySpaceCleanBucket(bucketEl?.value),
+            bucket: "today",
             item_type: itemType,
             follow_up_with: itemType === "follow_up" ? (followEl?.value || "") : "",
             due_at: mySpaceDuePayload(dueEl?.value),
         }),
     });
     if (!r.ok) {
-        alert(`Failed to add task: ${await extractErrorMessage(r)}`);
+        alert(`Failed to ${editingId ? "update" : "add"} task: ${await extractErrorMessage(r)}`);
         return;
     }
     if (titleEl) titleEl.value = "";
     if (dueEl) dueEl.value = "";
     if (priorityEl) priorityEl.value = "normal";
-    if (bucketEl) bucketEl.value = "today";
     if (typeEl) typeEl.value = "task";
     if (followEl) {
         followEl.value = "";
     }
     toggleMySpaceNewFollowField("task");
+    mySpaceEditingTodoId = null;
+    document.getElementById("mySpaceAddTaskButton").textContent = "Add Task";
+    document.getElementById("mySpaceCancelEdit")?.classList.add("hidden");
     await loadMySpace();
+}
+
+function editMySpaceTodo(todoId) {
+    const item = mySpaceTodosCache.find((todo) => Number(todo.id) === Number(todoId));
+    if (!item) return;
+    mySpaceEditingTodoId = item.id;
+    document.getElementById("mySpaceNewTitle").value = item.title || "";
+    document.getElementById("mySpaceNewDue").value = item.due_at ? String(item.due_at).slice(0, 16) : "";
+    document.getElementById("mySpaceNewPriority").value = item.priority || "normal";
+    document.getElementById("mySpaceNewType").value = mySpaceCleanType(item.item_type);
+    document.getElementById("mySpaceNewFollowUpWith").value = item.follow_up_with || "";
+    toggleMySpaceNewFollowField(item.item_type);
+    document.getElementById("mySpaceAddTaskButton").textContent = "Update Task";
+    document.getElementById("mySpaceCancelEdit")?.classList.remove("hidden");
+    document.getElementById("mySpaceNewTitle")?.focus();
+}
+
+function cancelMySpaceTodoEdit() {
+    mySpaceEditingTodoId = null;
+    ["mySpaceNewTitle", "mySpaceNewDue", "mySpaceNewFollowUpWith"].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ""; });
+    document.getElementById("mySpaceNewPriority").value = "normal";
+    document.getElementById("mySpaceNewType").value = "task";
+    toggleMySpaceNewFollowField("task");
+    document.getElementById("mySpaceAddTaskButton").textContent = "Add Task";
+    document.getElementById("mySpaceCancelEdit")?.classList.add("hidden");
 }
 
 async function saveMySpaceTodo(todoId) {

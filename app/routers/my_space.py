@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from pydantic import BaseModel
@@ -13,9 +13,16 @@ from app.models import (
     MySpaceQuickLink,
     MySpaceSnippet,
     MySpaceTodo,
+    GoogleCalendarConnection,
     StaffGuide,
     User,
     UserRole,
+)
+from app.services.google_calendar import (
+    calendar_flow,
+    calendar_service,
+    make_calendar_state,
+    normalize_event,
 )
 
 router = APIRouter(prefix="/my-space", tags=["my-space"])
@@ -206,6 +213,84 @@ def get_my_space(
         "snippets": [_snippet_out(snippet) for snippet in snippets],
         "staff_guides": [_guide_out(guide) for guide in guides],
     }
+
+
+@router.get("/calendar/status")
+def google_calendar_status(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    connection = db.get(GoogleCalendarConnection, user.id)
+    return {
+        "connected": bool(connection),
+        "email": connection.google_email if connection else None,
+        "updated_at": connection.updated_at if connection else None,
+    }
+
+
+@router.post("/calendar/google/connect")
+def connect_google_calendar(user: User = Depends(get_current_user)):
+    flow = calendar_flow()
+    authorization_url, _ = flow.authorization_url(
+        access_type="offline",
+        include_granted_scopes="true",
+        prompt="consent",
+        state=make_calendar_state(user.id),
+    )
+    return {"authorization_url": authorization_url}
+
+
+@router.post("/calendar/google/disconnect")
+def disconnect_google_calendar(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    connection = db.get(GoogleCalendarConnection, user.id)
+    if connection:
+        db.delete(connection)
+        db.commit()
+    return {"ok": True}
+
+
+@router.get("/calendar/events")
+def get_google_calendar_events(
+    time_min: datetime | None = None,
+    time_max: datetime | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    connection = db.get(GoogleCalendarConnection, user.id)
+    if not connection:
+        return {"connected": False, "events": []}
+    now = datetime.now(timezone.utc)
+    start = time_min or (now - timedelta(days=7))
+    end = time_max or (now + timedelta(days=90))
+    if start.tzinfo is None:
+        start = start.replace(tzinfo=timezone.utc)
+    if end.tzinfo is None:
+        end = end.replace(tzinfo=timezone.utc)
+    if end <= start or end - start > timedelta(days=370):
+        raise HTTPException(status_code=400, detail="Calendar date range must be between 1 and 370 days.")
+    try:
+        service = calendar_service(db, connection)
+        response = (
+            service.events()
+            .list(
+                calendarId="primary",
+                timeMin=start.isoformat(),
+                timeMax=end.isoformat(),
+                singleEvents=True,
+                orderBy="startTime",
+                maxResults=500,
+            )
+            .execute()
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="Google Calendar could not be loaded right now.") from exc
+    events = [normalize_event(item) for item in response.get("items", []) if item.get("status") != "cancelled"]
+    return {"connected": True, "email": connection.google_email, "events": events}
 
 
 @router.post("/todos")

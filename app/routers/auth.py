@@ -8,7 +8,8 @@ from google.oauth2.credentials import Credentials
 
 from app.config import settings
 from app.db import get_db
-from app.models import OAuthToken
+from app.models import OAuthToken, User
+from app.services.google_calendar import calendar_flow, calendar_state_user_id, save_calendar_connection
 
 router = APIRouter()
 
@@ -103,6 +104,19 @@ def google_callback(request: Request, db: Session = Depends(get_db)):
     code = request.query_params.get("code")
     if not code:
         raise HTTPException(status_code=400, detail="Missing code")
+
+    calendar_user_id = calendar_state_user_id(request.query_params.get("state"))
+    if calendar_user_id is not None:
+        if db.get(User, calendar_user_id) is None:
+            raise HTTPException(status_code=400, detail="Calendar connection user no longer exists.")
+        flow = calendar_flow()
+        try:
+            flow.fetch_token(code=code)
+            save_calendar_connection(db, calendar_user_id, flow.credentials)
+        except Exception as exc:
+            db.rollback()
+            raise HTTPException(status_code=400, detail="Google Calendar connection failed.") from exc
+        return RedirectResponse(url="/?calendar_connected=1")
 
     flow = _flow()
 

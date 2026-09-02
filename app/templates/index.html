@@ -3323,7 +3323,7 @@
     .myspace-card p{margin:6px 0 0;color:#667085;font-size:13px;line-height:1.45}
     .myspace-add{
       display:grid;
-      grid-template-columns:minmax(240px, 2fr) repeat(4, minmax(125px, 1fr));
+      grid-template-columns:minmax(240px, 1.8fr) repeat(3, minmax(150px, 1fr));
       gap:12px;
       align-items:end;
       margin-top:16px;
@@ -3349,6 +3349,77 @@
       gap:12px;
       margin-top:16px;
     }
+    .myspace-calendar-heading,
+    .myspace-google-connect,
+    .myspace-calendar-toolbar,
+    .myspace-agenda-head{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+    }
+    .myspace-google-connect{
+      padding:9px 10px 9px 14px;
+      border:1px solid #dbe4ef;
+      border-radius:14px;
+      background:rgba(255,255,255,.82);
+    }
+    .myspace-google-connect.connected{border-color:#bbf7d0;background:#f0fdf4}
+    .myspace-calendar-layout{
+      display:grid;
+      grid-template-columns:minmax(0, 1.65fr) minmax(300px, .7fr);
+      gap:14px;
+      margin-top:16px;
+    }
+    .myspace-calendar-shell,.myspace-agenda{
+      border:1px solid #dbe4ef;
+      border-radius:18px;
+      background:#fff;
+      overflow:hidden;
+    }
+    .myspace-calendar-toolbar{padding:12px 14px;border-bottom:1px solid #e7edf5}
+    .myspace-calendar-toolbar h4{margin:0 auto;font-size:18px;color:#101828}
+    .myspace-calendar-toolbar .btn{min-width:42px}
+    .myspace-calendar-weekdays,.myspace-calendar-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr))}
+    .myspace-calendar-weekdays{border-bottom:1px solid #e7edf5;background:#f8fafc}
+    .myspace-calendar-weekdays span{padding:9px 4px;text-align:center;color:#667085;font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.06em}
+    .myspace-calendar-day{
+      min-height:116px;
+      padding:7px;
+      border:0;
+      border-right:1px solid #e7edf5;
+      border-bottom:1px solid #e7edf5;
+      background:#fff;
+      text-align:left;
+      overflow:hidden;
+      cursor:pointer;
+    }
+    .myspace-calendar-day:nth-child(7n){border-right:0}
+    .myspace-calendar-day.outside{background:#f8fafc;color:#98a2b3}
+    .myspace-calendar-day.selected{box-shadow:inset 0 0 0 2px #9b7514;background:#fffdf5}
+    .myspace-calendar-day.today .day-number{background:#111827;color:#f9e7a7}
+    .day-number{display:inline-flex;width:26px;height:26px;border-radius:999px;align-items:center;justify-content:center;font-size:12px;font-weight:900}
+    .myspace-calendar-events{display:flex;flex-direction:column;gap:4px;margin-top:4px}
+    .myspace-calendar-chip{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:4px 6px;border-radius:7px;background:#fef3c7;color:#713f12;font-size:10px;font-weight:800}
+    .myspace-calendar-chip.google{background:#e8f1ff;color:#174ea6}
+    .myspace-calendar-more{color:#667085;font-size:10px;font-weight:800;padding-left:4px}
+    .myspace-calendar-legend{display:flex;gap:16px;padding:10px 14px;color:#667085;font-size:11px}
+    .myspace-calendar-legend span{display:flex;align-items:center;gap:6px}
+    .myspace-calendar-legend i{width:9px;height:9px;border-radius:3px;background:#e5a812}
+    .myspace-calendar-legend i.google{background:#4285f4}
+    .myspace-agenda{padding:14px;background:#f8fafc;max-height:620px;overflow:auto}
+    .myspace-agenda-head{padding-bottom:12px;border-bottom:1px solid #dbe4ef}
+    .myspace-agenda-head h4{margin:3px 0 0;color:#101828;font-size:17px}
+    .myspace-upcoming-list{display:flex;flex-direction:column;gap:9px;margin-top:12px}
+    .myspace-agenda-item{display:grid;grid-template-columns:28px minmax(0,1fr);gap:9px;padding:11px;border:1px solid #dbe4ef;border-radius:14px;background:#fff}
+    .myspace-agenda-item.google{border-left:4px solid #4285f4}
+    .myspace-agenda-item.done{opacity:.62}
+    .myspace-agenda-item.done strong{text-decoration:line-through}
+    .myspace-agenda-item-main{min-width:0}
+    .myspace-agenda-item-main strong{display:block;color:#101828;font-size:13px;overflow-wrap:anywhere}
+    .myspace-agenda-item-main p{margin:4px 0;color:#667085;font-size:11px}
+    .myspace-agenda-actions{display:flex;gap:6px;margin-top:8px}
+    .myspace-agenda-actions .btn{padding:5px 8px;min-height:28px;font-size:11px}
     .myspace-lane{
       min-height:190px;
       border:1px solid #dbe4ef;
@@ -3596,7 +3667,7 @@
     @media (max-width: 1220px){
       .myspace-add{grid-template-columns:1fr 1fr}
       .myspace-follow-field,.myspace-form-actions{grid-column:1 / -1}
-      .myspace-planner,.myspace-tool-grid{grid-template-columns:1fr}
+      .myspace-planner,.myspace-tool-grid,.myspace-calendar-layout{grid-template-columns:1fr}
     }
     @media (max-width: 1050px){
       .myspace-grid{grid-template-columns:1fr}
@@ -3612,6 +3683,10 @@
       .myspace-todo-actions{grid-column:auto}
       .myspace-tool-actions,
       .myspace-guide-actions{flex-direction:row;flex-wrap:wrap}
+      .myspace-calendar-heading,.myspace-google-connect{align-items:stretch;flex-direction:column}
+      .myspace-calendar-day{min-height:76px;padding:4px}
+      .myspace-calendar-chip{font-size:0;height:6px;padding:0}
+      .myspace-calendar-toolbar h4{font-size:15px}
     }
 
     /* My Space / Timesheet */
@@ -5348,22 +5423,22 @@
                   <div class="myspace-grid">
                     <div class="myspace-card wide myspace-planner-card"
                       id="mySpacePlannerCard">
-                      <h3>Daily Planner + Follow-Up Tracker</h3>
-                      <p>Plan today, park work for later, and keep chase-ups
-                        visible. Only your login can access these items.</p>
+                      <div class="myspace-calendar-heading">
+                        <div>
+                          <h3>Calendar &amp; Upcoming Tasks</h3>
+                          <p>Add private tasks and view events from your Google
+                            Calendar in one place.</p>
+                        </div>
+                        <div class="myspace-google-connect" id="mySpaceGoogleConnect">
+                          <span class="small muted">Google Calendar not connected</span>
+                          <button class="btn" onclick="connectMySpaceGoogleCalendar()">Connect Google Calendar</button>
+                        </div>
+                      </div>
                       <div class="myspace-add">
                         <div class="field myspace-task-field">
                           <div class="label">Task</div>
                           <input type="text" id="mySpaceNewTitle"
                             placeholder="What needs attention?" />
-                        </div>
-                        <div class="field">
-                          <div class="label">Lane</div>
-                          <select id="mySpaceNewBucket">
-                            <option value="today">Today</option>
-                            <option value="week">This Week</option>
-                            <option value="later">Later</option>
-                          </select>
                         </div>
                         <div class="field">
                           <div class="label">Type</div>
@@ -5382,8 +5457,8 @@
                           </select>
                         </div>
                         <div class="field">
-                          <div class="label">Due Date</div>
-                          <input type="date" id="mySpaceNewDue" />
+                          <div class="label">Due date &amp; time</div>
+                          <input type="datetime-local" id="mySpaceNewDue" />
                         </div>
                         <div class="field myspace-follow-field hidden"
                           id="mySpaceNewFollowField">
@@ -5394,38 +5469,39 @@
                         <div class="myspace-form-actions">
                           <span class="small muted">Saved to your private
                             workspace.</span>
-                          <button class="btn primary"
+                          <button class="btn hidden" id="mySpaceCancelEdit"
+                            onclick="cancelMySpaceTodoEdit()">Cancel</button>
+                          <button class="btn primary" id="mySpaceAddTaskButton"
                             onclick="addMySpaceTodo()">Add Task</button>
                         </div>
                       </div>
-                      <div class="myspace-planner">
-                        <div class="myspace-lane">
-                          <div class="myspace-lane-head">
-                            <h4>Today</h4>
-                            <span class="myspace-count"
-                              id="mySpaceTodotodayCount">0</span>
+                      <div class="myspace-calendar-layout">
+                        <div class="myspace-calendar-shell">
+                          <div class="myspace-calendar-toolbar">
+                            <button class="btn" onclick="moveMySpaceCalendar(-1)" aria-label="Previous month">&#8249;</button>
+                            <button class="btn" onclick="goToMySpaceCalendarToday()">Today</button>
+                            <h4 id="mySpaceCalendarTitle"></h4>
+                            <button class="btn" onclick="moveMySpaceCalendar(1)" aria-label="Next month">&#8250;</button>
                           </div>
-                          <div class="myspace-lane-list"
-                            id="mySpaceTodotoday"></div>
-                        </div>
-                        <div class="myspace-lane">
-                          <div class="myspace-lane-head">
-                            <h4>This Week</h4>
-                            <span class="myspace-count"
-                              id="mySpaceTodoweekCount">0</span>
+                          <div class="myspace-calendar-weekdays" aria-hidden="true">
+                            <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
                           </div>
-                          <div class="myspace-lane-list"
-                            id="mySpaceTodoweek"></div>
-                        </div>
-                        <div class="myspace-lane">
-                          <div class="myspace-lane-head">
-                            <h4>Later</h4>
-                            <span class="myspace-count"
-                              id="mySpaceTodolaterCount">0</span>
+                          <div class="myspace-calendar-grid" id="mySpaceCalendarGrid"></div>
+                          <div class="myspace-calendar-legend">
+                            <span><i class="local"></i>Private task</span>
+                            <span><i class="google"></i>Google event</span>
                           </div>
-                          <div class="myspace-lane-list"
-                            id="mySpaceTodolater"></div>
                         </div>
+                        <aside class="myspace-agenda">
+                          <div class="myspace-agenda-head">
+                            <div>
+                              <span class="page-banner-kicker">Your schedule</span>
+                              <h4 id="mySpaceAgendaTitle">Upcoming</h4>
+                            </div>
+                            <button class="btn" onclick="clearMySpaceSelectedDate()">All upcoming</button>
+                          </div>
+                          <div id="mySpaceUpcomingList" class="myspace-upcoming-list"></div>
+                        </aside>
                       </div>
                     </div>
 

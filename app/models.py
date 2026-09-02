@@ -161,6 +161,24 @@ class OAuthToken(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class GoogleCalendarConnection(Base):
+    """A private Google Calendar OAuth connection for one app user."""
+
+    __tablename__ = "google_calendar_connections"
+
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), primary_key=True)
+    google_email: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    access_token: Mapped[str] = mapped_column(Text)
+    refresh_token: Mapped[str | None] = mapped_column(Text, nullable=True)
+    token_uri: Mapped[str] = mapped_column(String, default="https://oauth2.googleapis.com/token")
+    scopes: Mapped[str] = mapped_column(Text, default="")
+    expiry: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User")
+
+
 class AppState(Base):
     """Small key/value store for application state.
 
