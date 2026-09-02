@@ -177,7 +177,35 @@ def test_ticket_list_returns_all_tab_counts(ticket_api):
         "in_progress": 1,
         "responded": 1,
         "no_reply_needed": 1,
+        "assigned_to_me": 0,
     }
+
+
+def test_assigned_to_me_tab_is_isolated_to_logged_in_user_and_mailbox(ticket_api):
+    client, db, context, users = ticket_api
+    staff_pending = _ticket("staff-pending")
+    staff_responded = _ticket("staff-responded", status=TicketStatus.RESPONDED)
+    admin_ticket = _ticket("admin-ticket", status=TicketStatus.IN_PROGRESS)
+    other_mailbox = _ticket("staff-other-mailbox", mailbox=OTHER_MAILBOX)
+    staff_pending.assignee_user_id = users["staff"].id
+    staff_responded.assignee_user_id = users["staff"].id
+    admin_ticket.assignee_user_id = users["admin"].id
+    other_mailbox.assignee_user_id = users["staff"].id
+    db.add_all([staff_pending, staff_responded, admin_ticket, other_mailbox])
+    db.commit()
+    context["user"] = users["staff"]
+
+    response = client.get("/tickets", params={"tab": "assigned_to_me"})
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 2
+    assert data["counts"]["assigned_to_me"] == 2
+    assert {item["thread_id"] for item in data["items"]} == {
+        staff_pending.thread_id,
+        staff_responded.thread_id,
+    }
+    assert all(item["assignee_user_id"] == users["staff"].id for item in data["items"])
 
 
 def test_purge_only_removes_no_reply_needed_from_selected_mailbox(ticket_api):

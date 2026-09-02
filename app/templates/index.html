@@ -539,11 +539,14 @@
     }
     .notification-bell{
       position:relative;
-      width:42px;
+      width:auto;
+      min-width:42px;
       height:42px;
       display:inline-flex;
       align-items:center;
       justify-content:center;
+      gap:9px;
+      padding:0 14px;
       border:1px solid rgba(255,255,255,.15);
       border-radius:14px;
       background:rgba(255,255,255,.06);
@@ -565,6 +568,12 @@
       stroke-linecap:round;
       stroke-linejoin:round;
     }
+    .notification-bell-label{
+      font-size:13px;
+      font-weight:800;
+      line-height:1;
+      white-space:nowrap;
+    }
     .notification-count{
       position:absolute;
       top:-6px;
@@ -585,102 +594,6 @@
     .notification-bell.has-alerts .notification-count{
       display:flex;
     }
-    .notification-panel{
-      position:absolute;
-      top:48px;
-      left:0;
-      width:min(380px, calc(100vw - 28px));
-      max-height:min(560px, calc(100vh - 96px));
-      overflow:auto;
-      display:none;
-      background:#fff;
-      color:#101828;
-      border:1px solid #dbe4ef;
-      border-radius:18px;
-      padding:14px;
-      box-shadow:0 24px 56px rgba(0,0,0,.26);
-      z-index:10;
-    }
-    .notification-panel.show{display:block}
-    .notification-head{
-      display:flex;
-      align-items:flex-start;
-      justify-content:space-between;
-      gap:12px;
-      padding-bottom:10px;
-      border-bottom:1px solid #eef2f7;
-    }
-    .notification-head strong{
-      display:block;
-      font-size:14px;
-    }
-    .notification-head span{
-      display:block;
-      color:#667085;
-      font-size:12px;
-      margin-top:3px;
-    }
-    .notification-open-centre{
-      width:100%;
-      min-height:42px;
-      border:1px solid #111827;
-      border-radius:14px;
-      color:#fff;
-      background:#111827;
-      font:inherit;
-      font-size:13px;
-      font-weight:900;
-      cursor:pointer;
-      transition:background .2s ease, transform .2s ease;
-    }
-    .notification-open-centre:hover{
-      background:#050505;
-      transform:translateY(-1px);
-    }
-    .notification-refresh{
-      border:none;
-      background:#f4f7fb;
-      color:#344054;
-      border-radius:999px;
-      padding:7px 10px;
-      font-size:12px;
-      font-weight:800;
-      cursor:pointer;
-    }
-    .notification-list{
-      display:flex;
-      flex-direction:column;
-      gap:8px;
-      margin-top:12px;
-    }
-    .notification-item{
-      width:100%;
-      text-align:left;
-      border:1px solid #e4eaf2;
-      background:#fff;
-      border-radius:14px;
-      padding:10px;
-      cursor:pointer;
-      transition:background .18s ease, border-color .18s ease, transform .18s ease;
-    }
-    .notification-item:hover{
-      background:#f8fafc;
-      border-color:#c9a246;
-      transform:translateY(-1px);
-    }
-    .notification-item strong{
-      display:block;
-      font-size:13px;
-      color:#101828;
-      line-height:1.35;
-    }
-    .notification-item span{
-      display:block;
-      margin-top:4px;
-      color:#667085;
-      font-size:12px;
-      line-height:1.35;
-    }
     .notification-kind{
       display:inline-flex;
       margin-bottom:7px;
@@ -699,12 +612,6 @@
     .notification-kind.assigned{background:#eff6ff;color:#1d4ed8}
     .notification-kind.new{background:#ecfdf3;color:#047857}
     .notification-kind.soon{background:#f8fafc;color:#475467}
-    .notification-empty{
-      padding:18px 8px 8px;
-      text-align:center;
-      color:#667085;
-      font-size:13px;
-    }
     .notification-centre-stats{
       display:grid;
       grid-template-columns:repeat(5, minmax(0, 1fr));
@@ -5187,28 +5094,16 @@
             </div>
             <div class="notification-wrap">
               <button class="notification-bell" id="notificationBell"
-                type="button" onclick="toggleNotifications()"
-                aria-label="Open notifications">
+                type="button" onclick="openNotificationCenter()"
+                aria-label="Open Notification Center">
                 <svg viewBox="0 0 24 24" aria-hidden="true">
                   <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path>
                   <path d="M10 21h4"></path>
                 </svg>
+                <span class="notification-bell-label">Notification Center</span>
                 <span class="notification-count"
                   id="notificationCount">0</span>
               </button>
-              <div class="notification-panel" id="notificationPanel">
-                <div class="notification-head">
-                  <div>
-                    <strong>Notification Center</strong>
-                    <span id="notificationSummary">Checking portal
-                      items...</span>
-                  </div>
-                  <button class="notification-refresh" type="button"
-                    onclick="refreshNotifications(event)">Refresh</button>
-                </div>
-                <div class="notification-list"
-                  id="notificationList"></div>
-              </div>
             </div>
           </div>
           <div class="small muted">System Access</div>
@@ -5434,12 +5329,13 @@
                 <div class="hub-hero page-banner">
                   <div class="page-banner-kicker">Action Centre</div>
                   <h2>Notification Center</h2>
-                  <p>Assigned tickets, maintenance action, compliance risk,
-                    rent alerts, and private follow-ups in one clear place.</p>
+                  <p>Email assignments appear first, followed by renewals and
+                    personal work. Operational maintenance, rent, and
+                    compliance alerts are grouped below.</p>
                   <div class="page-banner-actions">
-                    <span class="chip">Assigned Work</span>
-                    <span class="chip">Maintenance</span>
-                    <span class="chip">Compliance</span>
+                    <span class="chip">Email Assignments</span>
+                    <span class="chip">Lease Renewals</span>
+                    <span class="chip">My Space</span>
                     <span class="chip" id="notificationCenterGenerated">Ready</span>
                   </div>
                 </div>
@@ -5934,6 +5830,9 @@
                       <button data-tab="no_reply_needed">Reply not Needed <span
                           class="pill"
                           id="tabNoReplyNeededCount">0</span></button>
+                      <button data-tab="assigned_to_me">Assigned to Me <span
+                          class="pill"
+                          id="tabAssignedToMeCount">0</span></button>
                     </div>
 
                     <label class="mail-search">

@@ -720,6 +720,9 @@ function updateSyncContextUI() {
     if (isAllEmailsTab()) {
         if (viewBadge) viewBadge.textContent = "All Emails";
         info.textContent = "All Emails mode: Fetch uses the date range; Check Updates only checks forward from the last Check Updates checkpoint.";
+    } else if (String(currentTab || "").toLowerCase() === "assigned_to_me") {
+        if (viewBadge) viewBadge.textContent = "Assigned to Me";
+        info.textContent = "Assigned to Me shows tickets currently assigned to your staff account.";
     } else {
         if (viewBadge) viewBadge.textContent = "Awaiting Reply";
         info.textContent = "Awaiting Reply mode: Check Updates only checks forward from the last Check Updates checkpoint.";
@@ -794,14 +797,14 @@ function notificationIndexByItem(item) {
     return notificationItems.indexOf(item);
 }
 
-function notificationCardHtml(item, idx, compact = false) {
+function notificationCardHtml(item, idx) {
     return `
-      <button class="${compact ? "notification-item" : "notification-centre-card"}" type="button" onclick="openNotificationTarget(${idx})">
+      <button class="notification-centre-card" type="button" onclick="openNotificationTarget(${idx})">
         <span class="notification-kind ${escapeHtml(String(item.severity || "").toLowerCase())}">${escapeHtml(notificationKindLabel(item.kind))} - ${escapeHtml(notificationSeverityLabel(item.severity))}</span>
         <strong>${escapeHtml(item.title || "Notification")}</strong>
         <span>${escapeHtml(item.detail || "")}</span>
         <span>${escapeHtml(notificationDateLabel(item))}</span>
-        ${compact ? "" : `<em>${escapeHtml(notificationActionLabel(item))}</em>`}
+        <em>${escapeHtml(notificationActionLabel(item))}</em>
       </button>
     `;
 }
@@ -809,12 +812,12 @@ function notificationCardHtml(item, idx, compact = false) {
 function notificationCategoryCards(data = {}) {
     const c = data.categories || {};
     const cards = [
-        ["email", "Assigned Tickets", c.email || 0],
-        ["maintenance", "Maintenance", c.maintenance || 0],
+        ["email", "Emails Assigned to Me", c.email || 0],
         ["lease", "Lease Renewals", c.lease || 0],
-        ["compliance", "Compliance", c.compliance || 0],
-        ["rent", "Rent", c.rent || 0],
         ["myspace", "My Space", c.myspace || 0],
+        ["maintenance", "Maintenance", c.maintenance || 0],
+        ["rent", "Rent", c.rent || 0],
+        ["compliance", "Compliance", c.compliance || 0],
     ];
     return cards.map(([kind, label, count]) => `
       <div class="notification-stat">
@@ -828,12 +831,12 @@ function notificationCategoryCards(data = {}) {
 function notificationCategoryChartHtml(data = {}) {
     const c = data.categories || {};
     const rows = [
-        ["email", "Assigned Tickets", Number(c.email || 0)],
-        ["maintenance", "Maintenance", Number(c.maintenance || 0)],
+        ["email", "Emails Assigned to Me", Number(c.email || 0)],
         ["lease", "Lease Renewals", Number(c.lease || 0)],
-        ["compliance", "Compliance", Number(c.compliance || 0)],
-        ["rent", "Rent", Number(c.rent || 0)],
         ["myspace", "My Space", Number(c.myspace || 0)],
+        ["maintenance", "Maintenance", Number(c.maintenance || 0)],
+        ["rent", "Rent", Number(c.rent || 0)],
+        ["compliance", "Compliance", Number(c.compliance || 0)],
     ];
     const max = Math.max(...rows.map(([, , count]) => count), 1);
     return `
@@ -918,7 +921,7 @@ function renderNotificationCenter(data = latestNotificationData) {
         list.innerHTML = `<div class="ticket-empty"><strong>No notifications right now</strong><div class="small muted" style="margin-top:6px">Assigned tickets, maintenance action, lease renewal alerts, compliance risk, rent alerts, and personal follow-ups will appear here.</div></div>`;
         return;
     }
-    const groups = ["maintenance", "lease", "email", "compliance", "rent", "myspace"];
+    const groups = ["email", "lease", "myspace", "maintenance", "rent", "compliance"];
     list.innerHTML = groups.map((kind) => {
         const groupItems = notificationItems.filter((item) => String(item.kind || "").toLowerCase() === kind);
         if (!groupItems.length) return "";
@@ -931,7 +934,7 @@ function renderNotificationCenter(data = latestNotificationData) {
               </div>
             </div>
             <div class="notification-centre-grid">
-              ${groupItems.map((item) => notificationCardHtml(item, notificationIndexByItem(item), false)).join("")}
+              ${groupItems.map((item) => notificationCardHtml(item, notificationIndexByItem(item))).join("")}
             </div>
           </section>
         `;
@@ -941,35 +944,12 @@ function renderNotificationCenter(data = latestNotificationData) {
 function renderNotifications(data = {}) {
     const bell = document.getElementById("notificationBell");
     const countEl = document.getElementById("notificationCount");
-    const summary = document.getElementById("notificationSummary");
-    const list = document.getElementById("notificationList");
     const total = Number(data.total || 0);
     latestNotificationData = data || {};
     notificationItems = Array.isArray(data.items) ? data.items : [];
 
     if (bell) bell.classList.toggle("has-alerts", total > 0);
     if (countEl) countEl.textContent = total > 99 ? "99+" : String(total);
-    if (summary) {
-        const c = data.categories || {};
-        if (total > 0) {
-            summary.textContent = `${total} active notification${total === 1 ? "" : "s"} - Tickets ${c.email || 0}, Maintenance ${c.maintenance || 0}, Lease ${c.lease || 0}, Compliance ${c.compliance || 0}, Rent ${c.rent || 0}, My Space ${c.myspace || 0}`;
-        } else {
-            summary.textContent = "No assigned tickets, maintenance action, lease renewal alerts, compliance risk, rent alerts, or personal follow-ups.";
-        }
-    }
-    if (!list) return;
-    if (!notificationItems.length) {
-        list.innerHTML = `
-          <button class="notification-open-centre" type="button" onclick="openNotificationCenter()">Open Notification Center</button>
-          <div class="notification-empty">Everything important is up to date.</div>
-        `;
-        renderNotificationCenter(data);
-        return;
-    }
-    list.innerHTML = `
-      <button class="notification-open-centre" type="button" onclick="openNotificationCenter()">Open Notification Center</button>
-      ${notificationItems.slice(0, 5).map((item, idx) => notificationCardHtml(item, idx, true)).join("")}
-    `;
     renderNotificationCenter(data);
 }
 
@@ -985,37 +965,13 @@ async function loadNotifications() {
     }
 }
 
-function toggleNotifications() {
-    const panel = document.getElementById("notificationPanel");
-    const menu = document.getElementById("accountMenuDropdown");
-    if (!panel) return;
-    if (menu) menu.classList.remove("show");
-    panel.classList.toggle("show");
-    if (panel.classList.contains("show")) {
-        loadNotifications();
-    }
-}
-
-function closeNotifications() {
-    const panel = document.getElementById("notificationPanel");
-    if (panel) panel.classList.remove("show");
-}
-
 function openNotificationCenter() {
-    closeNotifications();
     switchDashboardTab("notifications");
-    loadNotifications();
-}
-
-function refreshNotifications(ev) {
-    if (ev) ev.stopPropagation();
-    loadNotifications();
 }
 
 async function openNotificationTarget(index) {
     const item = notificationItems[index];
     if (!item) return;
-    closeNotifications();
     const page = item.page || "portal";
     if (page === "inbox") {
         switchDashboardTab("inbox");
@@ -11254,6 +11210,7 @@ function renderTicketListData(data) {
     setText("tabInProgressCount", c.in_progress ?? 0);
     setText("tabRespondedCount", c.responded ?? 0);
     setText("tabNoReplyNeededCount", c.no_reply_needed ?? 0);
+    setText("tabAssignedToMeCount", c.assigned_to_me ?? 0);
 
     const list = document.getElementById("ticketList");
     if (!list) return;
@@ -12616,8 +12573,6 @@ function logout(message = "") {
     }
     notificationItems = [];
     renderNotifications({ total: 0, items: [], categories: {} });
-    closeNotifications();
-
     resetLoginRecaptcha();
     showLoginModal();
     if (message) setLoginError(message);
@@ -12653,13 +12608,6 @@ window.addEventListener("load", async () => {
         if (dd && trigger) {
             if (!dd.contains(ev.target) && !trigger.contains(ev.target)) {
                 dd.classList.remove("show");
-            }
-        }
-        const bell = document.getElementById("notificationBell");
-        const panel = document.getElementById("notificationPanel");
-        if (panel && bell) {
-            if (!panel.contains(ev.target) && !bell.contains(ev.target)) {
-                panel.classList.remove("show");
             }
         }
     });

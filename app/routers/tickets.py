@@ -95,7 +95,7 @@ def _get_ticket(db: Session, thread_id: str, mailbox: str) -> ThreadTicket:
     raise HTTPException(status_code=404, detail="Ticket not found")
 
 
-def _tab_filter(q, tab: str):
+def _tab_filter(q, tab: str, user_id: int | None = None):
     tab = (tab or "all").lower().strip()
 
     if tab in ("awaiting_reply", "awaiting"):
@@ -112,6 +112,9 @@ def _tab_filter(q, tab: str):
 
     if tab == "no_reply_needed":
         return q.filter(ThreadTicket.status == TicketStatus.NO_REPLY_NEEDED)
+
+    if tab == "assigned_to_me":
+        return q.filter(ThreadTicket.assignee_user_id == user_id)
 
     if tab == "all":
         return q
@@ -166,7 +169,7 @@ def list_tickets(
     - filtering is applied against ThreadTicket.last_message_at
     """
     q = db.query(ThreadTicket).options(joinedload(ThreadTicket.assignee)).filter(ThreadTicket.mailbox == mailbox)
-    q = _tab_filter(q, tab)
+    q = _tab_filter(q, tab, user.id)
 
     # Always hide blacklisted senders.
     q = q.filter(
@@ -241,6 +244,7 @@ def list_tickets(
         func.sum(case((ThreadTicket.status == TicketStatus.IN_PROGRESS, 1), else_=0)),
         func.sum(case((ThreadTicket.status == TicketStatus.RESPONDED, 1), else_=0)),
         func.sum(case((ThreadTicket.status == TicketStatus.NO_REPLY_NEEDED, 1), else_=0)),
+        func.sum(case((ThreadTicket.assignee_user_id == user.id, 1), else_=0)),
     ).one()
     counts = {
         "all": int(count_row[0] or 0),
@@ -248,6 +252,7 @@ def list_tickets(
         "in_progress": int(count_row[2] or 0),
         "responded": int(count_row[3] or 0),
         "no_reply_needed": int(count_row[4] or 0),
+        "assigned_to_me": int(count_row[5] or 0),
     }
 
     return TicketListOut(

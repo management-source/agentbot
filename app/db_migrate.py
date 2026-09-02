@@ -378,6 +378,7 @@ def migrate(engine: Engine) -> None:
                 f"CREATE UNIQUE INDEX IF NOT EXISTS uq_thread_tickets_mb_gmail ON {tt}(mailbox, gmail_thread_id)",
                 f"CREATE INDEX IF NOT EXISTS ix_thread_tickets_mb_status_last_message ON {tt}(mailbox, status, last_message_at)",
                 f"CREATE INDEX IF NOT EXISTS ix_thread_tickets_mb_reply_status ON {tt}(mailbox, is_not_replied, status)",
+                f"CREATE INDEX IF NOT EXISTS ix_thread_tickets_mb_assignee_last_message ON {tt}(mailbox, assignee_user_id, last_message_at)",
             ):
                 try:
                     conn.execute(text(stmt))
