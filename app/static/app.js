@@ -514,6 +514,10 @@ let currentDateFilter = { start: "", end: "" };
 // Pagination state
 let currentPage = 1;
 let pageSize = 25;
+let ticketsLoadedOnce = false;
+let ticketLoadController = null;
+const ticketTabCache = new Map();
+const TICKET_TAB_CACHE_MS = 60 * 1000;
 
 // UI filters
 let currentSearch = "";
@@ -1095,8 +1099,10 @@ async function initMailboxes() {
             coverageLoadedOnce = false;
             complianceProvidersLoadedOnce = false;
             activityLoadedOnce = false;
+            ticketsLoadedOnce = false;
+            invalidateTicketCache();
             updateSyncContextUI();
-            loadTickets();
+            if (currentDashboardTab === "inbox") loadTickets();
             if (currentDashboardTab === "rent") {
                 currentRentPage = 1;
                 loadActiveRentView();
@@ -4044,6 +4050,7 @@ async function flushDatabase() {
         const data = await resp.json();
         if (!resp.ok) throw new Error(data.detail || "Flush failed");
         alert("Database flushed. Reloading tickets...");
+        invalidateTicketCache();
         await loadTickets();
     } catch (e) {
         alert("Flush failed: " + (e.message || e));
@@ -4226,6 +4233,9 @@ function switchDashboardTab(tab) {
     }
 
     updateSyncContextUI();
+    if (currentDashboardTab === "inbox") {
+        loadTickets({ allowCache: ticketsLoadedOnce });
+    }
     if (currentDashboardTab === "rent" && !rentLoadedOnce) {
         refreshPropertyOptions();
         loadActiveRentView();
@@ -8513,6 +8523,39 @@ function landlordReportMonthRange(monthValue) {
     };
 }
 
+async function purgeNoReplyNeededTickets() {
+    const count = Number(document.getElementById("tabNoReplyNeededCount")?.textContent || 0);
+    const message = count > 0
+        ? `Clear ${count} Reply Not Needed ticket${count === 1 ? "" : "s"} from this mailbox?\n\nThis removes only AgentBot ticket records. It does not delete or move any Gmail messages.`
+        : "Clear all Reply Not Needed tickets from this mailbox?\n\nThis does not delete or move any Gmail messages.";
+    if (!confirm(message)) return;
+    const button = document.getElementById("purgeNoReplyNeededBtn");
+    if (button) {
+        button.disabled = true;
+        button.textContent = "Clearing...";
+    }
+    try {
+        const response = await apiFetch("/tickets/no-reply-needed/purge", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ confirm: "PURGE" }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || "Could not clear tickets.");
+        invalidateTicketCache();
+        await loadTickets();
+        await loadNotifications();
+        alert(data.message || "Reply Not Needed tickets cleared.");
+    } catch (error) {
+        alert(`Could not clear Reply Not Needed tickets: ${error?.message || error}`);
+    } finally {
+        if (button) {
+            button.disabled = false;
+            button.textContent = "Clear Reply Not Needed";
+        }
+    }
+}
+
 function switchLandlordReportView(view = "builder") {
     landlordReportViewMode = ["data", "saved"].includes(view) ? view : "builder";
     document.getElementById("landlordReportBuilderView")?.classList.toggle("hidden", landlordReportViewMode !== "builder");
@@ -10587,7 +10630,7 @@ function nextCoveragePage() {
     loadComplianceCoverage();
 }
 
-function setTab(tab) {
+function setTab(tab, shouldLoad = true) {
     currentTab = tab;
     currentPage = 1;
     updateSyncContextUI();
@@ -10611,7 +10654,13 @@ function setTab(tab) {
         });
     }
 
-    loadTickets();
+    const purgeButton = document.getElementById("purgeNoReplyNeededBtn");
+    if (purgeButton) {
+        const canPurge = canAccessPage("system");
+        purgeButton.classList.toggle("hidden", tab !== "no_reply_needed" || !canPurge);
+    }
+
+    if (shouldLoad) loadTickets({ allowCache: true });
 }
 
 async function fetchNow() {
@@ -10672,6 +10721,7 @@ async function fetchNow() {
 
         setLastSyncSummary();
 
+        invalidateTicketCache();
         await loadTickets();
         await loadNotifications();
         console.log(j);
@@ -10722,6 +10772,7 @@ async function checkUpdates() {
 
         setLastSyncSummary();
 
+        invalidateTicketCache();
         await loadTickets();
         await loadNotifications();
     } catch (e) {
@@ -10807,6 +10858,7 @@ async function loadAssignableUsers() {
 
 async function refreshAssigneeViews() {
     await loadAssignableUsers();
+    invalidateTicketCache();
     await loadTickets();
     await loadNotifications();
 }
@@ -10835,9 +10887,12 @@ async function updateAssignee(threadId, value, control = null) {
                 assignee_name: result.assignee_name,
                 assignee_email: result.assignee_email,
                 assignee_avatar_url: result.assignee_avatar_url,
+                status: result.status || currentViewerTicket.status,
+                is_not_replied: result.is_not_replied,
             };
             renderViewerWorkflow(currentViewerTicket);
         }
+        invalidateTicketCache();
         await loadTickets();
         await loadNotifications();
     } catch (e) {
@@ -10957,6 +11012,7 @@ async function updateViewerStatus(threadId, status, control = null) {
             is_not_replied: result.is_not_replied,
         };
         renderViewerWorkflow(currentViewerTicket);
+        invalidateTicketCache();
         await loadTickets();
         await loadNotifications();
     } catch (e) {
@@ -10991,8 +11047,11 @@ async function updateViewerAssignee(threadId, value, control = null) {
             assignee_name: result.assignee_name,
             assignee_email: result.assignee_email,
             assignee_avatar_url: result.assignee_avatar_url,
+            status: result.status || currentViewerTicket?.status,
+            is_not_replied: result.is_not_replied,
         };
         renderViewerWorkflow(currentViewerTicket);
+        invalidateTicketCache();
         await loadTickets();
         await loadNotifications();
     } catch (e) {
@@ -11167,24 +11226,23 @@ function renderTicket(t) {
     return card;
 }
 
-async function loadTickets() {
-    const url = new URL(`/tickets`, window.location.origin);
-    url.searchParams.set("tab", currentTab);
-    url.searchParams.set("page", String(currentPage));
-    url.searchParams.set("page_size", String(pageSize));
+function ticketCacheKey() {
+    return JSON.stringify({
+        mailbox: currentMailbox || "",
+        tab: currentTab,
+        page: currentPage,
+        pageSize,
+        start: currentDateFilter.start || "",
+        end: currentDateFilter.end || "",
+        search: (currentSearch || "").trim(),
+    });
+}
 
-    // Apply current filter (set by Fetch Now). If empty, do not filter.
-    if (currentDateFilter.start) url.searchParams.set("start", currentDateFilter.start);
-    if (currentDateFilter.end) url.searchParams.set("end", currentDateFilter.end);
+function invalidateTicketCache() {
+    ticketTabCache.clear();
+}
 
-    // Search / assignee / AI category filters
-    const q = (currentSearch || "").trim();
-    if (q) url.searchParams.set("query", q);
-    // ai_category filter removed
-
-    const r = await apiFetch(url);
-    const data = await r.json();
-
+function renderTicketListData(data) {
     const items = Array.isArray(data.items) ? data.items : [];
     const c = data.counts || {};
     const setText = (id, val) => {
@@ -11200,14 +11258,57 @@ async function loadTickets() {
     const list = document.getElementById("ticketList");
     if (!list) return;
     list.innerHTML = "";
-
-    items.forEach(t => list.appendChild(renderTicket(t)));
-
-    if (items.length === 0) {
+    items.forEach((ticket) => list.appendChild(renderTicket(ticket)));
+    if (!items.length) {
         list.innerHTML = `<div class="ticket-empty"><strong>No tickets in this queue</strong><div class="small muted" style="margin-top:6px">Try another status tab or clear the search filter.</div></div>`;
     }
-
     renderPagination(data);
+}
+
+async function loadTickets({ allowCache = false } = {}) {
+    const requestKey = ticketCacheKey();
+    const cached = ticketTabCache.get(requestKey);
+    if (allowCache && cached && (Date.now() - cached.savedAt) < TICKET_TAB_CACHE_MS) {
+        renderTicketListData(cached.data);
+        ticketsLoadedOnce = true;
+        return cached.data;
+    }
+
+    if (ticketLoadController) ticketLoadController.abort();
+    const controller = new AbortController();
+    ticketLoadController = controller;
+    const url = new URL(`/tickets`, window.location.origin);
+    url.searchParams.set("tab", currentTab);
+    url.searchParams.set("page", String(currentPage));
+    url.searchParams.set("page_size", String(pageSize));
+
+    // Apply current filter (set by Fetch Now). If empty, do not filter.
+    if (currentDateFilter.start) url.searchParams.set("start", currentDateFilter.start);
+    if (currentDateFilter.end) url.searchParams.set("end", currentDateFilter.end);
+
+    // Search / assignee / AI category filters
+    const q = (currentSearch || "").trim();
+    if (q) url.searchParams.set("query", q);
+    // ai_category filter removed
+
+    try {
+        const r = await apiFetch(url, { signal: controller.signal });
+        if (!r.ok) throw new Error(await extractErrorMessage(r));
+        const data = await r.json();
+        ticketTabCache.set(requestKey, { savedAt: Date.now(), data });
+        ticketsLoadedOnce = true;
+        if (requestKey === ticketCacheKey()) renderTicketListData(data);
+        return data;
+    } catch (error) {
+        if (error?.name === "AbortError") return null;
+        const list = document.getElementById("ticketList");
+        if (list && requestKey === ticketCacheKey()) {
+            list.innerHTML = `<div class="ticket-empty"><strong>Email tickets could not be loaded</strong><div class="small muted" style="margin-top:6px">${escapeHtml(String(error?.message || error))}</div></div>`;
+        }
+        return null;
+    } finally {
+        if (ticketLoadController === controller) ticketLoadController = null;
+    }
 }
 
 function renderPagination(data) {
@@ -11300,6 +11401,7 @@ async function updateStatus(threadId, status, control = null) {
         if (card && !ticketBelongsToCurrentTab(nextStatus, result.is_not_replied)) {
             card.remove();
         }
+        invalidateTicketCache();
         await loadTickets();
         await loadNotifications();
     } catch (e) {
@@ -12033,6 +12135,7 @@ async function sendAckFromModal() {
             return;
         }
         closeAckModal();
+        invalidateTicketCache();
         await loadTickets();
         await loadNotifications();
         alert("Acknowledgment sent.");
@@ -12053,6 +12156,7 @@ async function blacklistSender(email) {
         alert(`Blacklist failed (${r.status}):\n\n${t}`);
         return;
     }
+    invalidateTicketCache();
     await loadTickets();
     await loadNotifications();
 }
@@ -12110,6 +12214,7 @@ async function unblacklistSender(email) {
         return;
     }
     await refreshBlacklist();
+    invalidateTicketCache();
     await loadTickets();
 }
 
@@ -12432,11 +12537,14 @@ async function doLogin() {
         hideLoginModal();
         await ensureAuthenticated();
         await initMailboxes();
-        await refreshGoogleStatus();
-        await loadAssignableUsers();
-        await loadNotifications();
+        ticketsLoadedOnce = false;
+        invalidateTicketCache();
+        await Promise.all([
+            refreshGoogleStatus(),
+            loadAssignableUsers(),
+            loadNotifications(),
+        ]);
         // Autopilot feature removed.
-        await loadTickets();
     } finally {
         if (btn) {
             btn.disabled = false;
@@ -12455,6 +12563,8 @@ function logout(message = "") {
     }
     authToken = "";
     currentUser = null;
+    ticketsLoadedOnce = false;
+    invalidateTicketCache();
     binduCurrentConversationId = null;
     binduHistoryLoaded = false;
     const binduMessages = document.getElementById("binduMessages");
@@ -12569,9 +12679,11 @@ window.addEventListener("load", async () => {
     });
 
     await initMailboxes();
-    await refreshGoogleStatus();
-    await loadAssignableUsers();
-    await loadNotifications();
+    await Promise.all([
+        refreshGoogleStatus(),
+        loadAssignableUsers(),
+        loadNotifications(),
+    ]);
 
     // Small UX: show a one-time confirmation after OAuth callback.
     try {
@@ -12830,10 +12942,9 @@ window.addEventListener("load", async () => {
     // Assignment / category filters removed.
 
     applySidebarState();
-    await refreshPropertyOptions();
     switchDashboardTab("portal");
     updateSyncContextUI();
 
-    // Set default tab (will load tickets).
-    setTab(currentTab);
+    // Prepare the inbox controls without loading tickets until Email Manager opens.
+    setTab(currentTab, false);
 });

@@ -303,6 +303,24 @@ class ThreadTicketAudit(Base):
     actor = relationship("User")
 
 
+class DismissedEmailThread(Base):
+    """A locally removed ticket, retained only to prevent the same Gmail state reappearing."""
+
+    __tablename__ = "dismissed_email_threads"
+    __table_args__ = (
+        UniqueConstraint("mailbox", "gmail_thread_id", name="uq_dismissed_email_thread_mailbox_gmail"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    mailbox: Mapped[str] = mapped_column(String, index=True)
+    gmail_thread_id: Mapped[str] = mapped_column(String, index=True)
+    last_message_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    dismissed_by_user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    dismissed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+    dismissed_by = relationship("User")
+
+
 class ActivityLog(Base):
     __tablename__ = "activity_logs"
 

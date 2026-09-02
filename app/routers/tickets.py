@@ -4,7 +4,7 @@ import json
 import io
 from fastapi import APIRouter, Depends, HTTPException, Body, File, Form, UploadFile
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import func, or_
+from sqlalchemy import and_, case, func, or_
 from sqlalchemy.sql import exists
 from datetime import datetime, timedelta
 from pydantic import BaseModel
@@ -22,6 +22,7 @@ from app.models import (
     BlacklistedSender,
     ThreadTicketNote,
     ThreadTicketAudit,
+    DismissedEmailThread,
     AuditAction,
 )
 from app.schemas import (
@@ -69,6 +70,10 @@ class StatusUpdate(BaseModel):
 
 class AssignmentUpdate(BaseModel):
     assignee_user_id: int | None = None
+
+
+class PurgeNoReplyNeededIn(BaseModel):
+    confirm: str
 
 
 def _get_ticket(db: Session, thread_id: str, mailbox: str) -> ThreadTicket:
@@ -230,14 +235,19 @@ def list_tickets(
         .where(BlacklistedSender.mailbox == mailbox)
         .where(BlacklistedSender.email == func.lower(ThreadTicket.from_email))
     )
+    count_row = base.with_entities(
+        func.count(ThreadTicket.thread_id),
+        func.sum(case((and_(ThreadTicket.is_not_replied == True, ThreadTicket.status == TicketStatus.PENDING), 1), else_=0)),
+        func.sum(case((ThreadTicket.status == TicketStatus.IN_PROGRESS, 1), else_=0)),
+        func.sum(case((ThreadTicket.status == TicketStatus.RESPONDED, 1), else_=0)),
+        func.sum(case((ThreadTicket.status == TicketStatus.NO_REPLY_NEEDED, 1), else_=0)),
+    ).one()
     counts = {
-        "all": base.count(),
-        "awaiting_reply": base.filter(ThreadTicket.is_not_replied == True)
-        .filter(ThreadTicket.status == TicketStatus.PENDING)
-        .count(),
-        "in_progress": base.filter(ThreadTicket.status == TicketStatus.IN_PROGRESS).count(),
-        "responded": base.filter(ThreadTicket.status == TicketStatus.RESPONDED).count(),
-        "no_reply_needed": base.filter(ThreadTicket.status == TicketStatus.NO_REPLY_NEEDED).count(),
+        "all": int(count_row[0] or 0),
+        "awaiting_reply": int(count_row[1] or 0),
+        "in_progress": int(count_row[2] or 0),
+        "responded": int(count_row[3] or 0),
+        "no_reply_needed": int(count_row[4] or 0),
     }
 
     return TicketListOut(
@@ -248,6 +258,73 @@ def list_tickets(
         page_size=page_size,
         has_more=(page * page_size) < total,
     )
+
+
+@router.post("/no-reply-needed/purge")
+def purge_no_reply_needed(
+    payload: PurgeNoReplyNeededIn,
+    mailbox: str = Depends(get_current_mailbox),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(UserRole.ADMIN)),
+):
+    """Delete locally closed tickets without deleting any Gmail messages."""
+    if (payload.confirm or "").strip().upper() != "PURGE":
+        raise HTTPException(status_code=400, detail="Confirmation required. Send confirm='PURGE'.")
+
+    tickets = (
+        db.query(ThreadTicket)
+        .filter(ThreadTicket.mailbox == mailbox)
+        .filter(ThreadTicket.status == TicketStatus.NO_REPLY_NEEDED)
+        .all()
+    )
+    if not tickets:
+        return {"ok": True, "deleted": 0, "message": "There are no Reply Not Needed tickets to clear."}
+
+    thread_ids = [ticket.thread_id for ticket in tickets]
+    gmail_ids = [ticket.gmail_thread_id for ticket in tickets]
+    existing = {
+        row.gmail_thread_id: row
+        for row in db.query(DismissedEmailThread)
+        .filter(DismissedEmailThread.mailbox == mailbox)
+        .filter(DismissedEmailThread.gmail_thread_id.in_(gmail_ids))
+        .all()
+    }
+    now = datetime.utcnow()
+    for ticket in tickets:
+        dismissed = existing.get(ticket.gmail_thread_id)
+        if dismissed is None:
+            dismissed = DismissedEmailThread(
+                mailbox=mailbox,
+                gmail_thread_id=ticket.gmail_thread_id,
+                last_message_id=ticket.last_message_id,
+                dismissed_by_user_id=user.id,
+                dismissed_at=now,
+            )
+            db.add(dismissed)
+        else:
+            dismissed.last_message_id = ticket.last_message_id
+            dismissed.dismissed_by_user_id = user.id
+            dismissed.dismissed_at = now
+
+    db.query(ThreadTicketNote).filter(
+        ThreadTicketNote.mailbox == mailbox,
+        ThreadTicketNote.thread_id.in_(thread_ids),
+    ).delete(synchronize_session=False)
+    db.query(ThreadTicketAudit).filter(
+        ThreadTicketAudit.mailbox == mailbox,
+        ThreadTicketAudit.thread_id.in_(thread_ids),
+    ).delete(synchronize_session=False)
+    deleted = db.query(ThreadTicket).filter(
+        ThreadTicket.mailbox == mailbox,
+        ThreadTicket.status == TicketStatus.NO_REPLY_NEEDED,
+    ).delete(synchronize_session=False)
+    db.commit()
+    return {
+        "ok": True,
+        "deleted": int(deleted or 0),
+        "gmail_deleted": False,
+        "message": f"Cleared {int(deleted or 0)} Reply Not Needed ticket(s). Gmail messages were not deleted.",
+    }
 
 @router.patch("/{thread_id}/status")
 def update_status(
@@ -303,8 +380,13 @@ def update_assignee(
         if not assignee or not assignee.is_active:
             raise HTTPException(status_code=400, detail="Assignee must be an active staff account.")
         t.assignee_user_id = assignee.id
+        old_status = t.status
+        if t.status == TicketStatus.PENDING:
+            t.status = TicketStatus.IN_PROGRESS
+            t.is_not_replied = True
     else:
         t.assignee_user_id = None
+        old_status = t.status
 
     t.updated_at = datetime.utcnow()
     add_audit(
@@ -319,6 +401,15 @@ def update_assignee(
             "to_name": assignee.name if assignee else None,
         },
     )
+    if old_status != t.status:
+        add_audit(
+            db,
+            mailbox=t.mailbox,
+            thread_id=t.thread_id,
+            action=AuditAction.STATUS_CHANGED,
+            actor_user_id=user.id,
+            detail={"from": old_status.value, "to": t.status.value, "reason": "staff_assigned"},
+        )
     db.commit()
     db.refresh(t)
     return {
@@ -328,6 +419,8 @@ def update_assignee(
         "assignee_name": t.assignee_name,
         "assignee_email": t.assignee_email,
         "assignee_avatar_url": t.assignee_avatar_url,
+        "status": t.status.value,
+        "is_not_replied": bool(t.is_not_replied),
     }
 
 
@@ -869,9 +962,10 @@ def flush_database(
     db.query(ThreadTicket).filter(ThreadTicket.mailbox == mailbox).delete(synchronize_session=False)
     db.query(ThreadTicketNote).filter(ThreadTicketNote.mailbox == mailbox).delete(synchronize_session=False)
     db.query(ThreadTicketAudit).filter(ThreadTicketAudit.mailbox == mailbox).delete(synchronize_session=False)
+    db.query(DismissedEmailThread).filter(DismissedEmailThread.mailbox == mailbox).delete(synchronize_session=False)
 
     # Clear mailbox-scoped sync/settings state keys.
     db.query(AppState).filter(AppState.key.like(f"{mailbox}:%")).delete(synchronize_session=False)
 
     db.commit()
-    return {"ok": True, "message": f"Mailbox '{mailbox}' flushed (tickets, notes, audit, and state cleared)."}
+    return {"ok": True, "message": f"Mailbox '{mailbox}' flushed (tickets, notes, audit, dismissed threads, and state cleared)."}

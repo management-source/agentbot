@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.db import SessionLocal
 from app.config import settings
-from app.models import ThreadTicket, TicketStatus, BlacklistedSender
+from app.models import BlacklistedSender, DismissedEmailThread, ThreadTicket, TicketStatus
 from app.services.gmail_client import get_gmail_service, gmail_user_id, is_from_me, parse_email_address
 from app.services.state import get_state, set_state
 
@@ -292,6 +292,7 @@ def _upsert_ticket_from_thread(
     thread: dict | None = None,
     existing_ticket: ThreadTicket | None = None,
     blacklisted_senders: set[str] | None = None,
+    dismissed_threads: dict[str, DismissedEmailThread] | None = None,
 ) -> bool:
     """Fetch thread metadata and upsert a ThreadTicket row.
 
@@ -344,6 +345,19 @@ def _upsert_ticket_from_thread(
 
     # Extract last message metadata for display.
     last_msg_id = last_msg.get('id')
+    dismissed = dismissed_threads.get(thread_id) if dismissed_threads is not None else (
+        db.query(DismissedEmailThread)
+        .filter(DismissedEmailThread.mailbox == mailbox)
+        .filter(DismissedEmailThread.gmail_thread_id == thread_id)
+        .first()
+    )
+    if dismissed is not None:
+        if dismissed.last_message_id == last_msg_id:
+            return False
+        # A genuinely new message reopens the conversation as a fresh ticket.
+        db.delete(dismissed)
+        if dismissed_threads is not None:
+            dismissed_threads.pop(thread_id, None)
     payload = last_msg.get('payload') or {}
     headers = payload.get('headers') or []
 
@@ -521,12 +535,20 @@ def sync_inbox_threads(
             if email
         }
         existing_tickets = {}
+        dismissed_threads = {}
         if thread_ids:
             existing_tickets = {
                 ticket.gmail_thread_id: ticket
                 for ticket in db.query(ThreadTicket)
                 .filter(ThreadTicket.mailbox == mailbox)
                 .filter(ThreadTicket.gmail_thread_id.in_(thread_ids))
+                .all()
+            }
+            dismissed_threads = {
+                row.gmail_thread_id: row
+                for row in db.query(DismissedEmailThread)
+                .filter(DismissedEmailThread.mailbox == mailbox)
+                .filter(DismissedEmailThread.gmail_thread_id.in_(thread_ids))
                 .all()
             }
 
@@ -550,6 +572,7 @@ def sync_inbox_threads(
                     thread=thread,
                     existing_ticket=existing_tickets.get(tid),
                     blacklisted_senders=blacklisted_senders,
+                    dismissed_threads=dismissed_threads,
                 ):
                     upserted += 1
                 else:

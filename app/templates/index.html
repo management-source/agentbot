@@ -1914,10 +1914,11 @@
     }
     .mail-toolbar{
       display:grid;
-      grid-template-columns:minmax(0, 1fr) minmax(240px, 340px);
+      grid-template-columns:minmax(0, 1fr) minmax(220px, 300px) auto;
       gap:12px;
       align-items:center;
     }
+    #purgeNoReplyNeededBtn{justify-self:end;white-space:nowrap}
     .mail-search{
       display:flex;
       flex-direction:column;
@@ -1987,6 +1988,7 @@
       .mail-board-meta{justify-content:flex-start}
       .email-sync-grid{grid-template-columns:repeat(2, minmax(0, 1fr))}
       .mail-toolbar{grid-template-columns:1fr}
+      #purgeNoReplyNeededBtn{justify-self:stretch}
     }
     @media (max-width: 640px){
       .email-sync-grid{grid-template-columns:1fr}
@@ -5939,6 +5941,10 @@
                       <input type="text" id="searchBox"
                         placeholder="Subject, sender, address..." />
                     </label>
+                    <button class="btn danger hidden" id="purgeNoReplyNeededBtn"
+                      type="button" onclick="purgeNoReplyNeededTickets()">
+                      Clear Reply Not Needed
+                    </button>
                   </div>
 
                   <div id="ticketList" class="ticket-list"></div>
