@@ -22,6 +22,7 @@ from app.models import (
     ComplianceRecord,
     ComplianceRecordStatus,
     LeaseRenewalRecord,
+    LandlordReportInvoice,
     MaintenanceAttachment,
     MaintenanceEvent,
     MaintenanceOrder,
@@ -517,6 +518,7 @@ def _manual_entries(options: Mapping[str, Any], include_internal: bool) -> dict[
                 "action_required": _multiline(_value(raw, "landlord_action"), 2500),
                 "internal": internal,
                 "photo_ids": [int(value) for value in (_value(raw, "photo_ids", []) or []) if int(value) < 0],
+                "pdf_ids": [int(value) for value in (_value(raw, "pdf_ids", []) or []) if int(value) < 0],
             }
         )
     for entries in grouped.values():
@@ -650,7 +652,7 @@ def build_report_context(
             "supporting_photos": len(photos),
         },
         "data_limitations": [
-            "The current portal does not contain an owner transaction ledger, disbursement, management-fee, invoice, bond, inspection, insurance, advertising, application, or market-data table.",
+            "The current portal does not contain a disbursement, invoice, bond, inspection, insurance, advertising, application, or market-data table.",
             "Unsupported figures are shown as Not recorded and may be added as report-only manual activities.",
             "Internal notes remain excluded unless Include internal notes is deliberately enabled.",
         ],
@@ -863,24 +865,72 @@ def assemble_report(
     )
 
     partial_total = sum(float(item.partial_amount or 0) for item in rent_rows if item.partial_amount is not None)
+    persisted_invoices = (
+        db.query(LandlordReportInvoice)
+        .filter(
+            LandlordReportInvoice.mailbox == mailbox,
+            LandlordReportInvoice.property_id == prop.id,
+            LandlordReportInvoice.invoice_date >= start_date,
+            LandlordReportInvoice.invoice_date <= end_date,
+        )
+        .order_by(LandlordReportInvoice.invoice_date, LandlordReportInvoice.id)
+        .all()
+    )
+    supplied_invoices = list(_value(options, "invoice_rows", []) or [])
+    source_priority = {"bond": 0, "mortgage": 1, "incoming": 2, "outgoing": 3}
+    persisted_invoices = sorted(
+        persisted_invoices,
+        key=lambda row: (source_priority.get(row.report_type, 99), row.invoice_date or date.max, row.id),
+    )
+    supplied_invoices.extend({
+        "property_id": row.property_id,
+        "invoice_date": row.invoice_date,
+        "invoice_number": row.invoice_number,
+        "supplier": row.supplier,
+        "category": row.category,
+        "description": row.description,
+        "amount": row.amount,
+        "gst": row.gst,
+        "status": row.status,
+        "source_type": row.report_type,
+    } for row in persisted_invoices)
     invoice_rows: list[dict[str, Any]] = []
-    for raw in _value(options, "invoice_rows", []) or []:
+    seen_invoice_keys: set[tuple[Any, ...]] = set()
+    for raw in supplied_invoices:
         invoice_date = _value(raw, "invoice_date")
         if int(_value(raw, "property_id") or 0) != prop.id or not isinstance(invoice_date, date) or not start_date <= invoice_date <= end_date:
             continue
         amount = _value(raw, "amount")
+        invoice_number = _clean(_value(raw, "invoice_number"), 160)
+        description = _clean(_value(raw, "description"), 1000)
+        dedupe_key = (
+            "number",
+            invoice_number.lower(),
+        ) if invoice_number else (
+            "detail",
+            str(invoice_date),
+            round(float(amount or 0), 2),
+            description.lower(),
+        )
+        if dedupe_key in seen_invoice_keys:
+            continue
+        seen_invoice_keys.add(dedupe_key)
         invoice_rows.append({
             "invoice_date": format_date_au(invoice_date),
-            "invoice_number": _clean(_value(raw, "invoice_number"), 160) or "—",
+            "invoice_number": invoice_number or "—",
             "supplier": _clean(_value(raw, "supplier"), 300) or "—",
             "category": _clean(_value(raw, "category"), 160) or "—",
-            "description": _clean(_value(raw, "description"), 1000) or "—",
+            "description": description or "—",
             "amount": format_currency_aud(amount),
             "amount_raw": float(amount) if amount is not None else 0.0,
             "gst": format_currency_aud(_value(raw, "gst")),
             "status": _clean(_value(raw, "status"), 160) or "—",
+            "source_type": status_label(_value(raw, "source_type") or "invoice"),
         })
     invoice_total = sum(item["amount_raw"] for item in invoice_rows)
+    invoice_totals_by_type: dict[str, float] = defaultdict(float)
+    for item in invoice_rows:
+        invoice_totals_by_type[item["source_type"]] += item["amount_raw"]
     outstanding_total = sum(
         item["amount_raw"] for item in invoice_rows
         if not (
@@ -893,13 +943,14 @@ def assemble_report(
         {"label": "Rent received during period", "value": "Not recorded in current system"},
         {"label": "Recorded partial payments", "value": format_currency_aud(partial_total) if partial_total else "Not recorded"},
         {"label": "Owner disbursements", "value": "Not recorded in current system"},
-        {"label": "Management fees", "value": "Not recorded in current system"},
-        {"label": "Maintenance expenses", "value": "Not recorded (quotes are shown separately)"},
-        {"label": "Other expenses", "value": "Not recorded in current system"},
         {"label": "Current rent balance", "value": "Not recorded in current system"},
-        {"label": "Invoices during period", "value": f"{len(invoice_rows)} invoice{'s' if len(invoice_rows) != 1 else ''} — {format_currency_aud(invoice_total)}" if invoice_rows else "Not recorded in current system"},
+        {"label": "Invoices during period", "value": f"{len(invoice_rows)} invoice{'s' if len(invoice_rows) != 1 else ''} (deduplicated)" if invoice_rows else "Not recorded in current system"},
+        {"label": "Total invoice amount", "value": format_currency_aud(invoice_total) if invoice_rows else "Not recorded in current system"},
+        *[
+            {"label": f"{source_type} total", "value": format_currency_aud(total)}
+            for source_type, total in sorted(invoice_totals_by_type.items())
+        ],
         {"label": "Outstanding invoices", "value": format_currency_aud(outstanding_total) if invoice_rows else "Not recorded in current system"},
-        {"label": "Net owner summary", "value": "Not available without an owner ledger"},
     ]
     financial_blocks: list[dict[str, Any]] = []
     if include_financial:
@@ -936,6 +987,7 @@ def assemble_report(
             "title": "CRM invoices for this reporting period",
             "columns": [
                 {"key": "invoice_date", "label": "Invoice date"},
+                {"key": "source_type", "label": "Type"},
                 {"key": "invoice_number", "label": "Invoice no."},
                 {"key": "supplier", "label": "Supplier"},
                 {"key": "category", "label": "Category"},
@@ -1347,6 +1399,16 @@ def assemble_report(
     if not included_sections:
         raise LandlordReportError("The selected sections have no reportable activity. Enable sections with no activity or add a report activity.")
 
+    included_section_ids = {section["id"] for section in included_sections}
+    appendix_pdf_ids: list[int] = []
+    for section_id in selected:
+        if section_id not in included_section_ids:
+            continue
+        for entry in manual.get(section_id, []):
+            for pdf_id in entry.get("pdf_ids", []):
+                if pdf_id not in appendix_pdf_ids:
+                    appendix_pdf_ids.append(pdf_id)
+
     hero_photo_id = _value(options, "hero_photo_id")
     try:
         hero_photo_id = int(hero_photo_id) if hero_photo_id else None
@@ -1384,8 +1446,9 @@ def assemble_report(
         "included_section_ids": [section["id"] for section in included_sections],
         "excluded_empty_section_ids": excluded_empty,
         "available_photo_ids": [item["attachment_id"] for item in available_photos] + list(uploaded_photo_by_id),
+        "appendix_pdf_ids": appendix_pdf_ids,
         "warnings": [
-            "Owner ledger, inspection, bond, insurance, advertising, applications and market figures are included only when staff add verified report activities."
+            "Inspection, bond, insurance, advertising, applications and market figures are included only when staff add verified report activities."
         ],
     }
     return report

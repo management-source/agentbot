@@ -604,6 +604,16 @@ class ManagedProperty(Base):
     property_type: Mapped[str | None] = mapped_column(String, nullable=True)
     rental_type: Mapped[str | None] = mapped_column(String, nullable=True)
     key_number: Mapped[str | None] = mapped_column(String, nullable=True)
+    listing_status: Mapped[str] = mapped_column(
+        String,
+        default="OPEN",
+        server_default="OPEN",
+        nullable=False,
+        index=True,
+    )
+    keys_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    social_media_history_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    listing_inspections_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     owner_is_company: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     tenancy_status: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     owners_json: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -612,6 +622,39 @@ class ManagedProperty(Base):
     source: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class LandlordReportInvoice(Base):
+    __tablename__ = "landlord_report_invoices"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    mailbox: Mapped[str] = mapped_column(String, index=True)
+    report_type: Mapped[str] = mapped_column(String, index=True)
+    property_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("managed_properties.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    property_address: Mapped[str] = mapped_column(String, index=True)
+    invoice_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+    due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    paid_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    invoice_number: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    supplier: Mapped[str | None] = mapped_column(String, nullable=True)
+    category: Mapped[str | None] = mapped_column(String, nullable=True)
+    amount: Mapped[float | None] = mapped_column(Float, nullable=True)
+    gst: Mapped[float | None] = mapped_column(Float, nullable=True)
+    status: Mapped[str | None] = mapped_column(String, nullable=True)
+    source_filename: Mapped[str] = mapped_column(String)
+    imported_by_user_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    imported_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
 
 class InspectionGeocodeCache(Base):

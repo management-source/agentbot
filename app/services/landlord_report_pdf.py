@@ -27,6 +27,7 @@ from reportlab.platypus import (
     TableStyle,
 )
 from reportlab.platypus.tableofcontents import TableOfContents
+from pypdf import PdfReader, PdfWriter
 
 from app.services.landlord_reports import (
     AGENCY_EMAIL,
@@ -695,3 +696,14 @@ def generate_landlord_report_pdf(
 
     doc.multiBuild(story)
     return buffer.getvalue()
+
+
+def merge_landlord_report_pdfs(report_pdf: bytes, appended_pdfs: list[bytes]) -> bytes:
+    """Append uploaded supporting PDF pages to the generated landlord report."""
+    writer = PdfWriter()
+    writer.append(PdfReader(BytesIO(report_pdf), strict=False))
+    for pdf_bytes in appended_pdfs:
+        writer.append(PdfReader(BytesIO(pdf_bytes), strict=False))
+    output = BytesIO()
+    writer.write(output)
+    return output.getvalue()

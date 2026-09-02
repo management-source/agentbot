@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import os
 from datetime import date, datetime
@@ -10,7 +11,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from PIL import Image as PillowImage
-from pypdf import PdfReader
+from pypdf import PdfReader, PdfWriter
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -27,6 +28,7 @@ from app.models import (
     ComplianceType,
     LeaseRenewalRecord,
     LeaseRenewalStatus,
+    LandlordReportInvoice,
     MaintenanceAttachment,
     MaintenanceEvent,
     MaintenanceOrder,
@@ -38,7 +40,7 @@ from app.models import (
     UserRole,
 )
 from app.services.landlord_report_pdf import generate_landlord_report_pdf
-from app.services.landlord_invoice_import import address_match_score, normalize_address, parse_invoice_csv
+from app.services.landlord_invoice_import import address_match_score, detect_invoice_csv_type, normalize_address, parse_invoice_csv
 from app.routers.landlord_reports import router as landlord_reports_router
 from app.services.landlord_reports import (
     ALL_SECTION_IDS,
@@ -287,6 +289,16 @@ def test_select_all_clear_all_and_default_normalisation():
     assert "landlordReportClearAll" in script
 
 
+def test_report_builder_offers_one_and_six_month_periods():
+    template = Path("app/templates/index.html").read_text(encoding="utf-8")
+    script = Path("app/static/app.js").read_text(encoding="utf-8")
+
+    assert '<option value="month">1 month</option>' in template
+    assert '<option value="six_months">6 months</option>' in template
+    assert "function landlordReportSixMonthRange" in script
+    assert 'mode === "six_months"' in script
+
+
 def test_internal_notes_are_deliberately_excluded_and_included(db, seeded):
     sections = ["rent_arrears", "lease_rent_review", "compliance_safety", "additional_notes"]
     safe_report = _report(db, seeded, sections, additional_notes=None, include_internal_notes=False)
@@ -416,6 +428,72 @@ def test_real_crm_invoice_csv_layout_and_multiline_status_are_parsed():
     assert "nbsp" not in rows[0]["description"]
 
 
+@pytest.mark.parametrize(
+    ("report_type", "raw", "expected_date"),
+    [
+        ("mortgage", "Property Address,Profile,Created,Description,Total Amount,Due Date,Status\r\n8 Very Long Property Avenue,Dons Premier,01-09-2026,Mortgage payment,3128.00,2026-09-15,Pending\r\n", date(2026, 9, 1)),
+        ("bond", "Results: 1,Bond invoices Report\r\nProperty Address,Owners,Tenants,Description,Category,Invoice Number,Total Amount,Due Date,Recurring,Status,Payment Method\r\n8 Very Long Property Avenue,Owner,Tenant,Bond lodgement,Bond,BOND-1,$1738.09,30/07/2026,0,Paid,Wallet\r\n", date(2026, 7, 30)),
+        ("incoming", "Results: 1,Incoming invoices Report\r\nProperty Address,Owners,Tenants,Description,Detail description,Category,Invoice Number,Total Amount,GST,Due Date,Status,Created\r\n8 Very Long Property Avenue,Owner,Tenant,Fee,Fee details,Lease Fee,INC-1,$1422.00,$129.27,02/08/2026,Pending,29/07/2026\r\n", date(2026, 7, 29)),
+    ],
+)
+def test_all_invoice_report_layouts_are_detected_and_dated(report_type, raw, expected_date):
+    content = raw.encode()
+    assert detect_invoice_csv_type(content) == report_type
+    rows = parse_invoice_csv(content, report_type)
+    assert len(rows) == 1
+    assert rows[0]["invoice_date"] == expected_date
+    assert rows[0]["source_type"] == report_type
+
+
+def test_persistent_invoice_import_overwrites_and_feeds_reports(db, seeded):
+    api = FastAPI()
+    api.include_router(landlord_reports_router)
+
+    def override_db():
+        yield db
+
+    api.dependency_overrides[get_db] = override_db
+    api.dependency_overrides[get_current_mailbox] = lambda: MAILBOX
+    api.dependency_overrides[get_current_user] = lambda: seeded["user"]
+    client = TestClient(api)
+
+    def outgoing_csv(amount: str) -> bytes:
+        return (
+            "Results: 1,Outgoing invoices Report\r\n"
+            "Property Address,Description,Detail Description,Priority Invoice,Category,Creditor,Invoice Number,Total Amount,GST,Due Date,Recurring,Status,Payment Method,Paid To Date,Created By,Created\r\n"
+            f"8 Very Long Property Avenue,Invoice,Work completed,No,Maintenance,Tradie Co,OUT-1,{amount},$0.00,20/07/2026,None,Pending,Landlord Funds,,Manual,12/07/2026\r\n"
+        ).encode()
+
+    first = client.post(
+        "/landlord-reports/invoice-data/outgoing",
+        files={"file": ("Outgoing invoices Report.csv", outgoing_csv("$321.50"), "text/csv")},
+    )
+    assert first.status_code == 200
+    assert first.json()["import"]["matched_count"] == 1
+    assert db.query(LandlordReportInvoice).count() == 1
+
+    report = _report(db, seeded, ["rent_financial"], invoice_rows=[])
+    report_text = json.dumps(report, default=str)
+    assert "Total invoice amount" in report_text
+    assert "$321.50" in report_text
+    assert "Outgoing total" in report_text
+
+    replacement = client.post(
+        "/landlord-reports/invoice-data/outgoing",
+        files={"file": ("Outgoing invoices Report.csv", outgoing_csv("$99.00"), "text/csv")},
+    )
+    assert replacement.status_code == 200
+    stored = db.query(LandlordReportInvoice).all()
+    assert len(stored) == 1
+    assert stored[0].amount == pytest.approx(99.0)
+
+    wrong_slot = client.post(
+        "/landlord-reports/invoice-data/bond",
+        files={"file": ("Outgoing invoices Report.csv", outgoing_csv("$99.00"), "text/csv")},
+    )
+    assert wrong_slot.status_code == 400
+
+
 def test_context_uses_real_sources_and_filters_unsupported_photos(db, seeded):
     context = build_report_context(
         db,
@@ -535,6 +613,26 @@ def test_missing_data_financial_toggle_and_safe_values(db):
     assert "null" not in render_preview_html(report, {})
 
 
+def test_retired_report_detail_overrides_are_ignored(db, seeded):
+    retired_values = {
+        "Management " + "fe" + "es": "RETIRED-MANAGEMENT-VALUE",
+        "Maintenance " + "expen" + "ses": "RETIRED-MAINTENANCE-VALUE",
+        "Other " + "expen" + "ses": "RETIRED-OTHER-VALUE",
+        "Net owner " + "summary": "RETIRED-NET-OWNER-VALUE",
+    }
+    report = _report(
+        db,
+        seeded,
+        ["rent_financial"],
+        detail_overrides=retired_values,
+    )
+    text = json.dumps(report, default=str)
+
+    assert all(value not in text for value in retired_values.values())
+    assert "Rent tracker activity" in text
+    assert "$600.00" in text
+
+
 def test_permissions_mailbox_isolation_and_formatting(db, seeded):
     assert has_page_access(UserRole.PM, "landlord_reports", db)
     assert has_page_access(UserRole.ADMIN, "landlord_reports", db)
@@ -604,6 +702,38 @@ def test_report_api_preview_pdf_and_permission_dependency(db, seeded):
     assert pdf_response.status_code == 200
     assert pdf_response.headers["content-type"] == "application/pdf"
     assert pdf_response.content.startswith(b"%PDF")
+
+    supporting_buffer = BytesIO()
+    supporting_writer = PdfWriter()
+    supporting_writer.add_blank_page(width=595.28, height=841.89)
+    supporting_writer.add_blank_page(width=595.28, height=841.89)
+    supporting_writer.write(supporting_buffer)
+    supporting_pdf = supporting_buffer.getvalue()
+    document_id = -701
+    activity = {
+        "id": "routine-inspection-pdf",
+        "section_id": "routine_inspections",
+        "date": "2026-07-15",
+        "title": "Routine inspection completed",
+        "status": "completed",
+        "pdf_ids": [document_id],
+    }
+    combined_payload = dict(payload)
+    combined_payload["selected_sections"] = [*payload["selected_sections"], "routine_inspections"]
+    combined_payload["manual_activities"] = [activity]
+    combined_payload["report_only_pdfs"] = [{
+        "id": document_id,
+        "filename": "routine-inspection.pdf",
+        "data_url": "data:application/pdf;base64," + base64.b64encode(supporting_pdf).decode("ascii"),
+    }]
+    report_without_attachment = dict(combined_payload)
+    report_without_attachment["manual_activities"] = [dict(activity, pdf_ids=[])]
+    report_without_attachment["report_only_pdfs"] = []
+
+    base_pages = len(PdfReader(BytesIO(client.post("/landlord-reports/pdf", json=report_without_attachment).content)).pages)
+    combined_response = client.post("/landlord-reports/pdf", json=combined_payload)
+    assert combined_response.status_code == 200
+    assert len(PdfReader(BytesIO(combined_response.content)).pages) == base_pages + 2
 
     restricted = User(
         email="restricted@donspremier.com.au",

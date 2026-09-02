@@ -386,7 +386,7 @@ def draft_reply(
     elif cat == "rent_arrears":
         body = (
             f"{greeting}\n\n"
-            "Thank you for your email. We have noted your message regarding rent and will review the tenant ledger. "
+            "Thank you for your email. We have noted your message regarding rent and will review the rent account records. "
             "We will follow up shortly with an update.\n\n"
             "Kind regards,"
         )

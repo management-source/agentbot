@@ -6,7 +6,7 @@ import html
 import zipfile
 from datetime import date, datetime, timedelta
 from difflib import SequenceMatcher
-from io import BytesIO, TextIOWrapper
+from io import BytesIO, StringIO
 from typing import Any
 import xml.etree.ElementTree as ET
 
@@ -149,17 +149,41 @@ def _clean_crm_text(value: str) -> str:
     return re.sub(r"[ \t]+", " ", text).strip()
 
 
-def parse_invoice_csv(content: bytes) -> list[dict[str, Any]]:
+INVOICE_REPORT_TYPES = {"outgoing", "incoming", "bond", "mortgage"}
+
+
+def _invoice_csv_reader(content: bytes) -> csv.DictReader:
     try:
         decoded = content.decode("utf-8-sig")
     except UnicodeDecodeError:
         decoded = content.decode("cp1252")
-    stream = BytesIO(decoded.encode("utf-8"))
-    text_stream = TextIOWrapper(stream, encoding="utf-8", newline="")
+    text_stream = StringIO(decoded, newline="")
     first_line = text_stream.readline()
     if "property address" in first_line.lower():
         text_stream.seek(0)
-    reader = csv.DictReader(text_stream)
+    return csv.DictReader(text_stream)
+
+
+def detect_invoice_csv_type(content: bytes) -> str | None:
+    reader = _invoice_csv_reader(content)
+    headings = {_header_key(value) for value in (reader.fieldnames or [])}
+    if "property address" not in headings:
+        return None
+    if "profile" in headings and "created" in headings and "invoice number" not in headings:
+        return "mortgage"
+    if "creditor" in headings or "priority invoice" in headings:
+        return "outgoing"
+    if "owners" in headings and "tenants" in headings:
+        return "incoming" if "created" in headings or "created user" in headings or "detail description" in headings else "bond"
+    return None
+
+
+def parse_invoice_csv(content: bytes, report_type: str | None = None) -> list[dict[str, Any]]:
+    detected_type = detect_invoice_csv_type(content)
+    selected_type = str(report_type or detected_type or "outgoing").strip().lower()
+    if selected_type not in INVOICE_REPORT_TYPES:
+        raise ValueError("Unknown invoice report type.")
+    reader = _invoice_csv_reader(content)
     if not reader.fieldnames or "Property Address" not in reader.fieldnames:
         return []
     result: list[dict[str, Any]] = []
@@ -169,21 +193,26 @@ def parse_invoice_csv(content: bytes) -> list[dict[str, Any]]:
             continue
         detail = _clean_crm_text(row.get("Detail Description", ""))
         description = _clean_crm_text(row.get("Description", ""))
+        due_date = _date_value(row.get("Due Date", ""))
+        invoice_date = _date_value(row.get("Created", "") or row.get("Invoice Date", ""))
+        if invoice_date is None and selected_type == "bond":
+            invoice_date = due_date
         result.append({
             "property_address": address,
-            "invoice_date": _date_value(row.get("Created", "")),
+            "invoice_date": invoice_date,
             "invoice_number": _clean_crm_text(row.get("Invoice Number", "")),
             "description": (detail or description)[:1000],
             "summary": description[:500],
-            "supplier": _clean_crm_text(row.get("Creditor", ""))[:300],
-            "category": _clean_crm_text(row.get("Category", ""))[:160],
+            "supplier": _clean_crm_text(row.get("Creditor", "") or row.get("Profile", ""))[:300],
+            "category": (_clean_crm_text(row.get("Category", "")) or selected_type.title())[:160],
             "amount": _amount_value(row.get("Total Amount", "")),
             "gst": _amount_value(row.get("GST", "")),
             "status": _clean_crm_text(row.get("Status", ""))[:160],
-            "due_date": _date_value(row.get("Due Date", "")),
+            "due_date": due_date,
             "paid_date": _date_value(row.get("Paid To Date", "")),
             "payment_method": _clean_crm_text(row.get("Payment Method", "")),
-            "source_sheet": "Outgoing invoices Report.csv",
+            "source_type": selected_type,
+            "source_sheet": f"{selected_type.title()} invoices Report.csv",
         })
         if len(result) > 50_000:
             raise ValueError("The export contains more than 50,000 invoice rows.")

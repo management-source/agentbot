@@ -3,7 +3,8 @@ from __future__ import annotations
 import re
 import zipfile
 import json
-from datetime import datetime
+import uuid
+from datetime import date, datetime
 from io import BytesIO
 from urllib.parse import urlencode
 from urllib.request import urlopen
@@ -23,6 +24,7 @@ router = APIRouter()
 
 NS = {"a": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
 VICMAP_ADDRESS_QUERY_URL = "https://services-ap1.arcgis.com/P744lA0wf4LlBZ84/ArcGIS/rest/services/Vicmap_Address/FeatureServer/0/query"
+LISTING_STATUSES = {"OPEN", "CLOSED"}
 
 
 class PropertyContactIn(BaseModel):
@@ -32,6 +34,31 @@ class PropertyContactIn(BaseModel):
     phone: str | None = None
     phones: list[str] | None = None
     is_company: bool = False
+    lease_start_date: str | None = None
+    lease_end_date: str | None = None
+    lease_amount: str | None = None
+    lease_frequency: str | None = None
+
+
+class PropertyKeyIn(BaseModel):
+    key_number: str | None = None
+    description: str | None = None
+    location: str | None = None
+
+
+class SocialMediaHistoryIn(BaseModel):
+    date: str | None = None
+    platform: str | None = None
+    url: str | None = None
+    notes: str | None = None
+
+
+class ListingInspectionIn(BaseModel):
+    id: str | None = None
+    date: str | None = None
+    start_time: str | None = None
+    finish_time: str | None = None
+    notes: str | None = None
 
 
 class PropertyCreateIn(BaseModel):
@@ -44,10 +71,15 @@ class PropertyCreateIn(BaseModel):
     property_type: str | None = None
     rental_type: str | None = None
     key_number: str | None = None
+    listing_status: str = "OPEN"
+    keys: list[PropertyKeyIn] | None = None
+    social_media_history: list[SocialMediaHistoryIn] | None = None
+    inspections: list[ListingInspectionIn] | None = None
     owner_is_company: bool = False
     tenancy_status: str | None = None
     owners: list[PropertyContactIn] | None = None
     tenants: list[PropertyContactIn] | None = None
+    occupants: list[PropertyContactIn] | None = None
 
 
 class PropertyUpdateIn(BaseModel):
@@ -60,10 +92,15 @@ class PropertyUpdateIn(BaseModel):
     property_type: str | None = None
     rental_type: str | None = None
     key_number: str | None = None
+    listing_status: str | None = None
+    keys: list[PropertyKeyIn] | None = None
+    social_media_history: list[SocialMediaHistoryIn] | None = None
+    inspections: list[ListingInspectionIn] | None = None
     owner_is_company: bool | None = None
     tenancy_status: str | None = None
     owners: list[PropertyContactIn] | None = None
     tenants: list[PropertyContactIn] | None = None
+    occupants: list[PropertyContactIn] | None = None
 
 
 def _normalize_text(value: str | None) -> str:
@@ -150,6 +187,7 @@ def _contact_book_from_contacts(
     *,
     default_label: str,
     is_company_default: bool = False,
+    include_lease_fields: bool = False,
 ) -> dict[str, object]:
     contacts: list[dict[str, object]] = []
     raw_names: list[str] = []
@@ -163,7 +201,13 @@ def _contact_book_from_contacts(
         phone = _normalize_text(item.phone)
         extra_phones = [_normalize_text(value) for value in (item.phones or []) if _normalize_text(value)]
         phones = _dedupe([mobile, phone, *extra_phones])
-        if not name and not email and not phones:
+        lease_start_date = _normalize_text(item.lease_start_date)
+        lease_end_date = _normalize_text(item.lease_end_date)
+        lease_amount = _normalize_text(item.lease_amount)
+        lease_frequency = _normalize_text(item.lease_frequency)
+        if not name and not email and not phones and not any(
+            (lease_start_date, lease_end_date, lease_amount, lease_frequency)
+        ):
             continue
         raw_names.append(name)
         if email:
@@ -172,16 +216,24 @@ def _contact_book_from_contacts(
             raw_mobiles.append(mobile)
         if phone:
             raw_phones.append(phone)
-        contacts.append(
-            {
-                "name": name,
-                "email": email,
-                "mobile": mobile,
-                "phone": phone,
-                "phones": phones,
-                "is_company": bool(item.is_company or is_company_default),
-            }
-        )
+        contact: dict[str, object] = {
+            "name": name,
+            "email": email,
+            "mobile": mobile,
+            "phone": phone,
+            "phones": phones,
+            "is_company": bool(item.is_company or is_company_default),
+        }
+        if include_lease_fields:
+            contact.update(
+                {
+                    "lease_start_date": lease_start_date,
+                    "lease_end_date": lease_end_date,
+                    "lease_amount": lease_amount,
+                    "lease_frequency": lease_frequency,
+                }
+            )
+        contacts.append(contact)
     return {
         "contacts": contacts,
         "extra_mobiles": [],
@@ -209,6 +261,148 @@ def _json_loads(value: str | None) -> dict[str, object]:
         return {"contacts": [], "extra_mobiles": [], "extra_phones": [], "raw": {}}
 
 
+def _json_list_loads(value: str | None) -> list[dict[str, object]]:
+    if not value:
+        return []
+    try:
+        parsed = json.loads(value)
+    except Exception:
+        return []
+    if not isinstance(parsed, list):
+        return []
+    return [dict(item) for item in parsed if isinstance(item, dict)]
+
+
+def _item_dict(item: BaseModel | dict[str, object]) -> dict[str, object]:
+    if isinstance(item, BaseModel):
+        return item.model_dump()
+    return dict(item) if isinstance(item, dict) else {}
+
+
+def _item_text(item: dict[str, object], field: str) -> str:
+    value = item.get(field)
+    return _normalize_text(str(value)) if value is not None else ""
+
+
+def _normalize_listing_status(value: str | None, *, default: str | None = "OPEN") -> str:
+    if value is None:
+        if default is not None:
+            return default
+        raise HTTPException(status_code=400, detail="Listing status is required.")
+    status = _normalize_text(value).upper()
+    if status not in LISTING_STATUSES:
+        raise HTTPException(status_code=400, detail="Listing status must be OPEN or CLOSED.")
+    return status
+
+
+def _normalize_property_keys(
+    items: list[PropertyKeyIn] | list[dict[str, object]] | None,
+) -> list[dict[str, str]]:
+    normalized: list[dict[str, str]] = []
+    for raw in items or []:
+        item = _item_dict(raw)
+        entry = {
+            "key_number": _item_text(item, "key_number"),
+            "description": _item_text(item, "description"),
+            "location": _item_text(item, "location"),
+        }
+        if any(entry.values()):
+            normalized.append(entry)
+    return normalized
+
+
+def _normalize_social_media_history(
+    items: list[SocialMediaHistoryIn] | list[dict[str, object]] | None,
+) -> list[dict[str, str]]:
+    normalized: list[dict[str, str]] = []
+    for raw in items or []:
+        item = _item_dict(raw)
+        entry = {
+            "date": _item_text(item, "date"),
+            "platform": _item_text(item, "platform"),
+            "url": _item_text(item, "url"),
+            "notes": _item_text(item, "notes"),
+        }
+        if any(entry.values()):
+            normalized.append(entry)
+    return normalized
+
+
+def _normalize_listing_inspections(
+    items: list[ListingInspectionIn] | list[dict[str, object]] | None,
+) -> list[dict[str, str]]:
+    normalized: list[dict[str, str]] = []
+    seen_ids: set[str] = set()
+    for raw in items or []:
+        item = _item_dict(raw)
+        inspection_date = _item_text(item, "date")
+        start_time = _item_text(item, "start_time")
+        finish_time = _item_text(item, "finish_time")
+        if not inspection_date:
+            raise HTTPException(status_code=400, detail="Inspection date is required.")
+        try:
+            date.fromisoformat(inspection_date)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Inspection date must use YYYY-MM-DD format.") from exc
+        try:
+            start = datetime.strptime(start_time, "%H:%M").time()
+            finish = datetime.strptime(finish_time, "%H:%M").time()
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Inspection times must use HH:MM format.") from exc
+        if finish <= start:
+            raise HTTPException(status_code=400, detail="Inspection finish time must be after start time.")
+        inspection_id = _item_text(item, "id") or uuid.uuid4().hex
+        if inspection_id in seen_ids:
+            raise HTTPException(status_code=400, detail="Inspection IDs must be unique within a listing.")
+        seen_ids.add(inspection_id)
+        normalized.append(
+            {
+                "id": inspection_id,
+                "date": inspection_date,
+                "start_time": start_time,
+                "finish_time": finish_time,
+                "notes": _item_text(item, "notes"),
+            }
+        )
+    return normalized
+
+
+def _occupants_from_book(book: dict[str, object]) -> list[dict[str, object]]:
+    contacts = book.get("contacts") if isinstance(book, dict) else []
+    if not isinstance(contacts, list):
+        return []
+    occupants: list[dict[str, object]] = []
+    for raw in contacts:
+        if not isinstance(raw, dict):
+            continue
+        phones = raw.get("phones") if isinstance(raw.get("phones"), list) else []
+        occupants.append(
+            {
+                "name": str(raw.get("name") or ""),
+                "email": str(raw.get("email") or ""),
+                "mobile": str(raw.get("mobile") or ""),
+                "phone": str(raw.get("phone") or ""),
+                "phones": [str(value) for value in phones if value],
+                "is_company": bool(raw.get("is_company")),
+                "lease_start_date": str(raw.get("lease_start_date") or ""),
+                "lease_end_date": str(raw.get("lease_end_date") or ""),
+                "lease_amount": str(raw.get("lease_amount") or ""),
+                "lease_frequency": str(raw.get("lease_frequency") or ""),
+            }
+        )
+    return occupants
+
+
+def _property_keys(row: ManagedProperty) -> list[dict[str, str]]:
+    stored = _normalize_property_keys(_json_list_loads(row.keys_json))
+    if stored:
+        return stored
+    legacy_key_number = _normalize_text(row.key_number)
+    if not legacy_key_number:
+        return []
+    return [{"key_number": legacy_key_number, "description": "", "location": ""}]
+
+
 def _contacts_from_book(book: dict[str, object]) -> list[PropertyContactIn]:
     contacts = book.get("contacts") if isinstance(book, dict) else []
     if not isinstance(contacts, list):
@@ -226,6 +420,10 @@ def _contacts_from_book(book: dict[str, object]) -> list[PropertyContactIn]:
                 phone=str(item.get("phone") or ""),
                 phones=[str(value) for value in phones if value],
                 is_company=bool(item.get("is_company")),
+                lease_start_date=str(item.get("lease_start_date") or ""),
+                lease_end_date=str(item.get("lease_end_date") or ""),
+                lease_amount=str(item.get("lease_amount") or ""),
+                lease_frequency=str(item.get("lease_frequency") or ""),
             )
         )
     return out
@@ -355,6 +553,10 @@ def _apply_imported_property(
     row.property_type = item.get("property_type")
     row.rental_type = item.get("rental_type")
     row.key_number = item.get("key_number")
+    stored_keys = _normalize_property_keys(_json_list_loads(row.keys_json))
+    if stored_keys:
+        stored_keys[0]["key_number"] = _normalize_text(row.key_number)
+        row.keys_json = _json_dumps(stored_keys)
     row.owner_is_company = bool(item.get("owner_is_company"))
     row.tenancy_status = item.get("tenancy_status")
     row.owners_json = item.get("owners_json")
@@ -374,6 +576,31 @@ def _apply_manual_property_payload(
     postcode: str | None,
     now: datetime,
 ) -> None:
+    listing_status = _normalize_listing_status(payload.listing_status)
+    owners_book = _contact_book_from_contacts(
+        payload.owners,
+        default_label="Landlord",
+        is_company_default=bool(payload.owner_is_company),
+    )
+    using_occupants_alias = payload.occupants is not None
+    occupant_contacts = payload.occupants if using_occupants_alias else payload.tenants
+    occupants_book = _contact_book_from_contacts(
+        occupant_contacts,
+        default_label="Occupant" if using_occupants_alias else "Tenant",
+        include_lease_fields=True,
+    )
+    property_keys = _normalize_property_keys(payload.keys) if payload.keys is not None else None
+    social_media_history = (
+        _normalize_social_media_history(payload.social_media_history)
+        if payload.social_media_history is not None
+        else None
+    )
+    inspections = (
+        _normalize_listing_inspections(payload.inspections)
+        if payload.inspections is not None
+        else None
+    )
+
     row.property_address = address
     row.address_line_2 = _normalize_text(payload.address_line_2) or None
     row.suburb = _normalize_text(suburb) or None
@@ -382,17 +609,20 @@ def _apply_manual_property_payload(
     row.crm_property_id = _normalize_text(payload.crm_property_id) or None
     row.property_type = _normalize_text(payload.property_type) or None
     row.rental_type = _normalize_text(payload.rental_type) or None
-    row.key_number = _normalize_text(payload.key_number) or None
+    row.listing_status = listing_status
+    if property_keys is None:
+        row.key_number = _normalize_text(payload.key_number) or None
+    else:
+        row.keys_json = _json_dumps(property_keys)
+        row.key_number = (property_keys[0]["key_number"] or None) if property_keys else None
+    if social_media_history is not None:
+        row.social_media_history_json = _json_dumps(social_media_history)
+    if inspections is not None:
+        row.listing_inspections_json = _json_dumps(inspections)
     row.owner_is_company = bool(payload.owner_is_company)
     row.tenancy_status = _normalize_text(payload.tenancy_status) or None
-    row.owners_json = _json_dumps(
-        _contact_book_from_contacts(
-            payload.owners,
-            default_label="Landlord",
-            is_company_default=bool(payload.owner_is_company),
-        )
-    )
-    row.tenants_json = _json_dumps(_contact_book_from_contacts(payload.tenants, default_label="Tenant"))
+    row.owners_json = _json_dumps(owners_book)
+    row.tenants_json = _json_dumps(occupants_book)
     row.is_active = True
     row.source = row.source or "manual"
     row.updated_at = now
@@ -624,6 +854,10 @@ def _parse_property_workbook(content: bytes) -> list[dict[str, str | None]]:
 def _property_to_dict(row: ManagedProperty) -> dict[str, object]:
     owners = _json_loads(row.owners_json)
     tenants = _json_loads(row.tenants_json)
+    listing_status = _normalize_text(row.listing_status).upper()
+    if listing_status not in LISTING_STATUSES:
+        listing_status = "OPEN"
+    property_keys = _property_keys(row)
     return {
         "id": row.id,
         "crm_property_id": row.crm_property_id,
@@ -635,10 +869,17 @@ def _property_to_dict(row: ManagedProperty) -> dict[str, object]:
         "property_type": row.property_type,
         "rental_type": row.rental_type,
         "key_number": row.key_number,
+        "listing_status": listing_status,
+        "keys": property_keys,
+        "social_media_history": _normalize_social_media_history(
+            _json_list_loads(row.social_media_history_json)
+        ),
+        "inspections": _json_list_loads(row.listing_inspections_json),
         "owner_is_company": row.owner_is_company,
         "tenancy_status": row.tenancy_status,
         "owners": owners,
         "tenants": tenants,
+        "occupants": _occupants_from_book(tenants),
         "primary_owner": _primary_contact(owners),
         "primary_tenant": _primary_contact(tenants),
         "is_active": row.is_active,
@@ -891,6 +1132,43 @@ def update_property(
             if target_keys.intersection(other_keys):
                 raise HTTPException(status_code=400, detail="Another active property already uses this address.")
 
+    provided_fields = payload.model_fields_set
+    if "occupants" in provided_fields:
+        occupant_contacts = payload.occupants or []
+    elif "tenants" in provided_fields:
+        occupant_contacts = payload.tenants or []
+    else:
+        occupant_contacts = _contacts_from_book(_json_loads(row.tenants_json))
+
+    if "keys" in provided_fields:
+        property_keys: list[PropertyKeyIn] | list[dict[str, object]] = payload.keys or []
+    else:
+        property_keys = _property_keys(row)
+        if "key_number" in provided_fields:
+            legacy_key_number = _normalize_text(payload.key_number)
+            if property_keys:
+                property_keys[0]["key_number"] = legacy_key_number
+            elif legacy_key_number:
+                property_keys.append(
+                    {"key_number": legacy_key_number, "description": "", "location": ""}
+                )
+
+    social_media_history = (
+        payload.social_media_history or []
+        if "social_media_history" in provided_fields
+        else _json_list_loads(row.social_media_history_json)
+    )
+    inspections = (
+        payload.inspections or []
+        if "inspections" in provided_fields
+        else _json_list_loads(row.listing_inspections_json)
+    )
+    listing_status = (
+        _normalize_listing_status(payload.listing_status, default=None)
+        if "listing_status" in provided_fields
+        else _normalize_listing_status(row.listing_status)
+    )
+
     merged = PropertyCreateIn(
         property_address=address,
         address_line_2=payload.address_line_2 if payload.address_line_2 is not None else row.address_line_2,
@@ -901,10 +1179,14 @@ def update_property(
         property_type=payload.property_type if payload.property_type is not None else row.property_type,
         rental_type=payload.rental_type if payload.rental_type is not None else row.rental_type,
         key_number=payload.key_number if payload.key_number is not None else row.key_number,
+        listing_status=listing_status,
+        keys=property_keys,
+        social_media_history=social_media_history,
+        inspections=inspections,
         owner_is_company=bool(row.owner_is_company if payload.owner_is_company is None else payload.owner_is_company),
         tenancy_status=payload.tenancy_status if payload.tenancy_status is not None else row.tenancy_status,
         owners=payload.owners if payload.owners is not None else _contacts_from_book(_json_loads(row.owners_json)),
-        tenants=payload.tenants if payload.tenants is not None else _contacts_from_book(_json_loads(row.tenants_json)),
+        occupants=occupant_contacts,
     )
     _apply_manual_property_payload(
         row,
@@ -984,6 +1266,10 @@ def list_properties(
                 ManagedProperty.property_type.ilike(like),
                 ManagedProperty.rental_type.ilike(like),
                 ManagedProperty.key_number.ilike(like),
+                ManagedProperty.listing_status.ilike(like),
+                ManagedProperty.keys_json.ilike(like),
+                ManagedProperty.social_media_history_json.ilike(like),
+                ManagedProperty.listing_inspections_json.ilike(like),
                 ManagedProperty.tenancy_status.ilike(like),
                 ManagedProperty.owners_json.ilike(like),
                 ManagedProperty.tenants_json.ilike(like),
@@ -1023,24 +1309,28 @@ def property_options(
     return {
         "items": [
             {
-                "id": r.id,
                 "label": ", ".join([x for x in [r.property_address, r.suburb, r.postcode] if x]),
-                "crm_property_id": r.crm_property_id,
-                "property_address": r.property_address,
-                "address_line_2": r.address_line_2,
-                "suburb": r.suburb,
-                "state_code": r.state_code,
-                "postcode": r.postcode,
-                "property_type": r.property_type,
-                "rental_type": r.rental_type,
-                "key_number": r.key_number,
-                "owner_is_company": r.owner_is_company,
-                "tenancy_status": r.tenancy_status,
-                "owners": _json_loads(r.owners_json),
-                "tenants": _json_loads(r.tenants_json),
-                "primary_owner": _primary_contact(_json_loads(r.owners_json)),
-                "primary_tenant": _primary_contact(_json_loads(r.tenants_json)),
+                **_property_to_dict(r),
             }
             for r in rows
         ]
     }
+
+
+@router.get("/{property_id}")
+def get_property(
+    property_id: int,
+    mailbox: str = Depends(get_current_mailbox),
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    row = (
+        db.query(ManagedProperty)
+        .filter(ManagedProperty.mailbox == mailbox)
+        .filter(ManagedProperty.id == property_id)
+        .filter(ManagedProperty.is_active == True)
+        .first()
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Property not found.")
+    return _property_to_dict(row)

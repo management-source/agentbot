@@ -14,10 +14,15 @@ from sqlalchemy.orm import Session
 from app.authz import has_page_access, require_page_access
 from app.db import get_db
 from app.deps import get_current_mailbox
-from app.models import AppState, User
-from app.models import ManagedProperty
-from app.services.landlord_invoice_import import address_match_score, parse_invoice_csv, parse_invoice_workbook
-from app.services.landlord_report_pdf import generate_landlord_report_pdf
+from app.models import AppState, LandlordReportInvoice, ManagedProperty, User
+from app.services.landlord_invoice_import import (
+    INVOICE_REPORT_TYPES,
+    address_match_score,
+    detect_invoice_csv_type,
+    parse_invoice_csv,
+    parse_invoice_workbook,
+)
+from app.services.landlord_report_pdf import generate_landlord_report_pdf, merge_landlord_report_pdfs
 from app.services.landlord_reports import (
     ALL_SECTION_IDS,
     LANDLORD_REPORT_DEFAULTS_KEY,
@@ -34,6 +39,132 @@ from app.services.landlord_reports import (
 
 router = APIRouter(prefix="/landlord-reports", tags=["landlord-reports"])
 logger = logging.getLogger(__name__)
+INVOICE_REPORT_LABELS = {
+    "outgoing": "Outgoing invoices",
+    "incoming": "Incoming invoices",
+    "bond": "Bond invoices",
+    "mortgage": "Mortgage invoices",
+}
+
+
+def _invoice_data_summary(db: Session, mailbox: str) -> dict:
+    rows = (
+        db.query(LandlordReportInvoice)
+        .filter(LandlordReportInvoice.mailbox == mailbox)
+        .order_by(LandlordReportInvoice.imported_at.desc(), LandlordReportInvoice.id.desc())
+        .all()
+    )
+    result = []
+    for report_type in INVOICE_REPORT_LABELS:
+        matched_rows = [row for row in rows if row.report_type == report_type]
+        latest = matched_rows[0] if matched_rows else None
+        result.append({
+            "report_type": report_type,
+            "label": INVOICE_REPORT_LABELS[report_type],
+            "filename": latest.source_filename if latest else None,
+            "imported_at": latest.imported_at.isoformat() if latest and latest.imported_at else None,
+            "row_count": len(matched_rows),
+            "matched_count": sum(1 for row in matched_rows if row.property_id is not None),
+            "unmatched_count": sum(1 for row in matched_rows if row.property_id is None),
+            "total_amount": round(sum(float(row.amount or 0) for row in matched_rows), 2),
+        })
+    return {"imports": result, "stored": True}
+
+
+@router.get("/invoice-data")
+def invoice_data_status(
+    mailbox: str = Depends(get_current_mailbox),
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_page_access("landlord_reports")),
+):
+    return _invoice_data_summary(db, mailbox)
+
+
+@router.post("/invoice-data/{report_type}")
+async def replace_invoice_data(
+    report_type: str,
+    file: UploadFile = File(...),
+    mailbox: str = Depends(get_current_mailbox),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_page_access("landlord_reports")),
+):
+    report_type = report_type.strip().lower()
+    if report_type not in INVOICE_REPORT_TYPES:
+        raise HTTPException(status_code=404, detail="Unknown invoice report type.")
+    filename = file.filename or "invoice-report.csv"
+    if not filename.lower().endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Please upload the corresponding CRM report as a CSV file.")
+    raw = await file.read(25_000_001)
+    if not raw:
+        raise HTTPException(status_code=400, detail="Uploaded invoice report is empty.")
+    if len(raw) > 25_000_000:
+        raise HTTPException(status_code=413, detail="Invoice reports must be no larger than 25MB.")
+    detected_type = detect_invoice_csv_type(raw)
+    if detected_type != report_type:
+        detected_label = INVOICE_REPORT_LABELS.get(detected_type or "", "an unsupported report")
+        raise HTTPException(
+            status_code=400,
+            detail=f"This file looks like {detected_label}. Upload it in the matching Report Data section.",
+        )
+    try:
+        parsed = parse_invoice_csv(raw, report_type=report_type)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Invoice CSV could not be parsed: {exc}") from exc
+    if not parsed:
+        raise HTTPException(status_code=400, detail="No invoice rows were found in this report.")
+
+    properties = (
+        db.query(ManagedProperty)
+        .filter(ManagedProperty.mailbox == mailbox, ManagedProperty.is_active == True)
+        .all()
+    )
+    property_labels = [
+        (prop, " ".join(filter(None, [prop.property_address, prop.address_line_2, prop.suburb, prop.state_code, prop.postcode])))
+        for prop in properties
+    ]
+    imported_at = datetime.utcnow()
+    stored_rows: list[LandlordReportInvoice] = []
+    for invoice in parsed:
+        ranked = sorted(
+            ((address_match_score(invoice["property_address"], label), prop) for prop, label in property_labels),
+            key=lambda value: value[0],
+            reverse=True,
+        )
+        score, prop = ranked[0] if ranked else (0.0, None)
+        property_id = prop.id if prop is not None and score >= 0.58 else None
+        stored_rows.append(LandlordReportInvoice(
+            mailbox=mailbox,
+            report_type=report_type,
+            property_id=property_id,
+            property_address=invoice["property_address"],
+            invoice_date=invoice.get("invoice_date"),
+            due_date=invoice.get("due_date"),
+            paid_date=invoice.get("paid_date"),
+            invoice_number=invoice.get("invoice_number") or None,
+            description=invoice.get("description") or None,
+            supplier=invoice.get("supplier") or None,
+            category=invoice.get("category") or None,
+            amount=invoice.get("amount"),
+            gst=invoice.get("gst"),
+            status=invoice.get("status") or None,
+            source_filename=filename[:500],
+            imported_by_user_id=user.id,
+            imported_at=imported_at,
+        ))
+    try:
+        db.query(LandlordReportInvoice).filter(
+            LandlordReportInvoice.mailbox == mailbox,
+            LandlordReportInvoice.report_type == report_type,
+        ).delete(synchronize_session=False)
+        db.add_all(stored_rows)
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        logger.exception("Persistent landlord report invoice import failed")
+        raise HTTPException(status_code=500, detail="Invoice data could not be saved. The previous import was not replaced.") from exc
+    summary = _invoice_data_summary(db, mailbox)
+    current = next(item for item in summary["imports"] if item["report_type"] == report_type)
+    return {"ok": True, "import": current, **summary}
 
 
 @router.post("/invoice-workbook")
@@ -93,6 +224,7 @@ class ManualReportActivity(BaseModel):
     landlord_action: str | None = Field(default=None, max_length=2500)
     internal: bool = False
     photo_ids: list[int] = Field(default_factory=list, max_length=20)
+    pdf_ids: list[int] = Field(default_factory=list, max_length=5)
 
 
 class ReportOnlyPhoto(BaseModel):
@@ -100,6 +232,12 @@ class ReportOnlyPhoto(BaseModel):
     filename: str = Field(max_length=240)
     caption: str | None = Field(default=None, max_length=500)
     data_url: str = Field(max_length=10_100_000)
+
+
+class ReportOnlyPdf(BaseModel):
+    id: int = Field(lt=0)
+    filename: str = Field(max_length=240)
+    data_url: str = Field(max_length=20_100_000)
 
 
 class ReportInvoiceRow(BaseModel):
@@ -137,6 +275,7 @@ class LandlordReportRequest(BaseModel):
     hero_photo_id: int | None = Field(default=None, gt=0)
     detail_overrides: dict[str, str] = Field(default_factory=dict)
     report_only_photos: list[ReportOnlyPhoto] = Field(default_factory=list, max_length=40)
+    report_only_pdfs: list[ReportOnlyPdf] = Field(default_factory=list, max_length=10)
     invoice_rows: list[ReportInvoiceRow] = Field(default_factory=list, max_length=5000)
 
     @model_validator(mode="after")
@@ -217,6 +356,51 @@ def _report_only_photo_bytes(payload: LandlordReportRequest) -> dict[int, tuple[
         if total > 25_000_000:
             raise LandlordReportError("Report-only photos cannot exceed 25MB in total.")
         result[photo.id] = (raw, content_type)
+    return result
+
+
+def _report_only_pdf_bytes(payload: LandlordReportRequest, document_ids: list[int]) -> list[bytes]:
+    import base64
+    from io import BytesIO
+
+    from pypdf import PdfReader
+
+    requested = {int(value) for value in document_ids}
+    available = {document.id: document for document in payload.report_only_pdfs}
+    if requested - available.keys():
+        raise LandlordReportError("An attached PDF report is missing from the request. Please attach it again.")
+    result: list[bytes] = []
+    total_bytes = 0
+    total_pages = 0
+    for document_id in document_ids:
+        document = available.get(document_id)
+        if document is None:
+            continue
+        try:
+            header, encoded = document.data_url.split(",", 1)
+            content_type = header[5:].split(";", 1)[0].lower() if header.startswith("data:") else ""
+            if content_type != "application/pdf" or ";base64" not in header:
+                raise ValueError
+            raw = base64.b64decode(encoded, validate=True)
+            if not raw or len(raw) > 15_000_000:
+                raise LandlordReportError("Each attached PDF report must be no larger than 15MB.")
+            if not raw.startswith(b"%PDF-"):
+                raise ValueError
+            reader = PdfReader(BytesIO(raw), strict=False)
+            if reader.is_encrypted:
+                raise LandlordReportError(f"{document.filename} is password protected and cannot be combined.")
+            page_count = len(reader.pages)
+        except LandlordReportError:
+            raise
+        except Exception as exc:
+            raise LandlordReportError(f"{document.filename} is not a valid PDF report.") from exc
+        if page_count < 1 or page_count > 100:
+            raise LandlordReportError("Each attached PDF report must contain between 1 and 100 pages.")
+        total_bytes += len(raw)
+        total_pages += page_count
+        if total_bytes > 40_000_000 or total_pages > 200:
+            raise LandlordReportError("Attached PDF reports cannot exceed 40MB or 200 pages in total.")
+        result.append(raw)
     return result
 
 
@@ -306,6 +490,9 @@ def download_report_pdf(
         )
         photos.update(_report_only_photo_bytes(payload))
         pdf_bytes = generate_landlord_report_pdf(report, photos)
+        appended_pdfs = _report_only_pdf_bytes(payload, report.get("appendix_pdf_ids", []))
+        if appended_pdfs:
+            pdf_bytes = merge_landlord_report_pdfs(pdf_bytes, appended_pdfs)
     except LandlordReportError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:

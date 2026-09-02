@@ -538,9 +538,12 @@ let landlordReportEditingActivityId = "";
 let landlordReportSelectedPhotoIds = new Set();
 let landlordReportOnlyPhotos = [];
 let landlordReportPendingPhotoIds = [];
+let landlordReportOnlyPdfs = [];
+let landlordReportPendingPdfIds = [];
+let landlordReportPendingFilesChanged = false;
 let landlordReportDetailValues = {};
-let landlordReportInvoiceRows = [];
-let landlordReportInvoiceFilename = "";
+let landlordReportViewMode = "builder";
+let landlordReportDataLoaded = false;
 const LANDLORD_REPORT_DETAIL_FIELDS = [
     "Property address", "Tenancy", "Rent", "Maintenance", "Compliance", "Lease",
     "Tenant names", "Lease type", "Lease commencement", "Lease expiry", "Current weekly rent",
@@ -563,6 +566,8 @@ let tenantRegistrationsCache = [];
 let maintenanceTradiesCache = [];
 let currentPropertiesPage = 1;
 let propertiesLoadedOnce = false;
+let propertyListingActiveTab = "overview";
+let newListingCollectionsReady = false;
 let currentCompliancePage = 1;
 let complianceLoadedOnce = false;
 let currentCoveragePage = 1;
@@ -2830,7 +2835,7 @@ function isSideSubnavCollapsed(group) {
 }
 
 function applySideSubnavState() {
-    ["myspace", "maintenance", "lease", "compliance", "checklist"].forEach((group) => {
+    ["myspace", "maintenance", "lease", "landlord_reports", "compliance", "checklist"].forEach((group) => {
         const navGroup = document.querySelector(`[data-side-subnav-group="${group}"]`);
         const toggle = document.getElementById(`${group}SubnavToggle`);
         if (!navGroup) return;
@@ -2907,6 +2912,8 @@ function applyPageVisibility() {
     if (leaseSideSubnav) leaseSideSubnav.classList.toggle("hidden", !canAccessPage("lease_renewals"));
     const leaseNavGroup = document.getElementById("leaseNavGroup");
     if (leaseNavGroup) leaseNavGroup.classList.toggle("hidden", !canAccessPage("lease_renewals"));
+    const landlordReportsNavGroup = document.getElementById("landlordReportsNavGroup");
+    if (landlordReportsNavGroup) landlordReportsNavGroup.classList.toggle("hidden", !canAccessPage("landlord_reports"));
     const complianceMenuVisible = canAccessPage("compliance") || canAccessPage("coverage") || canAccessPage("compliance_providers");
     const complianceNavGroup = document.getElementById("complianceNavGroup");
     if (complianceNavGroup) complianceNavGroup.classList.toggle("hidden", !complianceMenuVisible);
@@ -4026,9 +4033,7 @@ function switchDashboardTab(tab) {
         loadAssignableUsers();
         loadLeaseRenewals();
     }
-    if (currentDashboardTab === "landlord_reports" && !landlordReportLoadedOnce) {
-        initLandlordReportBuilder();
-    }
+    if (currentDashboardTab === "landlord_reports") switchLandlordReportView(landlordReportViewMode);
     if (currentDashboardTab === "maintenance" && !maintenanceLoadedOnce) {
         refreshPropertyOptions();
         loadMaintenanceTradies();
@@ -4051,6 +4056,7 @@ function switchDashboardTab(tab) {
         loadNotifications();
     }
     if (currentDashboardTab === "properties" && !propertiesLoadedOnce) {
+        ensureNewListingCollections();
         loadProperties();
         refreshPropertyOptions();
     }
@@ -7433,10 +7439,231 @@ function propertyContactsForPayload(book) {
         phone: String(contact.phone || "").trim(),
         phones: propertyContactPhones(contact),
         is_company: !!contact.is_company,
+        lease_start_date: String(contact.lease_start_date || "").trim(),
+        lease_end_date: String(contact.lease_end_date || "").trim(),
+        lease_amount: String(contact.lease_amount || "").trim(),
+        lease_frequency: String(contact.lease_frequency || "").trim(),
     }));
 }
 
+function listingArray(value) {
+    return Array.isArray(value) ? value.filter((item) => item && typeof item === "object") : [];
+}
+
+function listingCollectionTarget(scope, kind) {
+    const ids = {
+        "new:occupants": "newListingOccupantsList",
+        "new:keys": "newListingKeysList",
+        "new:social": "newListingSocialList",
+        "edit:occupants": "propertyEditOccupantsList",
+        "edit:keys": "propertyEditKeysList",
+        "edit:social": "propertyEditSocialList",
+    };
+    return document.getElementById(ids[`${scope}:${kind}`] || "");
+}
+
+function listingOccupantRow(item = {}) {
+    const frequency = String(item.lease_frequency || "").toUpperCase();
+    return `<div class="property-collection-row occupant-row" data-listing-row="occupants">
+        <div class="field"><div class="label">Contact Name</div><input data-listing-field="name" value="${escapeHtml(String(item.name || ""))}" placeholder="Occupant name" /></div>
+        <div class="field"><div class="label">Email</div><input data-listing-field="email" type="email" value="${escapeHtml(String(item.email || ""))}" placeholder="occupant@example.com" /></div>
+        <div class="field"><div class="label">Phone</div><input data-listing-field="mobile" value="${escapeHtml(String(item.mobile || item.phone || ""))}" placeholder="Phone number" /></div>
+        <div class="field"><div class="label">Lease Start Date</div><input data-listing-field="lease_start_date" type="date" value="${escapeHtml(String(item.lease_start_date || ""))}" /></div>
+        <div class="field"><div class="label">Lease End Date</div><input data-listing-field="lease_end_date" type="date" value="${escapeHtml(String(item.lease_end_date || ""))}" /></div>
+        <div class="field"><div class="label">Lease Amount</div><input data-listing-field="lease_amount" value="${escapeHtml(String(item.lease_amount || ""))}" placeholder="Example: 650" /></div>
+        <div class="field"><div class="label">Frequency</div><select data-listing-field="lease_frequency">
+          <option value="" ${!frequency ? "selected" : ""}>Select frequency</option>
+          <option value="WEEKLY" ${frequency === "WEEKLY" ? "selected" : ""}>Weekly</option>
+          <option value="FORTNIGHTLY" ${frequency === "FORTNIGHTLY" ? "selected" : ""}>Fortnightly</option>
+          <option value="MONTHLY" ${frequency === "MONTHLY" ? "selected" : ""}>Monthly</option>
+        </select></div>
+        <button class="btn danger" type="button" onclick="removeListingCollectionRow(this)">Remove</button>
+      </div>`;
+}
+
+function listingKeyRow(item = {}) {
+    return `<div class="property-collection-row" data-listing-row="keys">
+        <div class="field"><div class="label">Key Number</div><input data-listing-field="key_number" value="${escapeHtml(String(item.key_number || ""))}" placeholder="Example: DP034" /></div>
+        <div class="field"><div class="label">Description</div><input data-listing-field="description" value="${escapeHtml(String(item.description || ""))}" placeholder="Example: Front door" /></div>
+        <div class="field"><div class="label">Location</div><input data-listing-field="location" value="${escapeHtml(String(item.location || ""))}" placeholder="Where the key is held" /></div>
+        <button class="btn" type="button" onclick="generateListingKeyNumber(this)">Generate Number</button>
+        <button class="btn danger" type="button" onclick="removeListingCollectionRow(this)">Remove</button>
+      </div>`;
+}
+
+function listingSocialRow(item = {}) {
+    return `<div class="property-collection-row social-row" data-listing-row="social">
+        <div class="field"><div class="label">Date</div><input data-listing-field="date" type="date" value="${escapeHtml(String(item.date || ""))}" /></div>
+        <div class="field"><div class="label">Platform</div><input data-listing-field="platform" value="${escapeHtml(String(item.platform || ""))}" placeholder="Instagram, Facebook..." /></div>
+        <div class="field"><div class="label">Post URL</div><input data-listing-field="url" type="url" value="${escapeHtml(String(item.url || ""))}" placeholder="https://" /></div>
+        <div class="field"><div class="label">Notes</div><input data-listing-field="notes" maxlength="1000" value="${escapeHtml(String(item.notes || ""))}" placeholder="Campaign or post notes" /></div>
+        <button class="btn danger" type="button" onclick="removeListingCollectionRow(this)">Remove</button>
+      </div>`;
+}
+
+function listingCollectionMarkup(kind, item) {
+    if (kind === "occupants") return listingOccupantRow(item);
+    if (kind === "keys") return listingKeyRow(item);
+    return listingSocialRow(item);
+}
+
+function renderListingCollection(scope, kind, items, options = {}) {
+    const target = listingCollectionTarget(scope, kind);
+    if (!target) return;
+    const rows = listingArray(items);
+    const seedEmpty = !!options.seedEmpty;
+    target.innerHTML = rows.length
+        ? rows.map((item) => listingCollectionMarkup(kind, item)).join("")
+        : (seedEmpty ? listingCollectionMarkup(kind, {}) : `<div class="property-collection-empty" data-listing-empty>No ${kind === "social" ? "social media history" : kind} recorded.</div>`);
+}
+
+function addListingCollectionRow(scope, kind, item = {}) {
+    const target = listingCollectionTarget(scope, kind);
+    if (!target) return;
+    target.querySelector("[data-listing-empty]")?.remove();
+    target.insertAdjacentHTML("beforeend", listingCollectionMarkup(kind, item));
+}
+
+function removeListingCollectionRow(button) {
+    const row = button?.closest("[data-listing-row]");
+    const target = row?.parentElement;
+    const kind = row?.dataset.listingRow || "items";
+    row?.remove();
+    if (target && !target.querySelector("[data-listing-row]")) {
+        target.innerHTML = `<div class="property-collection-empty" data-listing-empty>No ${kind === "social" ? "social media history" : kind} recorded.</div>`;
+    }
+}
+
+function generateListingKeyNumber(button) {
+    const row = button?.closest('[data-listing-row="keys"]');
+    const input = row?.querySelector('[data-listing-field="key_number"]');
+    if (!input || String(input.value || "").trim()) return;
+    const stamp = Date.now().toString(36).slice(-6).toUpperCase();
+    input.value = `KEY-${stamp}`;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+function collectListingCollection(scope, kind) {
+    const target = listingCollectionTarget(scope, kind);
+    if (!target) return [];
+    const field = (row, name) => String(row.querySelector(`[data-listing-field="${name}"]`)?.value || "").trim();
+    return Array.from(target.querySelectorAll(`[data-listing-row="${kind}"]`)).map((row) => {
+        if (kind === "occupants") {
+            const mobile = field(row, "mobile");
+            return {
+                name: field(row, "name"), email: field(row, "email"), mobile, phone: "",
+                phones: mobile ? [mobile] : [], is_company: false,
+                lease_start_date: field(row, "lease_start_date"), lease_end_date: field(row, "lease_end_date"),
+                lease_amount: field(row, "lease_amount"), lease_frequency: field(row, "lease_frequency"),
+            };
+        }
+        if (kind === "keys") {
+            return { key_number: field(row, "key_number"), description: field(row, "description"), location: field(row, "location") };
+        }
+        return { date: field(row, "date"), platform: field(row, "platform"), url: field(row, "url"), notes: field(row, "notes") };
+    }).filter((item) => Object.values(item).some((value) => Array.isArray(value) ? value.length : Boolean(value)));
+}
+
+function ensureNewListingCollections(force = false) {
+    if (newListingCollectionsReady && !force) return;
+    renderListingCollection("new", "occupants", [], { seedEmpty: true });
+    renderListingCollection("new", "keys", [], { seedEmpty: true });
+    renderListingCollection("new", "social", [], { seedEmpty: true });
+    newListingCollectionsReady = true;
+}
+
+function listingInspectionIsCompleted(item) {
+    const date = String(item?.date || "").trim();
+    const finish = String(item?.finish_time || item?.start_time || "23:59").trim();
+    if (!date) return false;
+    const timestamp = new Date(`${date}T${finish || "23:59"}:00`).getTime();
+    return Number.isFinite(timestamp) && timestamp < Date.now();
+}
+
+function listingInspectionRow(item = {}) {
+    const id = String(item.id || `inspection-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`);
+    return `<div class="property-collection-row inspection-row" data-listing-inspection-id="${escapeHtml(id)}">
+        <div class="field"><div class="label">Date</div><input data-inspection-field="date" type="date" value="${escapeHtml(String(item.date || ""))}" /></div>
+        <div class="field"><div class="label">Start</div><input data-inspection-field="start_time" type="time" value="${escapeHtml(String(item.start_time || ""))}" /></div>
+        <div class="field"><div class="label">Finish</div><input data-inspection-field="finish_time" type="time" value="${escapeHtml(String(item.finish_time || ""))}" /></div>
+        <div class="field"><div class="label">Notes</div><input data-inspection-field="notes" maxlength="1000" value="${escapeHtml(String(item.notes || ""))}" placeholder="Inspection notes" /></div>
+        <button class="btn danger" type="button" onclick="removePropertyListingInspection(this)">Remove</button>
+      </div>`;
+}
+
+function renderPropertyListingInspections(items) {
+    const current = document.getElementById("propertyCurrentInspections");
+    const completed = document.getElementById("propertyCompletedInspections");
+    if (!current || !completed) return;
+    const rows = listingArray(items);
+    const upcoming = rows.filter((item) => !listingInspectionIsCompleted(item));
+    const archived = rows.filter(listingInspectionIsCompleted);
+    current.innerHTML = upcoming.length ? upcoming.map(listingInspectionRow).join("") : `<div class="property-collection-empty" data-inspection-empty>There are no current inspection times.</div>`;
+    completed.innerHTML = archived.length ? archived.map(listingInspectionRow).join("") : `<div class="property-collection-empty" data-inspection-empty>There are no completed inspection times.</div>`;
+}
+
+function collectPropertyListingInspections(showErrors = true) {
+    const rows = Array.from(document.querySelectorAll("#propertyCurrentInspections [data-listing-inspection-id], #propertyCompletedInspections [data-listing-inspection-id]"));
+    const items = rows.map((row) => {
+        const value = (name) => String(row.querySelector(`[data-inspection-field="${name}"]`)?.value || "").trim();
+        return { id: row.dataset.listingInspectionId, date: value("date"), start_time: value("start_time"), finish_time: value("finish_time"), notes: value("notes") };
+    });
+    const invalid = items.find((item) => !item.date || !item.start_time || !item.finish_time || item.finish_time <= item.start_time);
+    if (invalid && showErrors) alert("Each inspection needs a date and a finish time later than its start time.");
+    return invalid ? null : items;
+}
+
+function addPropertyListingInspection() {
+    const item = {
+        id: `inspection-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+        date: String(document.getElementById("propertyInspectionDate")?.value || "").trim(),
+        start_time: String(document.getElementById("propertyInspectionStart")?.value || "").trim(),
+        finish_time: String(document.getElementById("propertyInspectionFinish")?.value || "").trim(),
+        notes: String(document.getElementById("propertyInspectionNotes")?.value || "").trim(),
+    };
+    if (!item.date || !item.start_time || !item.finish_time || item.finish_time <= item.start_time) {
+        alert("Choose an inspection date and a finish time later than the start time.");
+        return;
+    }
+    const existing = collectPropertyListingInspections(false) || [];
+    renderPropertyListingInspections([...existing, item]);
+    ["propertyInspectionDate", "propertyInspectionStart", "propertyInspectionFinish", "propertyInspectionNotes"].forEach((id) => {
+        const control = document.getElementById(id);
+        if (control) control.value = "";
+    });
+}
+
+function removePropertyListingInspection(button) {
+    button?.closest("[data-listing-inspection-id]")?.remove();
+    const remaining = collectPropertyListingInspections(false) || [];
+    renderPropertyListingInspections(remaining);
+}
+
+function switchPropertyListingTab(tab) {
+    const requested = String(tab || "overview");
+    const isOpen = String(document.getElementById("propertyEditListingStatus")?.value || "OPEN").toUpperCase() === "OPEN";
+    propertyListingActiveTab = (!isOpen && ["enquiries", "offers"].includes(requested)) ? "overview" : requested;
+    document.querySelectorAll("#propertyEditorModal [data-property-listing-tab]").forEach((button) => {
+        button.classList.toggle("active", button.dataset.propertyListingTab === propertyListingActiveTab);
+    });
+    document.querySelectorAll("#propertyEditorModal [data-property-listing-panel]").forEach((panel) => {
+        const unavailable = !isOpen && ["enquiries", "offers"].includes(panel.dataset.propertyListingPanel);
+        panel.classList.toggle("hidden", unavailable || panel.dataset.propertyListingPanel !== propertyListingActiveTab);
+    });
+}
+
+function updatePropertyListingOpenTabs() {
+    const isOpen = String(document.getElementById("propertyEditListingStatus")?.value || "OPEN").toUpperCase() === "OPEN";
+    document.querySelectorAll("#propertyEditorModal button.listing-open-only").forEach((button) => button.classList.toggle("hidden", !isOpen));
+    if (!isOpen && ["enquiries", "offers"].includes(propertyListingActiveTab)) propertyListingActiveTab = "overview";
+    switchPropertyListingTab(propertyListingActiveTab);
+}
+
 function getPropertyEditorPayload() {
+    const occupants = collectListingCollection("edit", "occupants");
+    const keys = collectListingCollection("edit", "keys");
+    const inspections = collectPropertyListingInspections(true);
+    if (inspections === null) return null;
     return {
         property_address: String(document.getElementById("propertyEditAddress")?.value || "").trim(),
         suburb: String(document.getElementById("propertyEditSuburb")?.value || "").trim(),
@@ -7445,11 +7672,16 @@ function getPropertyEditorPayload() {
         crm_property_id: String(document.getElementById("propertyEditCrmId")?.value || "").trim(),
         property_type: String(document.getElementById("propertyEditType")?.value || "").trim(),
         rental_type: String(document.getElementById("propertyEditRentalType")?.value || "").trim(),
-        key_number: String(document.getElementById("propertyEditKeyNumber")?.value || "").trim(),
+        listing_status: String(document.getElementById("propertyEditListingStatus")?.value || "OPEN").toUpperCase(),
+        key_number: String(keys[0]?.key_number || "").trim(),
         tenancy_status: String(document.getElementById("propertyEditTenancyStatus")?.value || "").trim(),
         owner_is_company: !!document.getElementById("propertyEditOwnerCompany")?.checked,
         owners: collectPropertyEditorContacts("owners"),
-        tenants: collectPropertyEditorContacts("tenants"),
+        tenants: occupants,
+        occupants,
+        keys,
+        social_media_history: collectListingCollection("edit", "social"),
+        inspections,
     };
 }
 
@@ -7461,7 +7693,7 @@ function setPropertyEditorValue(id, value) {
 function openPropertyEditor(propertyId) {
     const row = propertyResultsCache[propertyId];
     if (!row) {
-        alert("Property details are not loaded. Refresh the property list and try again.");
+        alert("Listing details are not loaded. Refresh the listing register and try again.");
         return;
     }
     editingPropertyId = Number(propertyId);
@@ -7469,14 +7701,23 @@ function openPropertyEditor(propertyId) {
     setPropertyEditorValue("propertyEditSuburb", row.suburb);
     setPropertyEditorValue("propertyEditPostcode", row.postcode);
     setPropertyEditorValue("propertyEditCrmId", row.crm_property_id);
-    setPropertyEditorValue("propertyEditKeyNumber", row.key_number);
     setPropertyEditorValue("propertyEditType", row.property_type);
     setPropertyEditorValue("propertyEditRentalType", row.rental_type);
     setPropertyEditorValue("propertyEditTenancyStatus", row.tenancy_status);
+    setPropertyEditorValue("propertyEditListingStatus", String(row.listing_status || "OPEN").toUpperCase());
     const ownerCompany = document.getElementById("propertyEditOwnerCompany");
     if (ownerCompany) ownerCompany.checked = !!row.owner_is_company;
     renderPropertyEditorContacts("owners", propertyContactsForPayload(row.owners));
-    renderPropertyEditorContacts("tenants", propertyContactsForPayload(row.tenants));
+    const occupants = listingArray(row.occupants).length ? listingArray(row.occupants) : propertyContactsForPayload(row.tenants);
+    const keys = listingArray(row.keys).length ? listingArray(row.keys) : (row.key_number ? [{ key_number: row.key_number, description: "", location: "" }] : []);
+    renderListingCollection("edit", "occupants", occupants);
+    renderListingCollection("edit", "keys", keys);
+    renderListingCollection("edit", "social", row.social_media_history);
+    renderPropertyListingInspections(row.inspections);
+    const title = document.getElementById("propertyEditorTitle");
+    const subtitle = document.getElementById("propertyEditorSubtitle");
+    if (title) title.textContent = propertyFullAddress(row) || "View Listing";
+    if (subtitle) subtitle.textContent = `${String(row.listing_status || "OPEN").toUpperCase() === "OPEN" ? "Open" : "Closed"} listing${row.crm_property_id ? ` · ${row.crm_property_id}` : ""}`;
     const status = document.getElementById("propertyEditStatus");
     if (status) {
         status.style.display = "none";
@@ -7484,6 +7725,8 @@ function openPropertyEditor(propertyId) {
     }
     const modal = document.getElementById("propertyEditorModal");
     if (modal) modal.classList.remove("hidden");
+    propertyListingActiveTab = "overview";
+    updatePropertyListingOpenTabs();
 }
 
 function closePropertyEditor() {
@@ -7495,8 +7738,9 @@ function closePropertyEditor() {
 async function savePropertyEditor() {
     if (!editingPropertyId) return;
     const payload = getPropertyEditorPayload();
+    if (!payload) return;
     if (!payload.property_address) {
-        alert("Property address is required.");
+        alert("Listing address is required.");
         return;
     }
     const btn = document.getElementById("propertyEditSaveBtn");
@@ -7512,7 +7756,7 @@ async function savePropertyEditor() {
             body: JSON.stringify(payload),
         });
         if (!r.ok) {
-            alert(`Failed to save property: ${await extractErrorMessage(r)}`);
+            alert(`Failed to save listing: ${await extractErrorMessage(r)}`);
             return;
         }
         closePropertyEditor();
@@ -7530,49 +7774,36 @@ async function savePropertyEditor() {
 function renderPropertyProfileRow(row) {
     const address = propertyFullAddress(row);
     const ownerCount = propertyContactList(row.owners).length;
-    const tenantCount = propertyContactList(row.tenants).length;
+    const occupants = listingArray(row.occupants).length ? listingArray(row.occupants) : propertyContactsForPayload(row.tenants);
+    const keys = listingArray(row.keys).length ? listingArray(row.keys) : (row.key_number ? [{ key_number: row.key_number }] : []);
+    const inspections = listingArray(row.inspections);
+    const upcomingInspections = inspections.filter((item) => !listingInspectionIsCompleted(item)).length;
+    const status = String(row.listing_status || "OPEN").toUpperCase();
+    const owner = propertyPrimaryContact(row.owners);
     return `
       <article class="property-profile-row">
-        <section class="property-crm-card">
-          <div class="property-crm-head landlord">
-            <h3>Landlords</h3>
-            <span>${ownerCount || 0} contact${ownerCount === 1 ? "" : "s"}</span>
-          </div>
-          <div class="property-crm-body">
-            ${renderPropertyContactBook(row.owners, "No landlord details imported for this property.")}
-          </div>
-        </section>
-
-        <section class="property-crm-card">
-          <div class="property-crm-head">
-            <h3>${escapeHtml(address || "Property")}</h3>
-            <span>${escapeHtml(propertyText(row.tenancy_status, "Status unknown"))}</span>
-          </div>
-          <div class="property-crm-body">
-            <div class="property-meta-grid">
-              <div class="property-meta"><span>CRM Property ID</span><strong>${escapeHtml(propertyText(row.crm_property_id))}</strong></div>
-              <div class="property-meta"><span>Key Number</span><strong>${escapeHtml(propertyText(row.key_number))}</strong></div>
-              <div class="property-meta"><span>Property Type</span><strong>${escapeHtml(propertyText(row.property_type))}</strong></div>
-              <div class="property-meta"><span>Rental Type</span><strong>${escapeHtml(propertyText(row.rental_type))}</strong></div>
-              <div class="property-meta"><span>Suburb</span><strong>${escapeHtml(propertyText(row.suburb))}</strong></div>
-              <div class="property-meta"><span>Postcode</span><strong>${escapeHtml(propertyText(row.postcode))}</strong></div>
+        <section class="property-listing-card">
+          <div class="property-listing-main">
+            <div class="property-listing-title-row">
+              <h3>${escapeHtml(address || "Listing")}</h3>
+              <span class="property-listing-status ${status === "OPEN" ? "" : "closed"}">${escapeHtml(status === "OPEN" ? "Open" : "Closed")}</span>
             </div>
-            <div class="property-extra-note">This connected profile feeds Maintenance owner and tenant details when the property is selected.</div>
-            <div class="property-card-actions">
-              <button class="btn primary" onclick="openMaintenanceForProperty(${Number(row.id)})">Use in Maintenance</button>
-              <button class="btn" onclick="openPropertyEditor(${Number(row.id)})">Edit Profile</button>
-              <button class="btn danger" onclick="deleteProperty(${Number(row.id)})">Delete</button>
+            <div class="property-listing-sub">${escapeHtml([
+                propertyText(row.property_type, "Property type not set"),
+                owner.name ? `Landlord: ${owner.name}` : `${ownerCount} landlord contact${ownerCount === 1 ? "" : "s"}`,
+                propertyText(row.tenancy_status, "Tenancy status not set"),
+            ].join(" · "))}</div>
+            <div class="property-listing-meta">
+              <span>${occupants.length} occupant${occupants.length === 1 ? "" : "s"}</span>
+              <span>${keys.length} key${keys.length === 1 ? "" : "s"}</span>
+              <span>${upcomingInspections} upcoming inspection${upcomingInspections === 1 ? "" : "s"}</span>
+              ${row.crm_property_id ? `<span>${escapeHtml(String(row.crm_property_id))}</span>` : ""}
             </div>
           </div>
-        </section>
-
-        <section class="property-crm-card">
-          <div class="property-crm-head tenant">
-            <h3>Tenants</h3>
-            <span>${tenantCount || 0} contact${tenantCount === 1 ? "" : "s"}</span>
-          </div>
-          <div class="property-crm-body">
-            ${renderPropertyContactBook(row.tenants, "No current tenant details imported for this property.")}
+          <div class="property-listing-actions">
+            <button class="btn primary" onclick="openPropertyEditor(${Number(row.id)})">View Listing</button>
+            <button class="btn" onclick="openMaintenanceForProperty(${Number(row.id)})">Maintenance</button>
+            <button class="btn danger" onclick="deleteProperty(${Number(row.id)})">Delete</button>
           </div>
         </section>
       </article>
@@ -7589,12 +7820,12 @@ async function loadProperties(page = null) {
     if (query) url.searchParams.set("query", query);
 
     const results = document.getElementById("propertiesProfileResults");
-    if (results) results.innerHTML = `<div class="ticket-empty"><strong>Loading properties...</strong></div>`;
+    if (results) results.innerHTML = `<div class="ticket-empty"><strong>Loading listings...</strong></div>`;
 
     const r = await apiFetch(url.toString());
     const t = await r.text();
     if (!r.ok) {
-        if (results) results.innerHTML = `<div class="ticket-empty"><strong>Failed to load properties</strong><div class="small muted" style="margin-top:6px">${escapeHtml(t)}</div></div>`;
+        if (results) results.innerHTML = `<div class="ticket-empty"><strong>Failed to load listings</strong><div class="small muted" style="margin-top:6px">${escapeHtml(t)}</div></div>`;
         return;
     }
     const data = JSON.parse(t);
@@ -7604,7 +7835,7 @@ async function loadProperties(page = null) {
     items.forEach((row) => { propertyResultsCache[row.id] = row; });
     if (results) {
         if (!items.length) {
-            results.innerHTML = `<div class="ticket-empty"><strong>No properties found</strong><div class="small muted" style="margin-top:6px">Try searching by address, owner, tenant, email, phone, or key number.</div></div>`;
+            results.innerHTML = `<div class="ticket-empty"><strong>No listings found</strong><div class="small muted" style="margin-top:6px">Try searching by address, owner, occupant, email, phone, or key.</div></div>`;
         } else {
             results.innerHTML = items.map(renderPropertyProfileRow).join("");
         }
@@ -7615,7 +7846,7 @@ async function loadProperties(page = null) {
         const pageNow = Number(data.page || 1);
         const sizeNow = Number(data.page_size || 25);
         const pages = sizeNow > 0 ? Math.max(1, Math.ceil(total / sizeNow)) : 1;
-        pi.textContent = `Page ${pageNow} of ${pages} - ${total} properties`;
+        pi.textContent = `Page ${pageNow} of ${pages} - ${total} listings`;
     }
     const btnPrev = document.getElementById("propertiesBtnPrev");
     const btnNext = document.getElementById("propertiesBtnNext");
@@ -7803,17 +8034,21 @@ function manualPropertyContact(prefix) {
 }
 
 async function createPropertyFromForm() {
+    ensureNewListingCollections();
     if (autocompleteNewPropertyFields() === false) return;
     const property_address = (document.getElementById("newPropertyAddress")?.value || "").trim();
     const suburb = (document.getElementById("newPropertySuburb")?.value || "").trim();
     const state_code = "VIC";
     const postcode = (document.getElementById("newPropertyPostcode")?.value || "").trim();
-    const key_number = (document.getElementById("newPropertyKeyNumber")?.value || "").trim();
+    const listing_status = String(document.getElementById("newPropertyListingStatus")?.value || "OPEN").toUpperCase();
     const tenancy_status = (document.getElementById("newPropertyTenancyStatus")?.value || "").trim();
     const owner = manualPropertyContact("newPropertyOwner");
-    const tenant = manualPropertyContact("newPropertyTenant");
+    const occupants = collectListingCollection("new", "occupants");
+    const keys = collectListingCollection("new", "keys");
+    const social_media_history = collectListingCollection("new", "social");
+    const key_number = String(keys[0]?.key_number || "").trim();
     if (!property_address) {
-        alert("Property address is required.");
+        alert("Listing address is required.");
         return;
     }
     const r = await apiFetch("/properties", {
@@ -7824,45 +8059,50 @@ async function createPropertyFromForm() {
             suburb,
             state_code,
             postcode,
+            listing_status,
             key_number,
             tenancy_status,
             owners: owner ? [owner] : [],
-            tenants: tenant ? [tenant] : [],
+            tenants: occupants,
+            occupants,
+            keys,
+            social_media_history,
+            inspections: [],
         }),
     });
     const t = await r.text();
     if (!r.ok) {
-        alert(`Failed to add property (${r.status}):\n\n${t}`);
+        alert(`Failed to add listing (${r.status}):\n\n${t}`);
         return;
     }
     [
         "newPropertyAddress",
         "newPropertySuburb",
         "newPropertyPostcode",
-        "newPropertyKeyNumber",
         "newPropertyTenancyStatus",
         "newPropertyOwnerName",
         "newPropertyOwnerEmail",
         "newPropertyOwnerPhone",
-        "newPropertyTenantName",
-        "newPropertyTenantEmail",
-        "newPropertyTenantPhone",
     ].forEach((id) => {
         const el = document.getElementById(id);
         if (el) el.value = "";
     });
+    const listingStatus = document.getElementById("newPropertyListingStatus");
+    if (listingStatus) listingStatus.value = "OPEN";
+    newListingCollectionsReady = false;
+    ensureNewListingCollections(true);
     currentPropertiesPage = 1;
     propertiesLoadedOnce = false;
     await loadProperties();
     await refreshPropertyOptions();
 }
 
-async function deleteProperty(propertyId, label = "this property") {
-    if (!confirm(`Delete ${label} from the active property register? Compliance records will be kept in history.`)) return;
+async function deleteProperty(propertyId, label = "this listing") {
+    if (!confirm(`Delete ${label} from the active listing register? Compliance records will be kept in history.`)) return;
     const r = await apiFetch(`/properties/${propertyId}`, { method: "DELETE" });
     const t = await r.text();
     if (!r.ok) {
-        alert(`Failed to delete property (${r.status}):\n\n${t}`);
+        alert(`Failed to delete listing (${r.status}):\n\n${t}`);
         return;
     }
     currentPropertiesPage = 1;
@@ -8071,6 +8311,35 @@ function landlordReportMonthRange(monthValue) {
     };
 }
 
+function switchLandlordReportView(view = "builder") {
+    landlordReportViewMode = view === "data" ? "data" : "builder";
+    document.getElementById("landlordReportBuilderView")?.classList.toggle("hidden", landlordReportViewMode !== "builder");
+    document.getElementById("landlordReportDataView")?.classList.toggle("hidden", landlordReportViewMode !== "data");
+    document.querySelectorAll("[data-landlord-report-view]").forEach((button) => {
+        button.classList.toggle("active", button.dataset.landlordReportView === landlordReportViewMode);
+    });
+    if (currentDashboardTab !== "landlord_reports") return;
+    const title = document.getElementById("topbarTitle");
+    const subtitle = document.getElementById("topbarSubtitle");
+    if (title) title.textContent = landlordReportViewMode === "data" ? "Landlord Report Data" : "Monthly Landlord Report";
+    if (subtitle) subtitle.textContent = landlordReportViewMode === "data"
+        ? "Manage persistent invoice exports used automatically across landlord reports."
+        : "Prepare a branded owner report from live property records and verified report-only notes.";
+    if (landlordReportViewMode === "data") loadLandlordReportData();
+    else if (!landlordReportLoadedOnce) initLandlordReportBuilder();
+}
+
+function landlordReportSixMonthRange(monthValue) {
+    const end = landlordReportMonthRange(monthValue);
+    const match = /^(\d{4})-(\d{2})$/.exec(String(monthValue || ""));
+    if (!match || !end.endDate) return { startDate: "", endDate: "" };
+    const firstMonth = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 6, 1));
+    return {
+        startDate: firstMonth.toISOString().slice(0, 10),
+        endDate: end.endDate,
+    };
+}
+
 function landlordReportPeriod() {
     const mode = document.getElementById("landlordReportPeriodMode")?.value || "month";
     if (mode === "custom") {
@@ -8079,7 +8348,10 @@ function landlordReportPeriod() {
             endDate: document.getElementById("landlordReportEndDate")?.value || "",
         };
     }
-    return landlordReportMonthRange(document.getElementById("landlordReportMonth")?.value || "");
+    const monthValue = document.getElementById("landlordReportMonth")?.value || "";
+    return mode === "six_months"
+        ? landlordReportSixMonthRange(monthValue)
+        : landlordReportMonthRange(monthValue);
 }
 
 function setLandlordReportMessage(message = "", type = "error") {
@@ -8096,9 +8368,12 @@ function setLandlordReportPreviewPlaceholder(title, detail) {
 }
 
 function landlordReportPeriodModeChanged() {
-    const custom = document.getElementById("landlordReportPeriodMode")?.value === "custom";
+    const mode = document.getElementById("landlordReportPeriodMode")?.value || "month";
+    const custom = mode === "custom";
     document.getElementById("landlordReportMonthField")?.classList.toggle("hidden", custom);
     document.getElementById("landlordReportCustomPeriod")?.classList.toggle("hidden", !custom);
+    const monthLabel = document.getElementById("landlordReportMonthLabel");
+    if (monthLabel) monthLabel.textContent = mode === "six_months" ? "Ending month and year" : "Month and year";
     scheduleLandlordReportContext();
 }
 
@@ -8156,6 +8431,7 @@ async function initLandlordReportBuilder() {
 
 function resetLandlordReportBuilder() {
     landlordReportLoadedOnce = false;
+    landlordReportDataLoaded = false;
     landlordReportContext = null;
     landlordReportPropertyKey = "";
     landlordReportSectionOrder = [];
@@ -8166,6 +8442,9 @@ function resetLandlordReportBuilder() {
     landlordReportSelectedPhotoIds = new Set();
     landlordReportOnlyPhotos = [];
     landlordReportPendingPhotoIds = [];
+    landlordReportOnlyPdfs = [];
+    landlordReportPendingPdfIds = [];
+    landlordReportPendingFilesChanged = false;
     landlordReportDetailValues = {};
     landlordReportContextRequest += 1;
     landlordReportPreviewRequest += 1;
@@ -8242,25 +8521,9 @@ function renderLandlordReportSourceSummary() {
     container.innerHTML = items.map(([label, value]) => `<span>${escapeHtml(label)}: ${escapeHtml(String(value ?? 0))}</span>`).join("");
 }
 
-function landlordReportInvoicesForCurrentSelection() {
-    const propertyId = Number(document.getElementById("landlordReportPropertyId")?.value || 0);
-    const period = landlordReportPeriod();
-    return landlordReportInvoiceRows.filter((row) => Number(row.property_id) === propertyId && row.invoice_date && row.invoice_date >= period.startDate && row.invoice_date <= period.endDate);
-}
-
-function updateLandlordReportInvoiceMeta(summary = null) {
-    const meta = document.getElementById("landlordReportInvoiceMeta");
-    if (!meta) return;
-    if (!landlordReportInvoiceRows.length) {
-        meta.textContent = "No invoice workbook loaded for this session.";
-        return;
-    }
-    const relevant = landlordReportInvoicesForCurrentSelection();
-    const unmatched = summary?.unmatched_count;
-    meta.textContent = `${landlordReportInvoiceRows.length} invoice rows loaded from ${landlordReportInvoiceFilename}. ${relevant.length} match the selected property and reporting period.${Number.isFinite(unmatched) ? ` ${unmatched} workbook row(s) could not be matched confidently.` : ""}`;
-}
-
 async function uploadLandlordReportInvoices() {
+    switchLandlordReportView("data");
+    return;
     const input = document.getElementById("landlordReportInvoiceFile");
     const file = input?.files?.[0];
     if (!file) {
@@ -8290,13 +8553,76 @@ async function uploadLandlordReportInvoices() {
     }
 }
 
-function clearLandlordReportInvoices() {
-    landlordReportInvoiceRows = [];
-    landlordReportInvoiceFilename = "";
-    const input = document.getElementById("landlordReportInvoiceFile");
-    if (input) input.value = "";
-    updateLandlordReportInvoiceMeta();
-    scheduleLandlordReportPreview();
+function setLandlordReportDataMessage(message = "", type = "") {
+    const element = document.getElementById("landlordReportDataMessage");
+    if (!element) return;
+    element.textContent = message;
+    element.className = `landlord-report-message${message ? " show" : ""}${type ? ` ${type}` : ""}`;
+}
+
+function landlordReportDataCurrency(value) {
+    return new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD" }).format(Number(value || 0));
+}
+
+function renderLandlordReportData(imports = []) {
+    const byType = Object.fromEntries(imports.map((item) => [item.report_type, item]));
+    ["outgoing", "incoming", "bond", "mortgage"].forEach((reportType) => {
+        const item = byType[reportType];
+        const status = document.getElementById(`landlordReportDataStatus-${reportType}`);
+        if (!status) return;
+        if (!item?.row_count) {
+            status.innerHTML = "<strong>Not uploaded</strong><br/>Choose the matching CRM CSV to make it available to every report.";
+            return;
+        }
+        const imported = item.imported_at ? new Date(item.imported_at).toLocaleString("en-AU") : "Unknown time";
+        status.innerHTML = `<strong>${escapeHtml(item.filename || "Invoice report")}</strong><br/>${item.row_count} rows | ${item.matched_count} matched | ${item.unmatched_count} unmatched<br/>Source total: ${escapeHtml(landlordReportDataCurrency(item.total_amount))} | Replaced ${escapeHtml(imported)}`;
+    });
+    const totalRows = imports.reduce((sum, item) => sum + Number(item.row_count || 0), 0);
+    const totalMatched = imports.reduce((sum, item) => sum + Number(item.matched_count || 0), 0);
+    const summary = document.getElementById("landlordReportDataSummary");
+    if (summary) summary.textContent = `${totalRows} stored rows across four report types; ${totalMatched} rows matched to managed properties.`;
+}
+
+async function loadLandlordReportData(force = false) {
+    if (landlordReportDataLoaded && !force) return;
+    try {
+        const response = await apiFetch("/landlord-reports/invoice-data");
+        if (!response.ok) throw new Error(await extractErrorMessage(response));
+        const result = await response.json();
+        renderLandlordReportData(result.imports || []);
+        landlordReportDataLoaded = true;
+        setLandlordReportDataMessage("", "");
+    } catch (error) {
+        setLandlordReportDataMessage(error.message || "Stored report data could not be loaded.", "error");
+    }
+}
+
+async function uploadLandlordReportData(reportType) {
+    const input = document.getElementById(`landlordReportDataFile-${reportType}`);
+    const file = input?.files?.[0];
+    if (!file) {
+        setLandlordReportDataMessage("Choose the matching CSV file first.", "error");
+        return;
+    }
+    const button = document.getElementById(`landlordReportDataUpload-${reportType}`);
+    if (button) button.disabled = true;
+    setLandlordReportDataMessage(`Importing ${file.name} and matching properties…`, "info");
+    try {
+        const form = new FormData();
+        form.append("file", file, file.name);
+        const response = await apiFetch(`/landlord-reports/invoice-data/${encodeURIComponent(reportType)}`, { method: "POST", body: form });
+        if (!response.ok) throw new Error(await extractErrorMessage(response));
+        const result = await response.json();
+        renderLandlordReportData(result.imports || []);
+        landlordReportDataLoaded = true;
+        if (input) input.value = "";
+        setLandlordReportDataMessage(`${result.import?.label || "Invoice data"} saved. ${result.import?.matched_count || 0} of ${result.import?.row_count || 0} rows matched; this replaces the previous ${reportType} import.`, "success");
+        scheduleLandlordReportPreview();
+    } catch (error) {
+        setLandlordReportDataMessage(error.message || "Invoice data could not be imported.", "error");
+    } finally {
+        if (button) button.disabled = false;
+    }
 }
 
 function renderLandlordReportSections() {
@@ -8497,7 +8823,13 @@ function renderLandlordReportActivities() {
         container.innerHTML = '<div class="landlord-report-empty">No report-only activities added.</div>';
         return;
     }
-    container.innerHTML = landlordReportActivities.map((item) => `<article class="landlord-report-activity"><div><strong>${escapeHtml(item.title)}</strong><p>${escapeHtml(sections[item.section_id] || item.section_id)} | ${escapeHtml(item.date || "No date")} | ${escapeHtml(landlordReportStatusLabel(item.status))}${item.internal ? " | Internal" : ""}</p></div><div class="landlord-report-activity-actions"><button class="btn" type="button" onclick="editLandlordReportActivity('${escapeHtml(item.id)}')">Edit</button><button class="btn danger" type="button" onclick="removeLandlordReportActivity('${escapeHtml(item.id)}')">Remove</button></div></article>`).join("");
+    container.innerHTML = landlordReportActivities.map((item) => {
+        const attachments = [
+            (item.photo_ids || []).length ? `${item.photo_ids.length} photo${item.photo_ids.length === 1 ? "" : "s"}` : "",
+            (item.pdf_ids || []).length ? `${item.pdf_ids.length} PDF${item.pdf_ids.length === 1 ? "" : "s"}` : "",
+        ].filter(Boolean).join(" | ");
+        return `<article class="landlord-report-activity"><div><strong>${escapeHtml(item.title)}</strong><p>${escapeHtml(sections[item.section_id] || item.section_id)} | ${escapeHtml(item.date || "No date")} | ${escapeHtml(landlordReportStatusLabel(item.status))}${attachments ? ` | ${escapeHtml(attachments)}` : ""}${item.internal ? " | Internal" : ""}</p></div><div class="landlord-report-activity-actions"><button class="btn" type="button" onclick="editLandlordReportActivity('${escapeHtml(item.id)}')">Edit</button><button class="btn danger" type="button" onclick="removeLandlordReportActivity('${escapeHtml(item.id)}')">Remove</button></div></article>`;
+    }).join("");
 }
 
 function resetLandlordReportActivityForm() {
@@ -8513,37 +8845,68 @@ function resetLandlordReportActivityForm() {
     if (internal) internal.checked = false;
     if (dateInput) dateInput.value = landlordReportMelbourneDate();
     landlordReportPendingPhotoIds = [];
+    landlordReportPendingPdfIds = [];
+    landlordReportPendingFilesChanged = false;
     const photoInput = document.getElementById("landlordReportActivityPhotos");
     if (photoInput) photoInput.value = "";
     const photoStatus = document.getElementById("landlordReportActivityPhotoStatus");
-    if (photoStatus) photoStatus.textContent = "No photos selected. Up to 20 images, 7.5MB each.";
+    if (photoStatus) photoStatus.textContent = "No files selected. Up to 20 images (7.5MB each) and 5 PDFs (15MB each; 40MB total). PDF pages are appended to the downloaded report.";
     const save = document.getElementById("landlordReportActivitySave");
     if (save) save.textContent = "Add Activity";
     document.getElementById("landlordReportActivityCancel")?.classList.add("hidden");
 }
 
 async function landlordReportActivityPhotosChanged(files) {
-    const selected = Array.from(files || []).slice(0, 20);
-    const allowed = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
-    if (selected.some((file) => !allowed.has(file.type) || file.size > 7500000)) {
-        setLandlordReportMessage("Use JPG, PNG, WebP or GIF images no larger than 7.5MB each.", "error");
+    const selected = Array.from(files || []);
+    const allowedImages = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+    const imageFiles = selected.filter((file) => allowedImages.has(file.type));
+    const pdfFiles = selected.filter((file) => file.type === "application/pdf" || /\.pdf$/i.test(file.name || ""));
+    if (imageFiles.length + pdfFiles.length !== selected.length) {
+        setLandlordReportMessage("Use JPG, PNG, WebP, GIF or PDF files only.", "error");
         return;
     }
-    const additions = await Promise.all(selected.map((file, index) => new Promise((resolve, reject) => {
+    if (imageFiles.length > 20 || pdfFiles.length > 5) {
+        setLandlordReportMessage("Attach up to 20 images and 5 PDF reports to one activity.", "error");
+        return;
+    }
+    if (imageFiles.some((file) => file.size > 7500000) || pdfFiles.some((file) => file.size > 15000000)) {
+        setLandlordReportMessage("Images must be no larger than 7.5MB and PDFs no larger than 15MB each.", "error");
+        return;
+    }
+    if (pdfFiles.reduce((total, file) => total + file.size, 0) > 40000000) {
+        setLandlordReportMessage("Attached PDF reports cannot exceed 40MB in total.", "error");
+        return;
+    }
+    const readFiles = (items, offset = 0, forcePdf = false) => Promise.all(items.map((file, index) => new Promise((resolve, reject) => {
         const reader = new FileReader();
-        reader.onload = () => resolve({ id: -(Date.now() + index + Math.floor(Math.random() * 1000)), filename: file.name, caption: file.name.replace(/\.[^.]+$/, ""), data_url: reader.result });
+        reader.onload = () => {
+            const dataUrl = forcePdf
+                ? String(reader.result || "").replace(/^data:[^;]*;base64,/, "data:application/pdf;base64,")
+                : reader.result;
+            resolve({ id: -(Date.now() + offset + index + Math.floor(Math.random() * 1000)), filename: file.name, caption: file.name.replace(/\.[^.]+$/, ""), data_url: dataUrl });
+        };
         reader.onerror = reject;
         reader.readAsDataURL(file);
     })));
+    const [photoAdditions, pdfAdditions] = await Promise.all([readFiles(imageFiles), readFiles(pdfFiles, 10000, true)]);
     if (landlordReportEditingActivityId) {
         const existing = landlordReportActivities.find((item) => item.id === landlordReportEditingActivityId);
         const replacedIds = new Set(existing?.photo_ids || []);
+        const replacedPdfIds = new Set(existing?.pdf_ids || []);
         landlordReportOnlyPhotos = landlordReportOnlyPhotos.filter((photo) => !replacedIds.has(photo.id));
+        landlordReportOnlyPdfs = landlordReportOnlyPdfs.filter((pdf) => !replacedPdfIds.has(pdf.id));
     }
-    landlordReportOnlyPhotos.push(...additions);
-    landlordReportPendingPhotoIds = additions.map((photo) => photo.id);
+    landlordReportOnlyPhotos.push(...photoAdditions);
+    landlordReportOnlyPdfs.push(...pdfAdditions);
+    landlordReportPendingPhotoIds = photoAdditions.map((photo) => photo.id);
+    landlordReportPendingPdfIds = pdfAdditions.map((pdf) => pdf.id);
+    landlordReportPendingFilesChanged = true;
     const status = document.getElementById("landlordReportActivityPhotoStatus");
-    if (status) status.textContent = `${additions.length} photo${additions.length === 1 ? "" : "s"} ready for this activity.`;
+    const summary = [
+        photoAdditions.length ? `${photoAdditions.length} photo${photoAdditions.length === 1 ? "" : "s"}` : "",
+        pdfAdditions.length ? `${pdfAdditions.length} PDF${pdfAdditions.length === 1 ? "" : "s"}` : "",
+    ].filter(Boolean).join(" and ");
+    if (status) status.textContent = `${summary || "No files"} ready for this activity.${pdfAdditions.length ? " PDF pages will be appended to the downloaded report." : ""}`;
 }
 
 function saveLandlordReportActivity() {
@@ -8567,7 +8930,8 @@ function saveLandlordReportActivity() {
         amount: amountRaw === "" ? null : Number(amountRaw),
         landlord_action: document.getElementById("landlordReportActivityAction")?.value || null,
         internal: !!document.getElementById("landlordReportActivityInternal")?.checked,
-        photo_ids: landlordReportPendingPhotoIds.length ? [...landlordReportPendingPhotoIds] : (existing?.photo_ids || []),
+        photo_ids: landlordReportPendingFilesChanged ? [...landlordReportPendingPhotoIds] : (existing?.photo_ids || []),
+        pdf_ids: landlordReportPendingFilesChanged ? [...landlordReportPendingPdfIds] : (existing?.pdf_ids || []),
     };
     if (existing) landlordReportActivities = landlordReportActivities.map((entry) => entry.id === existing.id ? item : entry);
     else landlordReportActivities.push(item);
@@ -8601,8 +8965,16 @@ function editLandlordReportActivity(activityId) {
     const internal = document.getElementById("landlordReportActivityInternal");
     if (internal) internal.checked = !!item.internal;
     landlordReportPendingPhotoIds = [...(item.photo_ids || [])];
+    landlordReportPendingPdfIds = [...(item.pdf_ids || [])];
+    landlordReportPendingFilesChanged = false;
     const photoStatus = document.getElementById("landlordReportActivityPhotoStatus");
-    if (photoStatus) photoStatus.textContent = landlordReportPendingPhotoIds.length ? `${landlordReportPendingPhotoIds.length} existing photo(s) attached. Choose files to replace them.` : "No photos selected. Up to 20 images, 7.5MB each.";
+    if (photoStatus) {
+        const existingFiles = [
+            landlordReportPendingPhotoIds.length ? `${landlordReportPendingPhotoIds.length} photo(s)` : "",
+            landlordReportPendingPdfIds.length ? `${landlordReportPendingPdfIds.length} PDF(s)` : "",
+        ].filter(Boolean).join(" and ");
+        photoStatus.textContent = existingFiles ? `${existingFiles} attached. Choose files to replace them.` : "No files selected. Up to 20 images (7.5MB each) and 5 PDFs (15MB each; 40MB total).";
+    }
     const save = document.getElementById("landlordReportActivitySave");
     if (save) save.textContent = "Update Activity";
     document.getElementById("landlordReportActivityCancel")?.classList.remove("hidden");
@@ -8614,7 +8986,9 @@ function removeLandlordReportActivity(activityId) {
     if (!item || !confirm(`Remove "${item.title}" from this report?`)) return;
     landlordReportActivities = landlordReportActivities.filter((entry) => entry.id !== activityId);
     const usedPhotoIds = new Set(landlordReportActivities.flatMap((entry) => entry.photo_ids || []));
+    const usedPdfIds = new Set(landlordReportActivities.flatMap((entry) => entry.pdf_ids || []));
     landlordReportOnlyPhotos = landlordReportOnlyPhotos.filter((photo) => usedPhotoIds.has(photo.id));
+    landlordReportOnlyPdfs = landlordReportOnlyPdfs.filter((pdf) => usedPdfIds.has(pdf.id));
     if (landlordReportEditingActivityId === activityId) resetLandlordReportActivityForm();
     renderLandlordReportActivities();
     scheduleLandlordReportPreview();
@@ -8654,6 +9028,9 @@ async function loadLandlordReportContext() {
             landlordReportSelectedSections = new Set(context.default_sections || []);
             landlordReportOnlyPhotos = [];
             landlordReportPendingPhotoIds = [];
+            landlordReportOnlyPdfs = [];
+            landlordReportPendingPdfIds = [];
+            landlordReportPendingFilesChanged = false;
             landlordReportDetailValues = {};
             renderLandlordReportDetailPicker();
             resetLandlordReportActivityForm();
@@ -8666,7 +9043,6 @@ async function loadLandlordReportContext() {
         renderLandlordReportSections();
         renderLandlordReportPhotos(propertyChanged);
         renderLandlordReportActivities();
-        updateLandlordReportInvoiceMeta();
         document.getElementById("landlordReportSaveDefaults")?.classList.toggle("hidden", !context.can_manage_defaults);
         const limitations = document.getElementById("landlordReportLimitations");
         if (limitations) {
@@ -8725,7 +9101,7 @@ function buildLandlordReportPayload(showErrors = true) {
         hero_photo_id: Number(document.getElementById("landlordReportHeroPhoto")?.value || 0) || null,
         detail_overrides: detailOverrides,
         report_only_photos: landlordReportOnlyPhotos,
-        invoice_rows: landlordReportInvoicesForCurrentSelection(),
+        report_only_pdfs: landlordReportOnlyPdfs,
     };
 }
 

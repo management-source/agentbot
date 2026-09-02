@@ -557,6 +557,14 @@ def migrate(engine: Engine) -> None:
             stmts.append(f"ALTER TABLE {mp} ADD COLUMN rental_type VARCHAR")
         if not _column_exists(engine, mp, "key_number"):
             stmts.append(f"ALTER TABLE {mp} ADD COLUMN key_number VARCHAR")
+        if not _column_exists(engine, mp, "listing_status"):
+            stmts.append(f"ALTER TABLE {mp} ADD COLUMN listing_status VARCHAR DEFAULT 'OPEN'")
+        if not _column_exists(engine, mp, "keys_json"):
+            stmts.append(f"ALTER TABLE {mp} ADD COLUMN keys_json TEXT")
+        if not _column_exists(engine, mp, "social_media_history_json"):
+            stmts.append(f"ALTER TABLE {mp} ADD COLUMN social_media_history_json TEXT")
+        if not _column_exists(engine, mp, "listing_inspections_json"):
+            stmts.append(f"ALTER TABLE {mp} ADD COLUMN listing_inspections_json TEXT")
         if not _column_exists(engine, mp, "owner_is_company"):
             stmts.append(f"ALTER TABLE {mp} ADD COLUMN owner_is_company BOOLEAN DEFAULT FALSE")
         if not _column_exists(engine, mp, "tenancy_status"):
@@ -568,9 +576,26 @@ def migrate(engine: Engine) -> None:
         _exec_statements(engine, stmts)
 
         with engine.begin() as conn:
+            try:
+                conn.execute(
+                    text(
+                        f"UPDATE {mp} SET listing_status = UPPER(TRIM(listing_status)) "
+                        "WHERE UPPER(TRIM(listing_status)) IN ('OPEN', 'CLOSED')"
+                    )
+                )
+                conn.execute(
+                    text(
+                        f"UPDATE {mp} SET listing_status = 'OPEN' "
+                        "WHERE listing_status IS NULL OR TRIM(listing_status) = '' "
+                        "OR listing_status NOT IN ('OPEN', 'CLOSED')"
+                    )
+                )
+            except Exception:
+                pass
             for stmt in (
                 f"CREATE INDEX IF NOT EXISTS ix_managed_properties_crm_property_id ON {mp}(crm_property_id)",
                 f"CREATE INDEX IF NOT EXISTS ix_managed_properties_tenancy_status ON {mp}(tenancy_status)",
+                f"CREATE INDEX IF NOT EXISTS ix_managed_properties_listing_status ON {mp}(listing_status)",
             ):
                 try:
                     conn.execute(text(stmt))

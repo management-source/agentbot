@@ -1236,10 +1236,8 @@
       margin-top:16px;
     }
     .property-profile-row{
-      display:grid;
-      grid-template-columns:minmax(240px, .9fr) minmax(280px, 1fr) minmax(240px, .9fr);
-      gap:14px;
-      align-items:stretch;
+      display:block;
+      min-width:0;
     }
     .property-crm-card{
       border:1px solid #dbe4ef;
@@ -1247,7 +1245,7 @@
       background:linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
       box-shadow:0 14px 28px rgba(15,23,42,.07);
       overflow:hidden;
-      min-height:230px;
+      min-height:0;
     }
     .property-crm-head{
       display:flex;
@@ -1328,8 +1326,29 @@
       display:flex;
       gap:8px;
       flex-wrap:wrap;
-      margin-top:auto;
+      margin-top:2px;
     }
+    .property-listing-card{
+      display:grid;
+      grid-template-columns:minmax(0,1fr) auto;
+      gap:16px;
+      align-items:center;
+      padding:16px 18px;
+      border:1px solid #dbe4ef;
+      border-radius:18px;
+      background:#fff;
+      box-shadow:0 10px 24px rgba(15,23,42,.06);
+    }
+    .property-listing-card:hover{border-color:#c9a246;box-shadow:0 14px 30px rgba(15,23,42,.09)}
+    .property-listing-main{min-width:0}
+    .property-listing-title-row{display:flex;align-items:center;gap:9px;min-width:0;flex-wrap:wrap}
+    .property-listing-title-row h3{margin:0;overflow:hidden;text-overflow:ellipsis;color:#101828;font-size:16px;letter-spacing:-.015em}
+    .property-listing-status{display:inline-flex;align-items:center;min-height:24px;padding:3px 9px;border:1px solid #b7e4ce;border-radius:999px;background:#ecfdf3;color:#087443;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.06em}
+    .property-listing-status.closed{border-color:#dbe4ef;background:#f2f4f7;color:#667085}
+    .property-listing-sub{margin-top:5px;color:#667085;font-size:12px;line-height:1.4}
+    .property-listing-meta{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}
+    .property-listing-meta span{display:inline-flex;align-items:center;min-height:27px;padding:4px 9px;border:1px solid #e5eaf1;border-radius:999px;background:#f8fafc;color:#475467;font-size:11px;font-weight:750}
+    .property-listing-actions{display:flex;align-items:center;justify-content:flex-end;gap:7px;flex-wrap:wrap}
     .property-manual-grid{
       display:grid;
       grid-template-columns:repeat(4, minmax(0, 1fr));
@@ -1341,8 +1360,37 @@
       background:#f8fafc;
     }
     .property-editor-modal{
-      width:min(1180px, 100%);
+      width:min(1240px, 100%);
     }
+    .property-listing-tabs{display:flex;gap:7px;overflow-x:auto;padding:2px 2px 10px;border-bottom:1px solid #e8edf3;scrollbar-width:thin}
+    .property-listing-tabs button{flex:0 0 auto;min-height:36px;padding:7px 11px;border:1px solid #dbe4ef;border-radius:11px;background:#fff;color:#475467;font:inherit;font-size:11px;font-weight:850;cursor:pointer}
+    .property-listing-tabs button:hover,.property-listing-tabs button.active{border-color:#111827;background:#111827;color:#fff}
+    .property-listing-panel{padding-top:16px}
+    .property-listing-section-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px}
+    .property-listing-section-head h4{margin:0;color:#101828;font-size:15px}
+    .property-listing-section-head p{margin:4px 0 0;color:#667085;font-size:11px;line-height:1.45}
+    .property-collection-list{display:grid;gap:10px}
+    .property-collection-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr)) auto;gap:10px;align-items:end;padding:12px;border:1px solid #e2e8f0;border-radius:15px;background:#fbfcfe}
+    .property-collection-row.occupant-row{grid-template-columns:repeat(4,minmax(0,1fr)) auto}
+    .property-collection-row.social-row{grid-template-columns:minmax(120px,.55fr) minmax(140px,.7fr) minmax(180px,1fr) minmax(240px,1.3fr) auto}
+    .property-collection-row.inspection-row{grid-template-columns:minmax(135px,.65fr) repeat(2,minmax(120px,.55fr)) minmax(250px,1.5fr) auto}
+    .property-collection-row .field{min-width:0}
+    .property-collection-row input,.property-collection-row select,.property-collection-row textarea{width:100%;min-width:0}
+    .property-collection-row textarea{min-height:42px;resize:vertical}
+    .property-collection-empty{padding:18px;border:1px dashed #cbd5e1;border-radius:14px;background:#f8fafc;color:#667085;text-align:center;font-size:12px}
+    .property-new-sections{display:grid;grid-template-columns:1fr;gap:10px;margin-top:14px}
+    .property-new-section{padding:13px 14px;border:1px solid #dbe4ef;border-radius:16px;background:#fbfcfe}
+    .property-new-section>summary{display:flex;align-items:center;justify-content:space-between;gap:10px;color:#101828;font-size:13px;font-weight:900;cursor:pointer;list-style:none}
+    .property-new-section>summary::-webkit-details-marker{display:none}
+    .property-new-section>summary::after{content:"+";color:#8f6f1d;font-size:18px}
+    .property-new-section[open]>summary::after{content:"−"}
+    .property-new-section-body{margin-top:12px}
+    .property-deferred{display:grid;place-items:center;min-height:180px;padding:28px;border:1px dashed #cbd5e1;border-radius:18px;background:linear-gradient(145deg,#fff,#f8fafc);text-align:center}
+    .property-deferred strong{display:block;color:#101828;font-size:15px}
+    .property-deferred p{max-width:470px;margin:7px 0 0;color:#667085;font-size:12px;line-height:1.5}
+    .property-inspection-create{display:grid;grid-template-columns:minmax(150px,.7fr) repeat(2,minmax(130px,.55fr)) minmax(220px,1.2fr) auto;gap:10px;align-items:end;margin-bottom:16px;padding:13px;border:1px solid #dbe4ef;border-radius:16px;background:#f8fafc}
+    .property-inspection-group+.property-inspection-group{margin-top:18px;padding-top:16px;border-top:1px solid #e8edf3}
+    .property-inspection-group h5{margin:0 0 9px;color:#344054;font-size:12px;text-transform:uppercase;letter-spacing:.06em}
     .property-editor-grid{
       display:grid;
       grid-template-columns:repeat(4, minmax(0, 1fr));
@@ -1400,18 +1448,27 @@
       background:#f8fafc;
     }
     @media (max-width: 1180px){
-      .property-profile-row{grid-template-columns:1fr}
       .property-crm-toolbar{grid-template-columns:1fr}
       .property-manual-grid,
       .property-editor-grid,
       .property-contact-editor-grid{grid-template-columns:1fr 1fr}
       .property-editor-grid .wide{grid-column:1 / -1}
+      .property-collection-row,.property-collection-row.occupant-row,.property-collection-row.social-row,.property-collection-row.inspection-row{grid-template-columns:repeat(2,minmax(0,1fr))}
+      .property-collection-row .btn{justify-self:start}
+      .property-inspection-create{grid-template-columns:repeat(2,minmax(0,1fr))}
     }
     @media (max-width: 720px){
       .property-manual-grid,
       .property-editor-grid,
       .property-contact-editor-grid,
-      .property-contact-edit-row{grid-template-columns:1fr}
+      .property-contact-edit-row,
+      .property-collection-row,
+      .property-collection-row.occupant-row,
+      .property-collection-row.social-row,
+      .property-collection-row.inspection-row,
+      .property-inspection-create{grid-template-columns:1fr}
+      .property-listing-card{grid-template-columns:1fr;align-items:start}
+      .property-listing-actions{justify-content:flex-start}
     }
 
     .top-grid{
@@ -4486,6 +4543,8 @@
     .landlord-report-activity-form .wide{grid-column:1/-1}
     .landlord-report-activity-form textarea{min-height:76px}
     .landlord-report-activity-list{display:grid;gap:8px;margin-top:12px}
+    .landlord-report-data-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+    @media(max-width:720px){.landlord-report-data-grid{grid-template-columns:1fr}}
     .landlord-report-activity{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;padding:12px;border:1px solid #dbe4ef;border-radius:14px;background:#fff}
     .landlord-report-activity strong{display:block;color:#101828;font-size:12px}
     .landlord-report-activity p{margin:5px 0 0;color:#667085;font-size:11px;line-height:1.45}
@@ -4869,14 +4928,30 @@
                 onclick="switchDashboardTab('lease_renewals'); switchLeaseRenewalView('report')">Report</button>
             </div>
           </div>
-          <a id="navLandlordReports" href="javascript:void(0)"
-            onclick="switchDashboardTab('landlord_reports')"
-            title="Monthly Landlord Report"><span
-              class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path
-                  d="M5 3h11l3 3v15H5z"></path><path d="M15 3v4h4"></path><path
-                  d="M8 11h8"></path><path d="M8 15h8"></path><path
-                  d="M8 19h5"></path></svg></span><span
-              class="nav-label">Landlord Reports</span></a>
+          <div class="side-nav-group subnav-collapsed" id="landlordReportsNavGroup"
+            data-side-subnav-group="landlord_reports">
+            <div class="side-nav-row">
+              <a id="navLandlordReports" href="javascript:void(0)"
+                onclick="switchDashboardTab('landlord_reports'); switchLandlordReportView('builder')"
+                title="Monthly Landlord Report"><span
+                  class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path
+                      d="M5 3h11l3 3v15H5z"></path><path d="M15 3v4h4"></path><path
+                      d="M8 11h8"></path><path d="M8 15h8"></path><path
+                      d="M8 19h5"></path></svg></span><span
+                  class="nav-label">Landlord Reports</span></a>
+              <button class="side-subnav-toggle" id="landlord_reportsSubnavToggle"
+                type="button" onclick="toggleSideSubnav('landlord_reports')"
+                aria-label="Toggle landlord reports menu" aria-expanded="false">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg>
+              </button>
+            </div>
+            <div class="side-subnav" id="landlordReportsSideSubnav">
+              <button type="button" data-landlord-report-view="builder"
+                onclick="switchDashboardTab('landlord_reports'); switchLandlordReportView('builder')">Monthly Report</button>
+              <button type="button" data-landlord-report-view="data"
+                onclick="switchDashboardTab('landlord_reports'); switchLandlordReportView('data')">Report Data</button>
+            </div>
+          </div>
           <div class="side-nav-group subnav-collapsed" id="complianceNavGroup"
             data-side-subnav-group="compliance">
             <div class="side-nav-row">
@@ -4911,12 +4986,12 @@
           <nav class="side-nav">
             <a id="navProperties" href="javascript:void(0)"
               onclick="switchDashboardTab('properties')"
-              title="Properties"><span class="nav-icon"><svg viewBox="0 0 24 24"
+              title="Listings"><span class="nav-icon"><svg viewBox="0 0 24 24"
                   aria-hidden="true"><path d="M4 20h16"></path><path
                     d="M6 20V7l6-3 6 3v13"></path><path d="M9 10h2"></path><path
                     d="M13 10h2"></path><path d="M9 14h2"></path><path
                     d="M13 14h2"></path></svg></span><span
-                class="nav-label">Properties</span></a>
+                class="nav-label">Listings</span></a>
             <a id="navTeam" href="javascript:void(0)"
               onclick="switchDashboardTab('team')" title="Our Team"><span
                 class="nav-icon"><svg viewBox="0 0 24 24"
@@ -6460,6 +6535,7 @@
               </div>
 
               <div id="landlordReportsPanel" class="hidden">
+                <div id="landlordReportBuilderView">
                 <div class="page-banner">
                   <div class="page-banner-kicker">Owner Reporting Studio</div>
                   <h2>Monthly Landlord Report</h2>
@@ -6487,16 +6563,17 @@
                             <datalist id="landlordReportPropertyOptions"></datalist>
                           </div>
                           <div class="field">
-                            <label class="label" for="landlordReportPeriodMode">Reporting period</label>
-                            <select id="landlordReportPeriodMode" onchange="landlordReportPeriodModeChanged()">
-                              <option value="month">Month and year</option>
-                              <option value="custom">Custom date range</option>
-                            </select>
-                          </div>
-                          <div class="field" id="landlordReportMonthField">
-                            <label class="label" for="landlordReportMonth">Month and year</label>
-                            <input id="landlordReportMonth" type="month" />
-                          </div>
+                             <label class="label" for="landlordReportPeriodMode">Reporting period</label>
+                             <select id="landlordReportPeriodMode" onchange="landlordReportPeriodModeChanged()">
+                               <option value="month">1 month</option>
+                               <option value="six_months">6 months</option>
+                               <option value="custom">Custom date range</option>
+                             </select>
+                           </div>
+                           <div class="field" id="landlordReportMonthField">
+                             <label class="label" id="landlordReportMonthLabel" for="landlordReportMonth">Month and year</label>
+                             <input id="landlordReportMonth" type="month" />
+                           </div>
                           <div class="landlord-report-period-custom hidden" id="landlordReportCustomPeriod">
                             <div class="field"><label class="label" for="landlordReportStartDate">Start date</label><input id="landlordReportStartDate" type="date" /></div>
                             <div class="field"><label class="label" for="landlordReportEndDate">End date</label><input id="landlordReportEndDate" type="date" /></div>
@@ -6550,16 +6627,6 @@
                         </div>
                       </section>
 
-                      <section class="landlord-report-card" aria-labelledby="landlordReportInvoiceImportHeading">
-                        <div class="landlord-report-card-head"><div><h3 id="landlordReportInvoiceImportHeading">CRM invoice export</h3><p>Upload the all-properties “Outgoing invoices Report” CSV once. It is parsed temporarily, matched to properties, and never saved to portal storage.</p></div></div>
-                        <div class="row" style="align-items:flex-end;flex-wrap:wrap">
-                          <div class="field" style="flex:1;min-width:220px"><label class="label" for="landlordReportInvoiceFile">Invoice CSV or Excel export</label><input id="landlordReportInvoiceFile" type="file" accept=".csv,.xlsx" /></div>
-                          <button class="btn primary" id="landlordReportInvoiceUpload" type="button" onclick="uploadLandlordReportInvoices()">Load Invoice Data</button>
-                          <button class="btn" type="button" onclick="clearLandlordReportInvoices()">Clear</button>
-                        </div>
-                        <div class="small muted" id="landlordReportInvoiceMeta" style="margin-top:9px">No invoice workbook loaded for this session.</div>
-                      </section>
-
                       <section class="landlord-report-card" aria-labelledby="landlordReportCustomDetailsHeading">
                         <div class="landlord-report-card-head"><div><h3 id="landlordReportCustomDetailsHeading">Customise PDF details</h3><p>Add only the fields needed for this report. Unavailable fields are omitted unless you add a value here.</p></div></div>
                         <div class="row" style="align-items:flex-end;margin-bottom:12px">
@@ -6581,7 +6648,7 @@
                           <div class="field"><label class="label" for="landlordReportActivityAmount">Amount (AUD)</label><input id="landlordReportActivityAmount" type="number" step="0.01" min="0" /></div>
                           <div class="field wide"><label class="label" for="landlordReportActivityDescription">Landlord-facing description</label><textarea id="landlordReportActivityDescription" maxlength="5000"></textarea></div>
                           <div class="field wide"><label class="label" for="landlordReportActivityAction">Action required from landlord</label><textarea id="landlordReportActivityAction" maxlength="2500"></textarea></div>
-                          <div class="field wide"><label class="label" for="landlordReportActivityPhotos">Optional activity photos</label><input id="landlordReportActivityPhotos" type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple onchange="landlordReportActivityPhotosChanged(this.files)" /><div class="small muted" id="landlordReportActivityPhotoStatus">No photos selected. Up to 20 images, 7.5MB each.</div></div>
+                          <div class="field wide"><label class="label" for="landlordReportActivityPhotos">Optional activity photos or PDF reports</label><input id="landlordReportActivityPhotos" type="file" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,.pdf" multiple onchange="landlordReportActivityPhotosChanged(this.files)" /><div class="small muted" id="landlordReportActivityPhotoStatus">No files selected. Up to 20 images (7.5MB each) and 5 PDFs (15MB each; 40MB total). PDF pages are appended to the downloaded report.</div></div>
                           <label class="landlord-report-toggle internal wide"><input id="landlordReportActivityInternal" type="checkbox" /><span>Mark this activity internal. It is excluded unless internal notes are enabled.</span></label>
                           <div class="row wide"><button class="btn primary" id="landlordReportActivitySave" type="button" onclick="saveLandlordReportActivity()">Add Activity</button><button class="btn hidden" id="landlordReportActivityCancel" type="button" onclick="resetLandlordReportActivityForm()">Cancel Edit</button></div>
                         </div>
@@ -6615,18 +6682,65 @@
                     </aside>
                   </div>
                 </div>
+                </div>
+
+                <div id="landlordReportDataView" class="hidden">
+                  <div class="page-banner">
+                    <div class="page-banner-kicker">Persistent Reporting Sources</div>
+                    <h2>Landlord Report Data</h2>
+                    <p>Upload each CRM invoice export once. The stored data is reused automatically in every monthly or six-month landlord report until that report type is uploaded again and replaced.</p>
+                    <div class="page-banner-actions">
+                      <span class="chip">Persistent imports</span>
+                      <span class="chip">Property matched</span>
+                      <span class="chip">Date-range totals</span>
+                    </div>
+                  </div>
+                  <div class="landlord-report-shell">
+                    <div class="landlord-report-message" id="landlordReportDataMessage" role="status" aria-live="polite"></div>
+                    <section class="landlord-report-card">
+                      <div class="landlord-report-card-head"><div><h3>Invoice report imports</h3><p>Each upload replaces only the previous data for that same report type. Other report types remain unchanged. Unmatched addresses are retained for review but are not included in a property's report.</p></div><button class="btn" type="button" onclick="loadLandlordReportData(true)">Refresh</button></div>
+                      <div class="landlord-report-source-summary"><span id="landlordReportDataSummary">Loading stored report data…</span></div>
+                      <div class="landlord-report-data-grid">
+                        <article class="landlord-report-card" style="box-shadow:none">
+                          <div class="landlord-report-card-head"><div><h3>Outgoing invoices</h3><p>CRM “Outgoing invoices Report” CSV.</p></div></div>
+                          <div class="field"><label class="label" for="landlordReportDataFile-outgoing">Outgoing invoice CSV</label><input id="landlordReportDataFile-outgoing" type="file" accept=".csv,text/csv" /></div>
+                          <button class="btn primary" id="landlordReportDataUpload-outgoing" type="button" onclick="uploadLandlordReportData('outgoing')">Upload / Replace</button>
+                          <div class="small muted" id="landlordReportDataStatus-outgoing" style="margin-top:10px">Not uploaded</div>
+                        </article>
+                        <article class="landlord-report-card" style="box-shadow:none">
+                          <div class="landlord-report-card-head"><div><h3>Incoming invoices</h3><p>CRM “Incoming invoices Report” CSV.</p></div></div>
+                          <div class="field"><label class="label" for="landlordReportDataFile-incoming">Incoming invoice CSV</label><input id="landlordReportDataFile-incoming" type="file" accept=".csv,text/csv" /></div>
+                          <button class="btn primary" id="landlordReportDataUpload-incoming" type="button" onclick="uploadLandlordReportData('incoming')">Upload / Replace</button>
+                          <div class="small muted" id="landlordReportDataStatus-incoming" style="margin-top:10px">Not uploaded</div>
+                        </article>
+                        <article class="landlord-report-card" style="box-shadow:none">
+                          <div class="landlord-report-card-head"><div><h3>Bond invoices</h3><p>CRM “Bond invoices Report” CSV. Due Date is used because this export has no Created date.</p></div></div>
+                          <div class="field"><label class="label" for="landlordReportDataFile-bond">Bond invoice CSV</label><input id="landlordReportDataFile-bond" type="file" accept=".csv,text/csv" /></div>
+                          <button class="btn primary" id="landlordReportDataUpload-bond" type="button" onclick="uploadLandlordReportData('bond')">Upload / Replace</button>
+                          <div class="small muted" id="landlordReportDataStatus-bond" style="margin-top:10px">Not uploaded</div>
+                        </article>
+                        <article class="landlord-report-card" style="box-shadow:none">
+                          <div class="landlord-report-card-head"><div><h3>Mortgage invoices</h3><p>CRM mortgage invoice CSV.</p></div></div>
+                          <div class="field"><label class="label" for="landlordReportDataFile-mortgage">Mortgage invoice CSV</label><input id="landlordReportDataFile-mortgage" type="file" accept=".csv,text/csv" /></div>
+                          <button class="btn primary" id="landlordReportDataUpload-mortgage" type="button" onclick="uploadLandlordReportData('mortgage')">Upload / Replace</button>
+                          <div class="small muted" id="landlordReportDataStatus-mortgage" style="margin-top:10px">Not uploaded</div>
+                        </article>
+                      </div>
+                    </section>
+                  </div>
+                </div>
               </div>
 
               <div id="propertiesPanel" class="hidden">
                 <div class="page-banner">
-                  <div class="page-banner-kicker">Property Register</div>
-                  <h2>Properties</h2>
-                  <p>Search a property once and see the linked property, landlord, and tenant records together for maintenance and operations.</p>
+                  <div class="page-banner-kicker">Listing Register</div>
+                  <h2>Listings</h2>
+                  <p>Create and manage compact listing profiles with landlords, occupants, keys, social history, and inspection times in one place.</p>
                   <div class="page-banner-actions">
                     <span class="chip">CRM Import</span>
-                    <span class="chip">Landlords</span>
-                    <span class="chip">Tenants</span>
-                    <span class="chip">Maintenance Ready</span>
+                    <span class="chip">Open &amp; Closed</span>
+                    <span class="chip">Inspections</span>
+                    <span class="chip">Occupants &amp; Keys</span>
                   </div>
                 </div>
                 <div class="card">
@@ -6654,8 +6768,8 @@
                 <div class="card">
                   <div class="row space">
                     <div>
-                      <p class="panel-title">Add Property Manually</p>
-                      <p class="panel-sub">Use this for one-off Victorian properties not yet included in the CRM export.</p>
+                      <p class="panel-title">New Listing</p>
+                      <p class="panel-sub">Create a Victorian listing and record the people, access keys, and social activity needed by the team.</p>
                     </div>
                   </div>
                   <div class="row" style="align-items:flex-end">
@@ -6681,13 +6795,15 @@
                       <input type="text" id="newPropertyPostcode" />
                     </div>
                     <button class="btn primary"
-                      onclick="createPropertyFromForm()">Add Property</button>
+                      onclick="createPropertyFromForm()">Add Listing</button>
                   </div>
                   <div class="property-manual-grid">
                     <div class="field">
-                      <div class="label">Key Number</div>
-                      <input type="text" id="newPropertyKeyNumber"
-                        placeholder="Example: DP034" />
+                      <div class="label">Listing Status</div>
+                      <select id="newPropertyListingStatus">
+                        <option value="OPEN">Open</option>
+                        <option value="CLOSED">Closed</option>
+                      </select>
                     </div>
                     <div class="field">
                       <div class="label">Tenancy Status</div>
@@ -6709,36 +6825,51 @@
                       <input type="text" id="newPropertyOwnerPhone"
                         placeholder="Owner phone" />
                     </div>
-                    <div class="field">
-                      <div class="label">Tenant Name</div>
-                      <input type="text" id="newPropertyTenantName"
-                        placeholder="Primary tenant" />
-                    </div>
-                    <div class="field">
-                      <div class="label">Tenant Email</div>
-                      <input type="email" id="newPropertyTenantEmail"
-                        placeholder="tenant@example.com" />
-                    </div>
-                    <div class="field">
-                      <div class="label">Tenant Phone</div>
-                      <input type="text" id="newPropertyTenantPhone"
-                        placeholder="Tenant phone" />
-                    </div>
                   </div>
-                  <div class="small muted" style="margin-top:8px">Victorian
-                    properties only. You can paste a full address like
+                  <div class="property-new-sections">
+                    <details class="property-new-section" open>
+                      <summary>Occupant(s)</summary>
+                      <div class="property-new-section-body">
+                        <div class="property-listing-section-head">
+                          <p>Record contact and lease details for every occupant.</p>
+                          <button class="btn" type="button" onclick="addListingCollectionRow('new','occupants')">Add Occupant</button>
+                        </div>
+                        <div class="property-collection-list" id="newListingOccupantsList"></div>
+                      </div>
+                    </details>
+                    <details class="property-new-section">
+                      <summary>Keys</summary>
+                      <div class="property-new-section-body">
+                        <div class="property-listing-section-head">
+                          <p>Track each key number, what it opens, and where it is kept.</p>
+                          <button class="btn" type="button" onclick="addListingCollectionRow('new','keys')">Add Key</button>
+                        </div>
+                        <div class="property-collection-list" id="newListingKeysList"></div>
+                      </div>
+                    </details>
+                    <details class="property-new-section">
+                      <summary>Social Media History</summary>
+                      <div class="property-new-section-body">
+                        <div class="property-listing-section-head">
+                          <p>Keep a dated record of listing posts and campaign activity.</p>
+                          <button class="btn" type="button" onclick="addListingCollectionRow('new','social')">Add History</button>
+                        </div>
+                        <div class="property-collection-list" id="newListingSocialList"></div>
+                      </div>
+                    </details>
+                  </div>
+                  <div class="small muted" style="margin-top:10px">Victorian
+                    listings only. Paste a full address such as
                     "12 Smith Street, Cranbourne, VIC, 3977" and the
-                    suburb/postcode will be filled where possible. Add the
-                    first landlord and tenant here, then use Edit Profile on
-                    the card to add more contacts.</div>
+                    suburb/postcode will be filled where possible.</div>
                 </div>
 
                 <div class="card">
                   <div class="property-crm-toolbar">
                     <div class="field">
-                      <div class="label">Search Property, Landlord, Tenant, Email, Phone, Key Number</div>
+                      <div class="label">Search Listing, Landlord, Occupant, Email, Phone, or Key</div>
                       <input type="text" id="propertySearchBox"
-                        placeholder="Try an address, owner name, tenant name, phone, email, or key number..." />
+                        placeholder="Try an address, owner, occupant, phone, email, or key..." />
                     </div>
                     <div class="row">
                       <button class="btn" onclick="loadProperties(1)">Search</button>
@@ -6747,8 +6878,8 @@
                   </div>
                   <div class="property-profile-results" id="propertiesProfileResults">
                     <div class="ticket-empty">
-                      <strong>No properties loaded yet</strong>
-                      <div class="small muted" style="margin-top:6px">Import the CRM workbook or search after adding properties.</div>
+                      <strong>No listings loaded yet</strong>
+                      <div class="small muted" style="margin-top:6px">Import the CRM workbook or add a new listing above.</div>
                     </div>
                   </div>
                 </div>
@@ -6766,59 +6897,72 @@
               <div class="modal-backdrop hidden" id="propertyEditorModal">
                 <div class="modal property-editor-modal">
                   <div class="modal-head">
-                    <h3>Edit Property Profile</h3>
+                    <div>
+                      <h3 id="propertyEditorTitle">View Listing</h3>
+                      <div class="small muted" id="propertyEditorSubtitle">Listing details</div>
+                    </div>
                     <button class="btn ghost"
                       onclick="closePropertyEditor()">Close</button>
                   </div>
                   <div class="modal-body">
-                    <div class="property-editor-grid">
-                      <div class="field wide">
-                        <div class="label">Property Address</div>
-                        <input id="propertyEditAddress"
-                          placeholder="Street address" />
-                      </div>
-                      <div class="field">
-                        <div class="label">Suburb</div>
-                        <input id="propertyEditSuburb" />
-                      </div>
-                      <div class="field">
-                        <div class="label">State</div>
-                        <input value="VIC" readonly />
-                      </div>
-                      <div class="field">
-                        <div class="label">Postcode</div>
-                        <input id="propertyEditPostcode" />
-                      </div>
-                      <div class="field">
-                        <div class="label">CRM Property ID</div>
-                        <input id="propertyEditCrmId" />
-                      </div>
-                      <div class="field">
-                        <div class="label">Key Number</div>
-                        <input id="propertyEditKeyNumber" />
-                      </div>
-                      <div class="field">
-                        <div class="label">Property Type</div>
-                        <input id="propertyEditType"
-                          placeholder="House, apartment..." />
-                      </div>
-                      <div class="field">
-                        <div class="label">Rental Type</div>
-                        <input id="propertyEditRentalType"
-                          placeholder="Residential..." />
-                      </div>
-                      <div class="field">
-                        <div class="label">Tenancy Status</div>
-                        <input id="propertyEditTenancyStatus" />
-                      </div>
-                      <label class="checkbox compact">
-                        <input type="checkbox" id="propertyEditOwnerCompany" />
-                        Owner is company
-                      </label>
+                    <div class="property-listing-tabs" role="tablist" aria-label="Listing sections">
+                      <button type="button" class="active" data-property-listing-tab="overview" onclick="switchPropertyListingTab('overview')">Overview</button>
+                      <button type="button" data-property-listing-tab="occupants" onclick="switchPropertyListingTab('occupants')">Occupant(s)</button>
+                      <button type="button" data-property-listing-tab="keys" onclick="switchPropertyListingTab('keys')">Keys</button>
+                      <button type="button" data-property-listing-tab="social" onclick="switchPropertyListingTab('social')">Social Media History</button>
+                      <button type="button" data-property-listing-tab="inspections" onclick="switchPropertyListingTab('inspections')">Inspections</button>
+                      <button type="button" class="listing-open-only" data-property-listing-tab="enquiries" onclick="switchPropertyListingTab('enquiries')">Enquiries</button>
+                      <button type="button" class="listing-open-only" data-property-listing-tab="offers" onclick="switchPropertyListingTab('offers')">Offers</button>
+                      <button type="button" data-property-listing-tab="autoresponders" onclick="switchPropertyListingTab('autoresponders')">Autoresponders</button>
                     </div>
 
-                    <div class="property-contact-editor-grid">
-                      <section class="property-contact-editor">
+                    <section class="property-listing-panel" data-property-listing-panel="overview">
+                      <div class="property-editor-grid">
+                        <div class="field wide">
+                          <div class="label">Property Address</div>
+                          <input id="propertyEditAddress" placeholder="Street address" />
+                        </div>
+                        <div class="field">
+                          <div class="label">Suburb</div>
+                          <input id="propertyEditSuburb" />
+                        </div>
+                        <div class="field">
+                          <div class="label">State</div>
+                          <input value="VIC" readonly />
+                        </div>
+                        <div class="field">
+                          <div class="label">Postcode</div>
+                          <input id="propertyEditPostcode" />
+                        </div>
+                        <div class="field">
+                          <div class="label">CRM Property ID</div>
+                          <input id="propertyEditCrmId" />
+                        </div>
+                        <div class="field">
+                          <div class="label">Listing Status</div>
+                          <select id="propertyEditListingStatus" onchange="updatePropertyListingOpenTabs()">
+                            <option value="OPEN">Open</option>
+                            <option value="CLOSED">Closed</option>
+                          </select>
+                        </div>
+                        <div class="field">
+                          <div class="label">Property Type</div>
+                          <input id="propertyEditType" placeholder="House, apartment..." />
+                        </div>
+                        <div class="field">
+                          <div class="label">Rental Type</div>
+                          <input id="propertyEditRentalType" placeholder="Residential..." />
+                        </div>
+                        <div class="field">
+                          <div class="label">Tenancy Status</div>
+                          <input id="propertyEditTenancyStatus" />
+                        </div>
+                        <label class="checkbox compact">
+                          <input type="checkbox" id="propertyEditOwnerCompany" />
+                          Owner is company
+                        </label>
+                      </div>
+                      <section class="property-contact-editor" style="margin-top:16px">
                         <div class="row space">
                           <div>
                             <h4>Landlords</h4>
@@ -6830,20 +6974,59 @@
                         </div>
                         <div id="propertyEditOwnersList"></div>
                       </section>
+                    </section>
 
-                      <section class="property-contact-editor">
-                        <div class="row space">
-                          <div>
-                            <h4>Tenants</h4>
-                            <p>Add, edit, or remove current tenant details.</p>
-                          </div>
-                          <button class="btn" type="button"
-                            onclick="addPropertyEditorContact('tenants')">Add
-                            Tenant</button>
-                        </div>
-                        <div id="propertyEditTenantsList"></div>
-                      </section>
-                    </div>
+                    <section class="property-listing-panel hidden" data-property-listing-panel="occupants">
+                      <div class="property-listing-section-head">
+                        <div><h4>Occupant(s)</h4><p>Contact, lease dates, amount, and payment frequency for the people occupying this listing.</p></div>
+                        <button class="btn" type="button" onclick="addListingCollectionRow('edit','occupants')">Add Occupant</button>
+                      </div>
+                      <div class="property-collection-list" id="propertyEditOccupantsList"></div>
+                    </section>
+
+                    <section class="property-listing-panel hidden" data-property-listing-panel="keys">
+                      <div class="property-listing-section-head">
+                        <div><h4>Keys</h4><p>Record key numbers, descriptions, and storage locations.</p></div>
+                        <button class="btn" type="button" onclick="addListingCollectionRow('edit','keys')">Add Key</button>
+                      </div>
+                      <div class="property-collection-list" id="propertyEditKeysList"></div>
+                    </section>
+
+                    <section class="property-listing-panel hidden" data-property-listing-panel="social">
+                      <div class="property-listing-section-head">
+                        <div><h4>Social Media History</h4><p>Keep a dated campaign trail for posts and listing promotions.</p></div>
+                        <button class="btn" type="button" onclick="addListingCollectionRow('edit','social')">Add History</button>
+                      </div>
+                      <div class="property-collection-list" id="propertyEditSocialList"></div>
+                    </section>
+
+                    <section class="property-listing-panel hidden" data-property-listing-panel="inspections">
+                      <div class="property-listing-section-head">
+                        <div><h4>Inspection Times</h4><p>Add public inspection windows and review upcoming or completed times.</p></div>
+                      </div>
+                      <div class="property-inspection-create">
+                        <div class="field"><div class="label">Inspection Date</div><input id="propertyInspectionDate" type="date" /></div>
+                        <div class="field"><div class="label">Start Time</div><input id="propertyInspectionStart" type="time" /></div>
+                        <div class="field"><div class="label">Finish Time</div><input id="propertyInspectionFinish" type="time" /></div>
+                        <div class="field"><div class="label">Notes</div><input id="propertyInspectionNotes" maxlength="1000" placeholder="Access or attendee notes" /></div>
+                        <button class="btn primary" type="button" onclick="addPropertyListingInspection()">Add Inspection</button>
+                      </div>
+                      <div class="property-inspection-group"><h5>Current Inspection Times</h5><div class="property-collection-list" id="propertyCurrentInspections"></div></div>
+                      <div class="property-inspection-group"><h5>Completed Inspections</h5><div class="property-collection-list" id="propertyCompletedInspections"></div></div>
+                    </section>
+
+                    <section class="property-listing-panel listing-open-only hidden" data-property-listing-panel="enquiries">
+                      <div class="property-deferred"><div><strong>Enquiries are not implemented yet</strong><p>This section is reserved for open listings. No enquiry controls or data actions are active.</p></div></div>
+                    </section>
+
+                    <section class="property-listing-panel listing-open-only hidden" data-property-listing-panel="offers">
+                      <div class="property-deferred"><div><strong>Offers are not implemented yet</strong><p>This section is reserved for open listings. No offer controls or data actions are active.</p></div></div>
+                    </section>
+
+                    <section class="property-listing-panel hidden" data-property-listing-panel="autoresponders">
+                      <div class="property-deferred"><div><strong>Autoresponders are coming later</strong><p>This placeholder is intentionally read-only until the autoresponder workflow is implemented.</p></div></div>
+                    </section>
+
                     <div class="error" id="propertyEditStatus"
                       style="display:none"></div>
                   </div>
@@ -6851,7 +7034,7 @@
                     <button class="btn"
                       onclick="closePropertyEditor()">Cancel</button>
                     <button class="btn primary" id="propertyEditSaveBtn"
-                      onclick="savePropertyEditor()">Save Property</button>
+                      onclick="savePropertyEditor()">Save Listing</button>
                   </div>
                 </div>
               </div>
