@@ -6,6 +6,7 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from googleapiclient.errors import HttpError
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -146,3 +147,37 @@ def test_calendar_oauth_url_does_not_require_an_in_memory_pkce_verifier(monkeypa
 
     assert "code_challenge" not in query
     assert flow.code_verifier is None
+
+
+def test_calendar_api_disabled_error_identifies_oauth_client_project(calendar_client, monkeypatch):
+    client, db, users, _context = calendar_client
+    db.add(GoogleCalendarConnection(user_id=users[0].id, access_token="token"))
+    db.commit()
+
+    class Response:
+        status = 403
+        reason = "Forbidden"
+
+    class Execute:
+        def execute(self):
+            raise HttpError(
+                Response(),
+                b'{"error":{"code":403,"message":"Calendar API has not been used in project 123 or it is disabled.","errors":[{"reason":"accessNotConfigured"}]}}',
+            )
+
+    class Events:
+        def list(self, **_kwargs):
+            return Execute()
+
+    class Service:
+        def events(self):
+            return Events()
+
+    monkeypatch.setattr(my_space, "calendar_service", lambda _db, _connection: Service())
+    response = client.get(
+        "/my-space/calendar/events",
+        params={"time_min": "2026-09-01T00:00:00Z", "time_max": "2026-10-01T00:00:00Z"},
+    )
+
+    assert response.status_code == 502
+    assert "project that owns this OAuth client ID" in response.json()["detail"]

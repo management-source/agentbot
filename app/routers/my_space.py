@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import json
+import logging
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from googleapiclient.errors import HttpError
 
 from app.authz import get_current_user, require_role
 from app.db import get_db
@@ -26,6 +29,7 @@ from app.services.google_calendar import (
 )
 
 router = APIRouter(prefix="/my-space", tags=["my-space"])
+logger = logging.getLogger(__name__)
 
 MAX_GUIDE_BYTES = 15 * 1024 * 1024
 
@@ -287,8 +291,42 @@ def get_google_calendar_events(
         )
     except HTTPException:
         raise
+    except HttpError as exc:
+        status = int(getattr(exc.resp, "status", 502) or 502)
+        reason = ""
+        google_message = ""
+        try:
+            error_body = json.loads(exc.content.decode("utf-8"))
+            error_data = error_body.get("error") or {}
+            google_message = str(error_data.get("message") or "")
+            errors = error_data.get("errors") or []
+            reason = str(errors[0].get("reason") or "") if errors else ""
+        except Exception:
+            pass
+        logger.exception(
+            "Google Calendar events request failed for app user %s (status=%s, reason=%s)",
+            user.id,
+            status,
+            reason or "unknown",
+        )
+        normalized = f"{reason} {google_message}".lower()
+        if "accessnotconfigured" in normalized or "has not been used" in normalized or "disabled" in normalized:
+            detail = "Google Calendar API is not enabled in the Google Cloud project that owns this OAuth client ID."
+        elif status == 401 or "invalid credentials" in normalized:
+            detail = "Google Calendar authorization expired. Disconnect it and connect again."
+        elif "insufficientpermissions" in normalized or "insufficient authentication scopes" in normalized:
+            detail = "Google Calendar read permission is missing. Disconnect it and connect again."
+        elif status == 403:
+            detail = "Google Calendar rejected this account or OAuth project. Check the Render log for the Google reason."
+        else:
+            detail = "Google Calendar returned an error. Check the Render log for the Google reason."
+        raise HTTPException(status_code=502, detail=detail) from exc
     except Exception as exc:
-        raise HTTPException(status_code=502, detail="Google Calendar could not be loaded right now.") from exc
+        logger.exception("Google Calendar events request failed for app user %s", user.id)
+        raise HTTPException(
+            status_code=502,
+            detail="Google Calendar could not be loaded. Check the Render log for the underlying error.",
+        ) from exc
     events = [normalize_event(item) for item in response.get("items", []) if item.get("status") != "cancelled"]
     return {"connected": True, "email": connection.google_email, "events": events}
 

@@ -608,6 +608,7 @@ let mySpaceGuidesCache = [];
 let mySpaceViewMode = "workspace";
 let mySpaceTodosCache = [];
 let mySpaceGoogleEvents = [];
+let mySpaceGoogleCalendarError = "";
 let mySpaceCalendarMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
 let mySpaceSelectedDate = null;
 let mySpaceEditingTodoId = null;
@@ -2352,11 +2353,14 @@ function renderMySpaceUpcoming() {
     heading.textContent = mySpaceSelectedDate
         ? mySpaceDateFromKey(mySpaceSelectedDate).toLocaleDateString([], { weekday: "long", day: "numeric", month: "long" })
         : "Upcoming";
+    const calendarError = mySpaceGoogleCalendarError
+        ? `<div class="myspace-empty">${escapeHtml(mySpaceGoogleCalendarError)}</div>`
+        : "";
     if (!entries.length) {
-        list.innerHTML = `<div class="myspace-empty">${mySpaceSelectedDate ? "Nothing scheduled for this day." : "No upcoming tasks or events."}</div>`;
+        list.innerHTML = `${calendarError}<div class="myspace-empty">${mySpaceSelectedDate ? "Nothing scheduled for this day." : "No upcoming tasks or events."}</div>`;
         return;
     }
-    list.innerHTML = entries.map((entry) => {
+    list.innerHTML = calendarError + entries.map((entry) => {
         if (entry.source === "google") {
             return `<article class="myspace-agenda-item google"><span class="user-chip">G</span><div class="myspace-agenda-item-main"><strong>${escapeHtml(entry.title || "Busy")}</strong><p>${escapeHtml(entry.all_day ? `${entry.dateKey} · All day` : `${entry.dateKey} · ${mySpaceDisplayTime(entry.start)}`)}${entry.location ? ` · ${escapeHtml(entry.location)}` : ""}</p>${entry.html_link ? `<div class="myspace-agenda-actions"><a class="btn" href="${escapeHtml(entry.html_link)}" target="_blank" rel="noopener">Open in Google</a></div>` : ""}</div></article>`;
         }
@@ -2497,6 +2501,7 @@ async function loadMySpaceGoogleEvents() {
     renderMySpaceGoogleStatus(status);
     if (!status.connected) {
         mySpaceGoogleEvents = [];
+        mySpaceGoogleCalendarError = "";
         renderMySpaceCalendar();
         return;
     }
@@ -2505,11 +2510,12 @@ async function loadMySpaceGoogleEvents() {
     const params = new URLSearchParams({ time_min: start.toISOString(), time_max: end.toISOString() });
     const response = await apiFetch(`/my-space/calendar/events?${params.toString()}`);
     if (!response.ok) {
-        const message = await extractErrorMessage(response);
-        document.getElementById("mySpaceUpcomingList")?.insertAdjacentHTML("afterbegin", `<div class="myspace-empty">${escapeHtml(message)}</div>`);
+        mySpaceGoogleCalendarError = await extractErrorMessage(response);
+        renderMySpaceCalendar();
         return;
     }
     const data = await response.json();
+    mySpaceGoogleCalendarError = "";
     mySpaceGoogleEvents = Array.isArray(data.events) ? data.events : [];
     renderMySpaceCalendar();
 }
@@ -2532,6 +2538,7 @@ async function disconnectMySpaceGoogleCalendar() {
         return;
     }
     mySpaceGoogleEvents = [];
+    mySpaceGoogleCalendarError = "";
     renderMySpaceGoogleStatus({ connected: false });
     renderMySpaceCalendar();
 }
